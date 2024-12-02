@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block title %}Search Items - Buz Application{% endblock %}
+
+{% block content %}
+<h1>Search Items by Supplier Product Code</h1>
+<form method="POST" action="/search" class="mb-4">
+    <div class="input-group">
+        <input 
+            type="text" 
+            id="code" 
+            name="code" 
+            class="form-control" 
+            placeholder="Enter Supplier Product Code" 
+            value="{{ request.form.get('code', '') }}" 
+            required>
+        <button class="btn btn-primary" type="submit">Search</button>
+    </div>
+</form>
+
+{% if results %}
+    <table class="table table-striped table-bordered">
+        <thead>
+            <tr>
+                <th>Inventory Group Code</th>
+                <th>Code</th>
+                <th>Description</th>
+                <th>Supplier Product Code</th>
+                <th>Supplier</th>
+                <th>Price Grid Code</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in results %}
+                <tr>
+                    <td>{{ row['inventory_group_code'] }}</td>
+                    <td>{{ row['Code'] }}</td>
+                    <td>{{ row['Description'] }}</td>
+                    <td>{{ row['SupplierProductCode'] }}</td>
+                    <td>{{ row['Supplier'] }}</td>
+                    <td>{{ row['PriceGridCode'] }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <div class="alert alert-warning">No items found for the given code.</div>
+{% endif %}
+{% endblock %}

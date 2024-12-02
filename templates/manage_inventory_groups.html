@@ -1,0 +1,56 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Buz Application{% endblock %}
+
+{% block content %}
+
+    <h1>Manage Inventory Group Codes</h1>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-success">
+          {{ messages[0] }}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <h3>Upload codes in bulk:</h3>
+    <form action="{{ url_for('upload_inventory_group_codes') }}" method="POST" enctype="multipart/form-data">
+        <label for="group_codes_file">Upload Group Codes (One per line):</label>
+        <input type="file" name="group_codes_file" accept=".txt">
+
+        <input type="submit" value="Add Group Codes">
+    </form>
+
+
+    <h3>Or add them one by one:</h3>
+    <form method="POST" class="form-inline">
+        <div class="form-group">
+            <label for="new_group_code">Add New Group Code:</label>
+            <input type="text" name="new_group_code" id="new_group_code" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Add</button>
+    </form>
+
+    <h3>Existing Group Codes:</h3>
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Inventory Group Code</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for group_code in allowed_groups %}
+            <tr>
+                <td>{{ group_code }}</td>
+                <td>
+                    <form action="{{ url_for('delete_inventory_group', inventory_group_code=group_code) }}" method="POST" style="display:inline;">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

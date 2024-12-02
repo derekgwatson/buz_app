@@ -1,0 +1,20 @@
+{% extends "layout.html" %}
+
+{% block title %}Generate IDs - Buz Application{% endblock %}
+
+{% block content %}
+<h1>Show Generated IDs</h1>
+<form method="post">
+    <div class="mb-3">
+        <label for="count" class="form-label">Number of IDs to Generate:</label>
+        <input type="number" name="count" id="count" min="1" required class="form-control">
+    </div>
+    <button type="submit" class="btn btn-primary">Generate</button>
+</form>
+<hr>
+<ul>
+    {% for id in ids %}
+        <li>{{ id }}</li>
+    {% endfor %}
+</ul>
+{% endblock %}

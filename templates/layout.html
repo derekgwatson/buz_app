@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Buz Application{% endblock %}</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            margin-bottom: 20px;
+        }
+        .container {
+            max-width: 960px;
+        }
+        footer {
+            margin-top: 40px;
+            padding: 10px 0;
+            text-align: center;
+            background-color: #e3f2fd;
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-default">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <a class="navbar-brand" href="/">Buz Tool</a>
+    </div>
+    <ul class="nav navbar-nav">
+      <li class="{% if request.path == '/search' %}active{% endif %}">
+        <a href="/search">Search</a>
+      </li>
+      <li class="{% if request.path == '/upload' %}active{% endif %}">
+        <a href="/upload">Upload</a>
+      </li>
+      <li class="{% if request.path == '/supplier-code-report' %}active{% endif %}">
+        <a href="/supplier-code-report">Supplier Code Report</a>
+      </li>
+      <li class="{% if request.path == '/manage_inventory_groups' %}active{% endif %}">
+        <a href="/manage_inventory_groups">Manage Inventory Groups</a>
+      </li>
+      <li class="{% if request.path == '/generate_codes' %}active{% endif %}">
+        <a href="/generate_codes">Generate random unique codes</a>
+      </li>
+      <li class="{% if request.path == '/get_items_not_in_unleashed' %}active{% endif %}">
+        <a href="/get_items_not_in_unleashed">Get Items Not In Unleashed</a>
+      </li>
+      <li class="{% if request.path == '/get_group_option_codes' %}active{% endif %}">
+        <a href="/get_group_option_codes">Get Group Options Codes</a>
+      </li>
+      <li class="{% if request.path == '/get_duplicate_codes' %}active{% endif %}">
+        <a href="/get_duplicate_codes">Get Duplicated Group Option Codes</a>
+      </li>
+
+    </ul>
+  </div>
+</nav>
+    
+    <!-- Main Content -->
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Footer -->
+    <footer>
+        <p>Page rendered in [[ request_duration ]].</p>
+    </footer>
+
+    <!-- Bootstrap JS -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+
+</body>
+</html>

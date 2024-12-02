@@ -1,0 +1,43 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Buz Application{% endblock %}
+
+{% block content %}
+
+    <h1>Get Duplicated Group Options Codes</h1>
+    
+    {% if codes %}
+        <ul>
+            <div class="container mt-4">
+                <h1 class="mb-4">Inventory Table</h1>
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>Group</th>
+                            <th>Inventory Item Code</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in codes %}
+                        <tr>
+                            <td>{{ row[0] }}</td>
+                            <td>{{ row[1] }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </ul>
+
+	{% else %}
+        <form action="/get_duplicate_codes" method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="group_options_file" class="form-label">Group Options File:</label>
+                <input type="file" name="group_options_file" id="group_options_file" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary">Go</button>
+        </form>
+
+    {% endif %}
+	
+{% endblock %}

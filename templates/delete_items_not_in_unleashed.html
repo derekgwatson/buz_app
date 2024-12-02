@@ -1,0 +1,23 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Buz Application{% endblock %}
+
+{% block content %}
+
+    <h1>Delete Buz items not in Unleashed</h1>
+    
+    {% if output_file %}
+        <a href="{{ url_for('download_file', filename=output_file.split('/')[-1]) }}">Download Excel Report</a>
+
+	{% else %}
+        <form action="/get_items_not_in_unleashed" method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="inventory_file" class="form-label">Inventory Items File:</label>
+                <input type="file" name="inventory_file" id="inventory_file" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary">Find items to delete</button>
+        </form>
+
+    {% endif %}
+	
+{% endblock %}

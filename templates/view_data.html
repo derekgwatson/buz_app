@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Buz Data</title>
+</head>
+<body>
+    <h2>Inventory Items</h2>
+    <table border="1">
+        <tr>
+            <th>ID</th>
+            <th>Item Name</th>
+            <th>Item Code</th>
+            <th>Unleashed Code</th>
+        </tr>
+        {% for item in inventory_items %}
+        <tr>
+            <td>{{ item['id'] }}</td>
+            <td>{{ item['item_name'] }}</td>
+            <td>{{ item['item_code'] }}</td>
+            <td>{{ item['unleashed_code'] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <h2>Pricing Data</h2>
+    <table border="1">
+        <tr>
+            <th>ID</th>
+            <th>Item Code</th>
+            <th>Price</th>
+        </tr>
+        {% for price in pricing_data %}
+        <tr>
+            <td>{{ price['id'] }}</td>
+            <td>{{ price['item_code'] }}</td>
+            <td>{{ price['price'] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

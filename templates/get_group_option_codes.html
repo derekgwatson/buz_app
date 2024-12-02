@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Buz Application{% endblock %}
+
+{% block content %}
+
+    <h1>Get Group Options Codes</h1>
+    
+    {% if codes %}
+        <ul>
+            <div class="container mt-4">
+                <h1 class="mb-4">Inventory Table</h1>
+                <table class="table table-bordered table-striped">
+                    <thead>
+                        <tr>
+                            <th>Original Tab</th>
+                            <th>Inventory Item Code</th>
+                            <th>Found In Tab</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in codes %}
+                        <tr>
+                            <td>{{ row[0] }}</td>
+                            <td>{{ row[1] }}</td>
+                            <td>{{ row[2] }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </ul>
+
+	{% else %}
+        <form action="/get_group_option_codes" method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="inventory_items_file" class="form-label">Inventory Items File:</label>
+                <input type="file" name="inventory_items_file" id="inventory_items_file" class="form-control">
+            </div>
+            <div class="mb-3">
+                <label for="group_options_file" class="form-label">Group Options File:</label>
+                <input type="file" name="group_options_file" id="group_options_file" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary">Go</button>
+        </form>
+
+    {% endif %}
+	
+{% endblock %}

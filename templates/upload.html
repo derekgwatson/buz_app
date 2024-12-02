@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+
+{% block title %}Upload Data - Buz Application{% endblock %}
+
+{% block content %}
+<h1>Upload Inventory Items and Pricing Data</h1>
+<form action="/upload" method="POST" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="inventory_file" class="form-label">Inventory Items File:</label>
+        <input type="file" name="inventory_file" id="inventory_file" class="form-control">
+    </div>
+    <div class="mb-3">
+        <label for="pricing_file" class="form-label">Pricing Data File:</label>
+        <input type="file" name="pricing_file" id="pricing_file" class="form-control">
+    </div>
+    <div class="mb-3">
+        <label for="unleashed_file" class="form-label">Unleashed Products File:</label>
+        <input type="file" name="unleashed_file" id="unleashed_file" class="form-control">
+    </div>
+    <button type="submit" class="btn btn-primary">Upload Files</button>
+</form>
+
+<h2>Current Row Counts</h2>
+    <ul>
+        <li>Inventory Groups: {{ inventory_group_count }}</li>
+        <li>Inventory Items: {{ inventory_count }}</li>
+        <li>Pricing Data: {{ pricing_count }}</li>
+        <li>Unleashed Products: {{ unleashed_count }}</li>
+    </ul>
+{% endblock %}
