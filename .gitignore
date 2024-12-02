@@ -1,0 +1,10 @@
+static/buz-app-439103-b6ae046c4723.json
+
+# Ignore Python cache files and directories
+__pycache__/
+*.pyc
+*.pyo
+
+uploads/
+buz_data.db
+

@@ -159,7 +159,7 @@ def process_pricing_file(pricing_file_path, inventory_dict, google_sheet_dict, t
 g_inventory_file = OpenPyXLFileHandler(file_path='./items.xlsm')
 g_inventory_file.load_workbook()
 g_google_sheet_file = GoogleSheetsService(f'./static/buz-app-439103-b6ae046c4723.json')
-g_pricing_file = './pricing.xlsm'
+g_pricing_file = 'uploads/pricing.xlsm'
 
 g_inventory_dict = load_inventory_items(g_inventory_file)
 g_google_sheet_dict = load_google_sheet_data(
