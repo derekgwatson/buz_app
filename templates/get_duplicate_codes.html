@@ -30,6 +30,9 @@
         </ul>
 
 	{% else %}
+        {% if request.method == 'POST' %}
+            <p class="alert alert-info">No duplicated group options codes found. Please upload a file to search for duplicates.</p>
+        {% endif %}
         <form action="/get_duplicate_codes" method="POST" enctype="multipart/form-data">
             <div class="mb-3">
                 <label for="group_options_file" class="form-label">Group Options File:</label>
