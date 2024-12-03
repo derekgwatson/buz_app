@@ -86,3 +86,27 @@ class OpenPyXLFileHandler:
         :rtype: list[tuple]
         """
         return list(sheet.iter_rows(min_row=start_row, values_only=True))
+
+    def read_sheet_to_dict(self, header_row: int = 1):
+        """
+        Read all sheets in the workbook into dictionaries, with configurable header rows.
+
+        :param header_row: A dictionary mapping sheet names to header row numbers.
+                            If None, defaults to the first row for all sheets.
+        :type header_row: int
+        :return: A dictionary where keys are sheet names, and values are lists of row dictionaries
+        :rtype: dict[str, list[dict]]
+        """
+        if self.workbook is None:
+            raise ValueError("Workbook is not loaded. Call load_workbook() first.")
+
+        # Default to header row 1 for all sheets if no configuration is provided
+        all_data = {}
+
+        for sheet_name in self.get_sheet_names():
+            sheet = self.get_sheet(sheet_name)
+            headers = self.get_headers(sheet, header_row)
+            rows = self.get_rows(sheet, header_row + 1)
+            all_data[sheet_name] = [dict(zip(headers, row)) for row in rows if any(row)]
+
+        return all_data

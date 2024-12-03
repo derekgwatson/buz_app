@@ -19,6 +19,8 @@ from remove_old_items import process_workbook_with_google_sheets_and_handler
 from constants import UNLEASHED_DATA_EXTRACT_GOOGLE_SHEET
 from group_options_check import (extract_codes_from_excel_flat_dedup, map_inventory_items_to_tabs,
                                  filter_inventory_items, extract_duplicate_codes_with_locations)
+from backorders import process_inventory_backorder_with_services
+
 import logging
 
 logging.basicConfig(
@@ -295,6 +297,32 @@ def generate_codes():
 
     else:
         return render_template('show_generated_ids.html')
+
+
+@app.route('/generate_backorder_file', methods=["GET", "POST"])
+def generate_backorder_file():
+    if request.method == "POST":
+        original_filename = "./uploads/original_file.xlsx"
+        upload_filename = "./uploads/upload_file.xlsx"
+        g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_items_file'))
+        g_sheets_service = GoogleSheetsService(json_file="./static/buz-app-439103-b6ae046c4723.json")
+
+        process_inventory_backorder_with_services(
+            _file_handler=g_file_handler,
+            _sheets_service=g_sheets_service,
+            spreadsheet_id="1OHwBIFxl72Y0Om8rJ__pQiHRWsGQlaKiB5tyMi6mb3Q",
+            range_name="Backordered Fabrics!A:B",
+            original_filename=original_filename,
+            upload_filename=upload_filename,
+            header_row=2,
+        )
+        return render_template(
+            'generate_backorder_file.html',
+            original_filename=original_filename,
+            upload_filename=upload_filename  # Correct syntax here
+        )
+    else:
+        return render_template('generate_backorder_file.html')
 
 
 if __name__ == '__main__':

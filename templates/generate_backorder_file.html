@@ -1,0 +1,25 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Buz Application{% endblock %}
+
+{% block content %}
+
+    <h1>Generate Backorder File</h1>
+    
+    {% if upload_filename %}
+        <a href="{{ url_for('download_file', filename=original_filename.split('/')[-1]) }}">Original File</a>
+        <br>
+        <a href="{{ url_for('download_file', filename=upload_filename.split('/')[-1]) }}">Upload File</a>
+
+	{% else %}
+        <form action="/generate_backorder_file" method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="inventory_items_file" class="form-label">Inventory Items File:</label>
+                <input type="file" name="inventory_items_file" id="inventory_items_file" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary">Go!</button>
+        </form>
+
+    {% endif %}
+	
+{% endblock %}
