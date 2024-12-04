@@ -1,3 +1,4 @@
+import json
 import os
 from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g
 import time
@@ -308,11 +309,13 @@ def generate_backorder_file():
         g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_items_file'))
         g_sheets_service = GoogleSheetsService(json_file="./static/buz-app-439103-b6ae046c4723.json")
 
+        with open("config.json") as f:
+            config = json.load(f)
         process_inventory_backorder_with_services(
             _file_handler=g_file_handler,
             _sheets_service=g_sheets_service,
-            spreadsheet_id="1OHwBIFxl72Y0Om8rJ__pQiHRWsGQlaKiB5tyMi6mb3Q",
-            range_name="Backordered Fabrics!A:B",
+            spreadsheet_id=config['backorder_spreadsheet_id'],
+            range_name=config['backorder_spreadsheet_range'],
             original_filename=original_filename,
             upload_filename=upload_filename,
             header_row=2,
