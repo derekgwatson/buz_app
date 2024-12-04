@@ -302,8 +302,9 @@ def generate_codes():
 @app.route('/generate_backorder_file', methods=["GET", "POST"])
 def generate_backorder_file():
     if request.method == "POST":
-        original_filename = "./uploads/original_file.xlsx"
-        upload_filename = "./uploads/upload_file.xlsx"
+        uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+        original_filename = os.path.join(uploads_dir, 'original_file.xlsx')
+        upload_filename = os.path.join(uploads_dir, 'upload_file.xlsx')
         g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_items_file'))
         g_sheets_service = GoogleSheetsService(json_file="./static/buz-app-439103-b6ae046c4723.json")
 
