@@ -1,7 +1,7 @@
 from datetime import datetime
 from openpyxl import Workbook
-from excel import OpenPyXLFileHandler
-from google_sheets_service import GoogleSheetsService
+from services.excel import OpenPyXLFileHandler
+from services.google_sheets_service import GoogleSheetsService
 
 
 def process_inventory_backorder_with_services(

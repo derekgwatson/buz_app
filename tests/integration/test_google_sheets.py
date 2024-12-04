@@ -1,5 +1,5 @@
 import unittest
-from google_sheets_service import GoogleSheetsService
+from services.google_sheets_service import GoogleSheetsService
 
 
 class TestGoogleSheetsServiceIntegration(unittest.TestCase):

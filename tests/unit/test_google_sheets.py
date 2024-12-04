@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from google_sheets_service import GoogleSheetsService
+from services.google_sheets_service import GoogleSheetsService
 
 
 class TestGoogleSheetsService(unittest.TestCase):

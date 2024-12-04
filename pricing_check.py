@@ -2,8 +2,8 @@ import logging
 
 import pandas as pd
 from datetime import datetime, timedelta
-from excel import OpenPyXLFileHandler
-from google_sheets_service import GoogleSheetsService
+from services.excel import OpenPyXLFileHandler
+from services.google_sheets_service import GoogleSheetsService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

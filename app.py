@@ -11,16 +11,14 @@ from data_processing import (search_items_by_supplier_code, insert_unleashed_dat
 
 from process_buz_workbooks import process_workbook
                              
-from excel import OpenPyXLFileHandler
-from database import get_db_connection, close_db_connection, init_db, DatabaseManager
-from google_sheets_service import GoogleSheetsService, filter_google_sheet_second_column_numeric
+from database import get_db_connection, close_db_connection, DatabaseManager
+from services.google_sheets_service import GoogleSheetsService
 from helper import generate_multiple_unique_ids
 from constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
-from remove_old_items import process_workbook_with_google_sheets_and_handler
-from constants import UNLEASHED_DATA_EXTRACT_GOOGLE_SHEET
 from group_options_check import (extract_codes_from_excel_flat_dedup, map_inventory_items_to_tabs,
                                  filter_inventory_items, extract_duplicate_codes_with_locations)
 from backorders import process_inventory_backorder_with_services
+from services.remove_old_items import delete_deprecated_items_request
 
 import logging
 
@@ -216,7 +214,9 @@ def delete_inventory_group(inventory_group_code):
 
 @app.route('/download/<filename>')
 def download_file(filename):
-    return send_file(f'./uploads/{filename}', as_attachment=True)
+    uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
+    file_path = os.path.join(uploads_dir, filename)
+    return send_file(file_path, as_attachment=True)
 
 
 @app.route('/delete_items_not_in_unleashed', methods=['POST'])
@@ -230,24 +230,10 @@ def delete_items_not_in_unleashed():
 @app.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
 def get_items_not_in_unleashed():
     if request.method == 'POST':
-        # Initialize the Google Sheets Service
-        g_sheets_service = GoogleSheetsService(json_file="./static/buz-app-439103-b6ae046c4723.json")
-
-        # Initialize the file handler for the input workbook
-        g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_file'))
-        #    g_file_handler = OpenPyXLFileHandler(file_path="./uploads/test input.xlsx")
+        output_file = delete_deprecated_items_request(request)
 
         # Process the workbook
-        process_workbook_with_google_sheets_and_handler(
-            _file_handler=g_file_handler,
-            _sheets_service=g_sheets_service,
-            spreadsheet_id=UNLEASHED_DATA_EXTRACT_GOOGLE_SHEET,
-            range_name="Data!A:A",  # Unleashed data product codes range in google sheet
-            output_file="./uploads/output.xlsx"
-        )
-
-        return render_template('delete_items_not_in_unleashed.html', output_file="./uploads/output.xlsx")
-
+        return render_template('delete_items_not_in_unleashed.html', output_file=output_file)
     else:
         return render_template('delete_items_not_in_unleashed.html')
 
@@ -302,31 +288,76 @@ def generate_codes():
 
 @app.route('/generate_backorder_file', methods=["GET", "POST"])
 def generate_backorder_file():
-    if request.method == "POST":
-        uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
-        original_filename = os.path.join(uploads_dir, 'original_file.xlsx')
-        upload_filename = os.path.join(uploads_dir, 'upload_file.xlsx')
-        g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_items_file'))
-        g_sheets_service = GoogleSheetsService(json_file="./static/buz-app-439103-b6ae046c4723.json")
+    # Get the directory where the script is located
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    uploads_dir = os.path.join(base_dir, 'uploads')
 
+    # Ensure the uploads directory exists
+    if not os.path.exists(uploads_dir):
+        os.makedirs(uploads_dir)
+
+    if request.method == "POST":
+        # Load the existing config
+        config = load_config()
+
+        # Update config with user-provided values
+        spreadsheet_id_old = config.get('backorder_spreadsheet_id')
+        spreadsheet_range_old = config.get('backorder_spreadsheet_range')
+        config['backorder_spreadsheet_id'] = spreadsheet_id
+        config['backorder_spreadsheet_range'] = spreadsheet_range
+        config_updated = spreadsheet_range_old != spreadsheet_range or spreadsheet_id_old != spreadsheet_id
+        if config_updated:
+            flash('Config updated', 'success')
+
+        if 'inventory_items_file' in request.files:
+            original_filename = os.path.join(uploads_dir, 'original_file.xlsx')
+            upload_filename = os.path.join(uploads_dir, 'upload_file.xlsx')
+
+            inventory_items_file = request.files.get('inventory_items_file')
+            if inventory_items_file and \
+                    inventory_items_file.filename.strip() != '' and \
+                    inventory_items_file.content_length > 0:
+                g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_items_file'))
+                g_sheets_service = GoogleSheetsService(json_file=os.path.join(os.path.dirname(__file__), 'static',
+                                                                              'buz-app-439103-b6ae046c4723.json'))
+
+                # Save updated config back to the file
+                with open("config.json", "w") as f:
+                    json.dump(config, f, indent=4)
+
+                process_inventory_backorder_with_services(
+                    _file_handler=g_file_handler,
+                    _sheets_service=g_sheets_service,
+                    spreadsheet_id=spreadsheet_id,
+                    range_name=spreadsheet_range,
+                    original_filename=original_filename,
+                    upload_filename=upload_filename,
+                    header_row=2,
+                )
+                return render_template(
+                    'generate_backorder_file.html',
+                    original_filename=original_filename,
+                    upload_filename=upload_filename
+                )
+            else:
+                if not config_updated:
+                    flash('Inventory files upload file is empty.', 'warning')
+                return render_template(
+                    'generate_backorder_file.html',
+                    spreadsheet_id = config['backorder_spreadsheet_id'],
+                    spreadsheet_range = config['backorder_spreadsheet_range']
+                )
+        else:
+            flash('No file uploaded.', 'warning')
+    else:
+        # Load config for defaults
         with open("config.json") as f:
             config = json.load(f)
-        process_inventory_backorder_with_services(
-            _file_handler=g_file_handler,
-            _sheets_service=g_sheets_service,
-            spreadsheet_id=config['backorder_spreadsheet_id'],
-            range_name=config['backorder_spreadsheet_range'],
-            original_filename=original_filename,
-            upload_filename=upload_filename,
-            header_row=2,
-        )
         return render_template(
             'generate_backorder_file.html',
-            original_filename=original_filename,
-            upload_filename=upload_filename  # Correct syntax here
+            spreadsheet_id=config['backorder_spreadsheet_id'],
+            spreadsheet_range=config['backorder_spreadsheet_range']
         )
-    else:
-        return render_template('generate_backorder_file.html')
 
 
 if __name__ == '__main__':

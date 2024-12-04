@@ -1,7 +1,7 @@
 import re
 from database import DatabaseManager
 import logging
-from excel import OpenPyXLFileHandler
+from services.excel import OpenPyXLFileHandler
 
 logger = logging.getLogger(__name__)
 INVALID_PKID = "00000000-0000-0000-0000-000000000000"

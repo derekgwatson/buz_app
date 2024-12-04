@@ -1,4 +1,6 @@
 {
     "backorder_spreadsheet_id": "1OHwBIFxl72Y0Om8rJ__pQiHRWsGQlaKiB5tyMi6mb3Q",
-    "backorder_spreadsheet_range": "Backordered Fabrics!A:B"
+    "backorder_spreadsheet_range": "Backordered Fabrics!A:B",
+    "unleashed_data_extract_spreadsheet_id": "1OE7CnACQjFFGgIm_yFjN8Qhf0l5xEQkJqXwFV4plNlI",
+    "unleashed_data_extract_range": "Data!A:AY"
 }

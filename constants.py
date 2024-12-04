@@ -81,6 +81,3 @@ EXPECTED_HEADERS_ITEMS = [
     "Last Edit Date",
     "Operation",
 ]
-
-# Google Sheet ID for the Unleashed data extract
-UNLEASHED_DATA_EXTRACT_GOOGLE_SHEET = "1OE7CnACQjFFGgIm_yFjN8Qhf0l5xEQkJqXwFV4plNlI"

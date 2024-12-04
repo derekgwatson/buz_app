@@ -5,21 +5,39 @@
 {% block content %}
 
     <h1>Generate Backorder File</h1>
-    
-    {% if upload_filename %}
-        <a href="{{ url_for('download_file', filename=original_filename.split('/')[-1]) }}">Original File</a>
-        <br>
-        <a href="{{ url_for('download_file', filename=upload_filename.split('/')[-1]) }}">Upload File</a>
 
-	{% else %}
+    {% if upload_filename %}
+        <a href="{{ url_for('download_file', filename='original_file.xlsx') }}">Original File</a>
+        <br>
+        <a href="{{ url_for('download_file', filename='upload_file.xlsx') }}">Upload File</a>
+    {% else %}
         <form action="/generate_backorder_file" method="POST" enctype="multipart/form-data">
             <div class="mb-3">
                 <label for="inventory_items_file" class="form-label">Inventory Items File:</label>
                 <input type="file" name="inventory_items_file" id="inventory_items_file" class="form-control">
             </div>
+
+            <hr>
+
+            <div class="alert alert-info" role="alert">
+                <strong>Note:</strong> You can change the spreadsheet and/or range details below.
+                If you change the spreadsheet, ensure that you share it with the service account
+                user just like the old one.
+            </div>
+
+            <div class="mb-3">
+                <label for="spreadsheet_id" class="form-label">Spreadsheet ID:</label>
+                <input type="text" name="spreadsheet_id" id="spreadsheet_id" class="form-control"
+                       placeholder="Enter Spreadsheet ID" value="{{ spreadsheet_id }}">
+            </div>
+            <div class="mb-3">
+                <label for="spreadsheet_range" class="form-label">Spreadsheet Range:</label>
+                <input type="text" name="spreadsheet_range" id="spreadsheet_range" class="form-control"
+                       placeholder="Enter Spreadsheet Range" value="{{ spreadsheet_range }}">
+            </div>
+
             <button type="submit" class="btn btn-primary">Go!</button>
         </form>
-
     {% endif %}
-	
+
 {% endblock %}
