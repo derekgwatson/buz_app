@@ -20,6 +20,7 @@ from group_options_check import (extract_codes_from_excel_flat_dedup, map_invent
 from backorders import process_inventory_backorder_with_services
 from services.remove_old_items import delete_deprecated_items_request
 from services.excel import OpenPyXLFileHandler
+from services.config_service import ConfigManager
 
 import logging
 
@@ -308,13 +309,14 @@ def generate_backorder_file():
 
     if request.method == "POST":
         # Load the existing config
-        config = load_config()
+        config_manager = ConfigManager()
 
         # Update config with user-provided values
-        spreadsheet_id_old = config.get('backorder_spreadsheet_id')
-        spreadsheet_range_old = config.get('backorder_spreadsheet_range')
-        config['backorder_spreadsheet_id'] = spreadsheet_id
-        config['backorder_spreadsheet_range'] = spreadsheet_range
+        spreadsheet_id_old = config_manager.config.get('backorder_spreadsheet_id')
+        spreadsheet_id = request.args.get('spreadsheet_id')
+        spreadsheet_range_old = config_manager.config.get('backorder_spreadsheet_range')
+        spreadsheet_range = request.args.get('spreadsheet_range')
+        config_manager.update_config_backorder(spreadsheet_id=spreadsheet_id, spreadsheet_range=spreadsheet_range)
         config_updated = spreadsheet_range_old != spreadsheet_range or spreadsheet_id_old != spreadsheet_id
         if config_updated:
             flash('Config updated', 'success')
@@ -332,9 +334,6 @@ def generate_backorder_file():
                                                                               'buz-app-439103-b6ae046c4723.json'))
 
                 # Save updated config back to the file
-                with open("config.json", "w") as f:
-                    json.dump(config, f, indent=4)
-
                 process_inventory_backorder_with_services(
                     _file_handler=g_file_handler,
                     _sheets_service=g_sheets_service,
@@ -354,8 +353,8 @@ def generate_backorder_file():
                     flash('Inventory files upload file is empty.', 'warning')
                 return render_template(
                     'generate_backorder_file.html',
-                    spreadsheet_id = config['backorder_spreadsheet_id'],
-                    spreadsheet_range = config['backorder_spreadsheet_range']
+                    spreadsheet_id = config_manager.config.get('backorder_spreadsheet_id'),
+                    spreadsheet_range= config_manager.config.get('backorder_spreadsheet_range'),
                 )
         else:
             flash('No file uploaded.', 'warning')
