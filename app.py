@@ -11,7 +11,7 @@ from data_processing import (search_items_by_supplier_code, insert_unleashed_dat
 
 from process_buz_workbooks import process_workbook
                              
-from database import get_db_connection, close_db_connection, DatabaseManager
+from database import get_db_connection, close_db_connection, DatabaseManager, init_db
 from services.google_sheets_service import GoogleSheetsService
 from helper import generate_multiple_unique_ids
 from constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
@@ -19,8 +19,10 @@ from group_options_check import (extract_codes_from_excel_flat_dedup, map_invent
                                  filter_inventory_items, extract_duplicate_codes_with_locations)
 from backorders import process_inventory_backorder_with_services
 from services.remove_old_items import delete_deprecated_items_request
+from services.excel import OpenPyXLFileHandler
 
 import logging
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,6 +34,14 @@ app = Flask(__name__)
 # Set a secret key for session management
 app.secret_key = os.urandom(24)  # Generate a random secret key
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+
+@app.cli.command("init-db")
+def initialize_database():
+    """Initialize the database tables."""
+    get_db_connection()
+    init_db(DatabaseManager(g.db))
+    print("Database initialized.")
 
 
 @app.before_request
