@@ -11,7 +11,7 @@ from services.data_processing import (search_items_by_supplier_code, insert_unle
 
 from services.process_buz_workbooks import process_workbook
                              
-from services.database import get_db_connection, close_db_connection, DatabaseManager
+from services.database import get_db_connection, close_db_connection, DatabaseManager, init_db
 from services.google_sheets_service import GoogleSheetsService
 from services.helper import generate_multiple_unique_ids
 from services.constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
@@ -19,8 +19,11 @@ from services.group_options_check import (extract_codes_from_excel_flat_dedup, m
                                           filter_inventory_items, extract_duplicate_codes_with_locations)
 from services.backorders import process_inventory_backorder_with_services
 from services.remove_old_items import delete_deprecated_items_request
+from services.excel import OpenPyXLFileHandler
+from services.config_service import ConfigManager
 
 import logging
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,6 +37,14 @@ def create_app(upload_folder="uploads"):
     return _app
 
 app = create_app()
+
+
+@app.cli.command("init-db")
+def initialize_database():
+    """Initialize the database tables."""
+    get_db_connection()
+    init_db(DatabaseManager(g.db))
+    print("Database initialized.")
 
 
 @app.before_request
@@ -300,13 +311,14 @@ def generate_backorder_file():
 
     if request.method == "POST":
         # Load the existing config
-        config = load_config()
+        config_manager = ConfigManager()
 
         # Update config with user-provided values
-        spreadsheet_id_old = config.get('backorder_spreadsheet_id')
-        spreadsheet_range_old = config.get('backorder_spreadsheet_range')
-        config['backorder_spreadsheet_id'] = spreadsheet_id
-        config['backorder_spreadsheet_range'] = spreadsheet_range
+        spreadsheet_id_old = config_manager.config.get('backorder_spreadsheet_id')
+        spreadsheet_id = request.args.get('spreadsheet_id')
+        spreadsheet_range_old = config_manager.config.get('backorder_spreadsheet_range')
+        spreadsheet_range = request.args.get('spreadsheet_range')
+        config_manager.update_config_backorder(spreadsheet_id=spreadsheet_id, spreadsheet_range=spreadsheet_range)
         config_updated = spreadsheet_range_old != spreadsheet_range or spreadsheet_id_old != spreadsheet_id
         if config_updated:
             flash('Config updated', 'success')
@@ -324,9 +336,6 @@ def generate_backorder_file():
                                                                               'buz-app-439103-b6ae046c4723.json'))
 
                 # Save updated config back to the file
-                with open("config.json", "w") as f:
-                    json.dump(config, f, indent=4)
-
                 process_inventory_backorder_with_services(
                     _file_handler=g_file_handler,
                     _sheets_service=g_sheets_service,
@@ -346,8 +355,8 @@ def generate_backorder_file():
                     flash('Inventory files upload file is empty.', 'warning')
                 return render_template(
                     'generate_backorder_file.html',
-                    spreadsheet_id = config['backorder_spreadsheet_id'],
-                    spreadsheet_range = config['backorder_spreadsheet_range']
+                    spreadsheet_id = config_manager.config.get('backorder_spreadsheet_id'),
+                    spreadsheet_range= config_manager.config.get('backorder_spreadsheet_range'),
                 )
         else:
             flash('No file uploaded.', 'warning')

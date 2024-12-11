@@ -7,4 +7,5 @@ __pycache__/
 
 uploads/
 buz_data.db
-
+run.bat
+.env
