@@ -4,6 +4,16 @@
 
 {% block content %}
     <h1>Get Buz Items by Supplier Code</h1>
+    <p>
+        This tool allows you to retrieve specific items from a Buz Excel file based on their supplier codes.
+        Simply upload the Excel file containing the Buz items and provide a list of supplier codes (one code per line).
+        The tool will filter the items and generate a new file containing only the rows that match the supplied codes.
+    </p>
+    <p>
+        This can be useful for isolating items related to specific suppliers or for further analysis of a targeted subset
+        of your inventory.
+    </p>
+
     <form action="/get_buz_items_by_supplier_codes" method="post" enctype="multipart/form-data">
         <label for="file">Excel File:</label>
         <input type="file" name="file" id="file" accept=".xlsx,.xlsm" required>
