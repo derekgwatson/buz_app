@@ -1,11 +1,23 @@
-static/buz-app-439103-b6ae046c4723.json
+# Secret stuff
+.env
+credentials/buz-app-439103-b6ae046c4723.json
+credentials/dummy_service_account.json
 
-# Ignore Python cache files and directories
+# Python prod Virtual Environment
+venv/
+lib/
+lib64/
+bin/
+
+# Python Bytecode and Cache Files
 __pycache__/
 *.pyc
 *.pyo
 
+# Deployment Scripts (if applicable)
+deploy.sh
+run.bat
+
+# Other
 uploads/
 buz_data.db
-run.bat
-.env

@@ -1,6 +1,6 @@
 import json
 import os
-from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g
+from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
 import time
 
 from data_processing import (search_items_by_supplier_code, insert_unleashed_data,
@@ -367,6 +367,11 @@ def generate_backorder_file():
             spreadsheet_id=config['backorder_spreadsheet_id'],
             spreadsheet_range=config['backorder_spreadsheet_range']
         )
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    return send_from_directory(app.static_folder, 'robots.txt')
 
 
 if __name__ == '__main__':
