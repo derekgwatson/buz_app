@@ -9,22 +9,119 @@
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
 
     <style>
+        /* General Body Styling for Dark Theme */
         body {
-            background-color: #f8f9fa;
+            background-color: #121212; /* Dark background */
+            color: #e0e0e0; /* Light text for contrast */
+            font-family: 'Arial', sans-serif; /* Clean, readable font */
         }
+
+        /* Navbar Styling */
         .navbar {
+            background-color: #1f1f1f; /* Dark navbar */
+            color: #f1f1f1; /* Light text on navbar */
             margin-bottom: 20px;
         }
+
+        .navbar a {
+            color: #f1f1f1; /* Light links */
+        }
+
+        .navbar a:hover {
+            color: #66aaff; /* Highlighted links */
+        }
+
+        /* Bootstrap Navbar adjustments for dark theme */
+        .navbar-default .navbar-nav>li>a {
+            color: #f1f1f1; /* Navbar links */
+        }
+
+        .navbar-default .navbar-nav>li>a:hover {
+            color: #66aaff; /* Hover color for navbar links */
+        }
+
+        /* Container Styling */
         .container {
             max-width: 960px;
+            margin: 0 auto;
+            padding: 20px;
         }
+
+        /* Footer Styling */
         footer {
             margin-top: 40px;
             padding: 10px 0;
             text-align: center;
-            background-color: #e3f2fd;
+            background-color: #1f1f1f; /* Dark footer */
+            color: #e0e0e0; /* Light text */
         }
-    </style>
+
+        /* Button Styling */
+        button, .btn {
+            background-color: #666;
+            color: white;
+            border: 1px solid #444;
+            padding: 10px 20px;
+            cursor: pointer;
+        }
+
+        button:hover, .btn:hover {
+            background-color: #888;
+        }
+
+        /* Input Fields (Adjusting Bootstrap forms) */
+        input, select, textarea, .form-control {
+            background-color: #333; /* Dark background for inputs */
+            color: white;
+            border: 1px solid #444;
+            padding: 10px;
+            width: 100%;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        /* Card or Box Elements (Adjusting for Bootstrap cards) */
+        .panel, .card {
+            background-color: #2a2a2a; /* Dark background for panels */
+            color: #f1f1f1; /* Light text */
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* Links */
+        a {
+            color: #66aaff; /* Light blue for links */
+        }
+
+        a:hover {
+            color: #33b5ff; /* Hover state for links */
+        }
+
+       /* Override Jumbotron background */
+        .jumbotron {
+            background-color: #2a2a2a; /* Dark background for Jumbotron */
+            color: #e0e0e0; /* Light text color for contrast */
+            border-radius: 8px; /* Optional: add rounded corners */
+            padding: 30px; /* Adjust padding as needed */
+        }
+
+        /* Jumbotron headings */
+        .jumbotron h1, .jumbotron h2, .jumbotron h3 {
+            color: #f1f1f1; /* Light headings for better visibility */
+        }
+
+        /* Jumbotron links */
+        .jumbotron a {
+            color: #66aaff; /* Light blue links */
+        }
+
+        .jumbotron a:hover {
+            color: #33b5ff; /* Hover state for links */
+        }
+</style>
+
 </head>
 <body>
 

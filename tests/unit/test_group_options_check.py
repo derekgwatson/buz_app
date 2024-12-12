@@ -1,6 +1,6 @@
 import pytest
 from services.excel import OpenPyXLFileHandler
-from group_options_check import extract_codes_from_excel_flat_dedup
+from services.group_options_check import extract_codes_from_excel_flat_dedup
 from openpyxl import Workbook
 from tempfile import NamedTemporaryFile
 

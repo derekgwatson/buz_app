@@ -1,5 +1,5 @@
 import re
-from database import DatabaseManager
+from services.database import DatabaseManager
 import logging
 from services.excel import OpenPyXLFileHandler
 

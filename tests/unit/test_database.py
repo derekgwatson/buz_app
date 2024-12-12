@@ -2,7 +2,7 @@
 
 import unittest
 from unittest.mock import MagicMock
-from database import DatabaseManager
+from services.database import DatabaseManager
 
 
 class TestDatabaseManager(unittest.TestCase):

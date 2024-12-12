@@ -1,7 +1,7 @@
 # test_data_processing.py
 
 import unittest
-from data_processing import validate_data, transform_data
+from services.data_processing import validate_data, transform_data
 
 class TestDataProcessing(unittest.TestCase):
     def test_validate_data_missing_fields(self):

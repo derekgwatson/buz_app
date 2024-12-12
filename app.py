@@ -3,21 +3,21 @@ import os
 from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
 import time
 
-from data_processing import (search_items_by_supplier_code, insert_unleashed_data,
-                             get_inventory_group_codes,  
-                             db_delete_records_by_inventory_group, db_delete_inventory_group, 
-                             get_table_row_count, get_unique_inventory_group_count, 
-                             db_delete_items_not_in_unleashed)
+from services.data_processing import (search_items_by_supplier_code, insert_unleashed_data,
+                                      get_inventory_group_codes,
+                                      db_delete_records_by_inventory_group, db_delete_inventory_group,
+                                      get_table_row_count, get_unique_inventory_group_count,
+                                      db_delete_items_not_in_unleashed)
 
-from process_buz_workbooks import process_workbook
+from services.process_buz_workbooks import process_workbook
                              
-from database import get_db_connection, close_db_connection, DatabaseManager, init_db
+from services.database import get_db_connection, close_db_connection, DatabaseManager, init_db
 from services.google_sheets_service import GoogleSheetsService
-from helper import generate_multiple_unique_ids
-from constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
-from group_options_check import (extract_codes_from_excel_flat_dedup, map_inventory_items_to_tabs,
-                                 filter_inventory_items, extract_duplicate_codes_with_locations)
-from backorders import process_inventory_backorder_with_services
+from services.helper import generate_multiple_unique_ids
+from services.constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
+from services.group_options_check import (extract_codes_from_excel_flat_dedup, map_inventory_items_to_tabs,
+                                          filter_inventory_items, extract_duplicate_codes_with_locations)
+from services.backorders import process_inventory_backorder_with_services
 from services.remove_old_items import delete_deprecated_items_request
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
@@ -30,11 +30,13 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
-app = Flask(__name__)
+def create_app(upload_folder="uploads"):
+    _app = Flask(__name__)
+    _app.secret_key = os.urandom(24)
+    _app.config['UPLOAD_FOLDER'] = upload_folder
+    return _app
 
-# Set a secret key for session management
-app.secret_key = os.urandom(24)  # Generate a random secret key
-app.config['UPLOAD_FOLDER'] = 'uploads'
+app = create_app()
 
 
 @app.cli.command("init-db")
