@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+
+{% block title %}Get Buz Items by Supplier Code{% endblock %}
+
+{% block content %}
+    <h1>Get Buz Items by Supplier Code</h1>
+    <form action="/get_buz_items_by_supplier_codes" method="post" enctype="multipart/form-data">
+        <label for="file">Excel File:</label>
+        <input type="file" name="file" id="file" accept=".xlsx,.xlsm" required>
+        <br><br>
+        <label for="supplier_codes">Supplier Codes (one per line):</label>
+        <textarea name="supplier_codes" id="supplier_codes" rows="10" cols="30" required></textarea>
+        <br><br>
+        <button type="submit">Upload and Process</button>
+    </form>
+{% endblock %}

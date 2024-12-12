@@ -23,6 +23,7 @@ from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 
 import logging
+from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
 
 
 logging.basicConfig(
@@ -30,11 +31,13 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+
 def create_app(upload_folder="uploads"):
     _app = Flask(__name__)
     _app.secret_key = os.urandom(24)
     _app.config['UPLOAD_FOLDER'] = upload_folder
     return _app
+
 
 app = create_app()
 
@@ -374,6 +377,37 @@ def generate_backorder_file():
 @app.route('/robots.txt')
 def robots_txt():
     return send_from_directory(app.static_folder, 'robots.txt')
+
+
+@app.route('/get_buz_items_by_supplier_codes', methods=['GET', 'POST'])
+def get_buz_items_by_supplier_codes():
+    if request.method == 'POST':
+        uploaded_file = request.files.get('file')
+        supplier_codes_input = request.form.get('supplier_codes')
+
+        if not uploaded_file or not supplier_codes_input:
+            return "Error: File or supplier codes missing.", 400
+
+        # Process multi-line supplier codes input
+        supplier_codes = [code.strip() for code in supplier_codes_input.splitlines() if code.strip()]
+        print(f"Processed supplier codes: {supplier_codes}")  # Debugging: Log supplier codes
+
+        if uploaded_file.filename.endswith(('.xlsx', '.xlsm')):
+            try:
+                filtered_excel = process_buz_items_by_supplier_codes(uploaded_file, supplier_codes)
+                return send_file(
+                    filtered_excel,
+                    as_attachment=True,
+                    download_name='filtered_items.xlsx',
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+            except Exception as e:
+                print(f"Error during processing: {e}")  # Debugging: Log exception
+                return f"Error: {e}", 500
+
+        return "Error: Only .xlsx or .xlsm files are supported.", 400
+
+    return render_template('get_buz_items_by_supplier_codes.html')
 
 
 if __name__ == '__main__':
