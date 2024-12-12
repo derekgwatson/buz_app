@@ -24,6 +24,7 @@ from services.config_service import ConfigManager
 
 import logging
 from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
+from services.get_matching_buz_items import process_matching_buz_items
 
 
 logging.basicConfig(
@@ -408,6 +409,33 @@ def get_buz_items_by_supplier_codes():
         return "Error: Only .xlsx or .xlsm files are supported.", 400
 
     return render_template('get_buz_items_by_supplier_codes.html')
+
+
+@app.route("/get_matching_buz_items", methods=["GET", "POST"])
+def get_matching_buz_items():
+    if request.method == "POST":
+        # Get the uploaded files
+        first_file = request.files["first_file"]
+        second_file = request.files["second_file"]
+
+        # Save the uploaded files
+        first_path = os.path.join(app.config['UPLOAD_FOLDER'], first_file.filename)
+        second_path = os.path.join(app.config['UPLOAD_FOLDER'], second_file.filename)
+        first_file.save(first_path)
+        second_file.save(second_path)
+
+        # Process the files
+        output_path = os.path.join("static", "filtered_output.xlsx")
+        matches_found = process_matching_buz_items(first_path, second_path, output_path)
+
+        if not matches_found:
+            flash("No matches found in any sheets.")
+            return render_template("get_matching_buz_items.html")
+
+        # Provide the output file for download
+        return send_file(output_path, as_attachment=True)
+
+    return render_template("get_matching_buz_items.html")
 
 
 if __name__ == '__main__':

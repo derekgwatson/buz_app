@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+
+{% block title %}Get Matching Buz Items{% endblock %}
+
+{% block content %}
+    <h1>Get Matching Buz Items</h1>
+    <p>
+        This tool is designed to help you manage updates across multiple Buz instances.
+        When a description is changed in one Buz instance, you may need to manually update
+        it in other instances. This tool streamlines that process by identifying items that
+        need to be updated in the second spreadsheet based on changes in the first.
+    </p>
+    <p>
+        For each sheet in the source file (first spreadsheet), the tool will look for rows in
+        the target file (second spreadsheet) that match based on:
+    </p>
+    <ul>
+        <li>The value in the second column (e.g., "Code").</li>
+        <li>If no match is found, the values in the fourth, fifth, and sixth columns (e.g., "D", "E", and "F") will be compared.</li>
+    </ul>
+    <p>
+        Matching rows will be included in the output file, organized by sheet. If no matches are found,
+        the process will complete without generating an output file.
+    </p>
+
+    <form action="/get_matching_buz_items" method="post" enctype="multipart/form-data">
+        <label for="first_file">Upload First Spreadsheet:</label>
+        <input type="file" id="first_file" name="first_file" required><br><br>
+
+        <label for="second_file">Upload Second Spreadsheet:</label>
+        <input type="file" id="second_file" name="second_file" required><br><br>
+
+        <button type="submit">Submit</button>
+    </form>
+{% endblock %}
