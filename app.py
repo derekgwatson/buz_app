@@ -403,10 +403,13 @@ def get_buz_items_by_supplier_codes():
                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
             except Exception as e:
-                print(f"Error during processing: {e}")  # Debugging: Log exception
-                return f"Error: {e}", 500
+                if app.debug:
+                    raise e
+                else:
+                    print(f"Error during processing: {e}")  # Debugging: Log exception
+                    flash(f"Error: {e}")
 
-        return "Error: Only .xlsx or .xlsm files are supported.", 400
+        flash("Error: Only .xlsx or .xlsm files are supported.")
 
     return render_template('get_buz_items_by_supplier_codes.html')
 
