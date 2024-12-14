@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 import json
 from io import BytesIO
+from services.config_service import ConfigManager
 
 
 def create_mock_excel(expected_headers, sheet_data):
@@ -39,11 +40,6 @@ def create_mock_excel(expected_headers, sheet_data):
 
 @pytest.fixture
 def mock_buz_inventory_items():
-    # Load expected headers from config.json
-    with open("config.json", "r") as file:
-        config = json.load(file)
-    expected_headers = config["expected_buz_inventory_item_file_headers"]
-
     sheet_data = {
         "Sheet1": [
             {"PkId": 1, "Code": "ABC123", "Description": "Item A", "Supplier Product Code": "PG1"},
@@ -59,7 +55,7 @@ def mock_buz_inventory_items():
         ],
         "EmptySheet": []  # No data rows
     }
-    mock_excel_file = create_mock_excel(expected_headers, sheet_data)
+    mock_excel_file = create_mock_excel(ConfigManager().get("headers","buz_inventory_item_file"), sheet_data)
     print(mock_excel_file)
     return mock_excel_file
 

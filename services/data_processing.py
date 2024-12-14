@@ -1,4 +1,5 @@
-import csv
+import re
+
 from services.database import DatabaseManager
 
 
@@ -28,20 +29,15 @@ def clean_value(value):
     return value
 
 
-def clear_unleashed_table():
+def clear_unleashed_table(db_manager: DatabaseManager):
     """Clear all data from the unleashed_products table."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM unleashed_products')  # Clear all rows
-    conn.commit()
-    conn.close()
-    
-    
-def insert_unleashed_data(file_path):
-    clear_unleashed_table()  # Clear the table before inserting new data
+    db_manager.execute_query('DELETE FROM unleashed_products', auto_commit=True)  # Clear all rows
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    
+def insert_unleashed_data(db_manager: DatabaseManager, file_path: str):
+    import csv
+
+    clear_unleashed_table(db_manager)  # Clear the table before inserting new data
 
     with open(file_path, 'r', encoding='UTF-8', newline='') as csvfile:
         reader = csv.DictReader(csvfile)
@@ -107,7 +103,7 @@ def insert_unleashed_data(file_path):
                 print(f"Warning: Expected 55 values but got {len(values)}. Row: {cleaned_row}")
                 continue
             
-            cursor.execute('''
+            db_manager.execute_query('''
                 INSERT INTO unleashed_products (
                     ProductCode, ProductDescription, Notes, Barcode, UnitOfMeasure,
                     MinStockAlertLevel, MaxStockAlertLevel, LabelTemplate, SOLabelTemplate,
@@ -142,73 +138,52 @@ def insert_unleashed_data(file_path):
                 )
             ''', values)
 
-    conn.commit()
-    
     # Now, delete records where IsObsoleted='yes' or IsSellable='no'
-    cursor.execute("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes' OR IsSellable = 'No'")
-    
-    conn.commit()    
-    conn.close()
-    
-    
-def generate_supplier_code_report_list():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    db_manager.execute_query("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes' OR IsSellable = 'No'")
 
+    db_manager.commit()
+
+    
+def generate_supplier_code_report_list(db_manager: DatabaseManager):
     # Retrieve all supplier codes from the unleashed products table
-    cursor.execute('SELECT DISTINCT ProductCode FROM unleashed_products')
-    product_codes = {row['ProductCode'].lower() for row in cursor.fetchall()}
+    db_manager.db.execute('SELECT DISTINCT ProductCode FROM unleashed_products')
+    product_codes = {row['ProductCode'].lower() for row in db_manager.db.cursor.fetchall()}
 
     # Retrieve all inventory items with supplier codes not in the unleashed products
-    cursor.execute('''
+    missing_codes = db_manager.execute_query('''
         SELECT SupplierProductCode, inventory_group_code, Code 
         FROM inventory_items 
         WHERE SupplierProductCode IS NOT NULL 
         AND SupplierProductCode != ''
         AND LOWER(SupplierProductCode) NOT IN (SELECT DISTINCT LOWER(ProductCode) FROM unleashed_products)
-    ''')
-    
-    # Fetching all inventory items with supplier codes not in the unleashed products
-    missing_codes = cursor.fetchall()
+    ''').fetchall()
 
-    conn.close()
-    
     return missing_codes
 
 
-
-
-
-def db_get_all_unleashed_product_codes(conn):
+def db_get_all_unleashed_product_codes(db_manager: DatabaseManager):
     """
     Retrieve all product codes from the unleashed products table (in lowercase)
 
-    :param conn: An active SQLite database connection with a row factory set to sqlite3.Row.
-    :type conn: sqlite3.Connection
+    :param db_manager:
     :return list of unleashed_product rows
     :rtype: list[tuple]
     """
-    cursor = conn.cursor()
-
-    cursor.execute('SELECT DISTINCT ProductCode FROM unleashed_products')
+    cursor = db_manager.execute_query('SELECT DISTINCT ProductCode FROM unleashed_products')
     product_codes = {row['ProductCode'].lower() for row in cursor.fetchall()}
     
-    conn.close()
     return product_codes
 
 
-def search_items_by_supplier_code(conn, code):
+def search_items_by_supplier_code(db_manager: DatabaseManager, code: str):
     """
     Search for inventory items by supplier product code
 
-    :param conn: An active SQLite database connection with a row factory set to sqlite3.Row.
-    :type conn: sqlite3.Connection
+    :param db_manager: Database Manager
     :param code: Supplier inventory code
     :type code: str
     :return: list[tuple]
     """
-    cursor = conn.cursor()
-
     # Query to find items matching the given supplier product code
     query = '''
         SELECT inventory_group_code, Code, Description, SupplierProductCode, 
@@ -216,28 +191,25 @@ def search_items_by_supplier_code(conn, code):
         FROM inventory_items 
         WHERE SupplierProductCode = ?
     '''
-    cursor.execute(query, (code,))
-    results = cursor.fetchall()
+    results = db_manager.execute_query(query, (code,)).fetchall()
     return results
 
 
-def get_inventory_group_codes(conn):
+def get_inventory_group_codes(db_manager: DatabaseManager):
     """
     Retrieve all inventory group codes from the database.
 
-    :param conn: An active SQLite database connection with a row factory set to sqlite3.Row.
-    :type conn: sqlite3.Connection
+    :param db_manager: Database Manager
     :return: A list of inventory group codes as strings.
     :rtype: list[str]
     """
-    cursor = conn.cursor()
-    cursor.execute('SELECT group_code FROM inventory_group_codes')
+    cursor = db_manager.execute_query('SELECT group_code FROM inventory_group_codes')
     codes = [row['group_code'] for row in cursor.fetchall()]
     codes.sort(key=lambda x: x.lower())  # Sort manually if necessary
     return codes
 
 
-def db_delete_inventory_group(db_manager, group_code):
+def db_delete_inventory_group(db_manager: DatabaseManager, group_code: str):
     """
     Delete an inventory group by its group code using DatabaseManager.
 
@@ -250,35 +222,31 @@ def db_delete_inventory_group(db_manager, group_code):
     db_manager.delete_item("inventory_group_codes", {"group_code": group_code})
 
 
-
-def get_table_row_count(table_name):
+def get_table_row_count(db_manager: DatabaseManager, table_name: str):
     """Get the count of rows in the specified table."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute(f'SELECT COUNT(*) FROM {table_name}')
+    cursor = db_manager.execute_query(f'SELECT COUNT(*) FROM {table_name}')
     count = cursor.fetchone()[0]
-    conn.close()
     return count
     
     
-def get_unique_inventory_group_count():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(DISTINCT inventory_group_code) FROM inventory_items')
+def get_unique_inventory_group_count(db_manager: DatabaseManager):
+    sql = 'SELECT COUNT(DISTINCT inventory_group_code) FROM inventory_items'
+    cursor = db_manager.execute_query(sql)
     count = cursor.fetchone()[0]  # Get the first item from the result
-    conn.close()
     return count
 
 
-def get_wholesale_markups(db_manager, wholesale_markups):
+def get_wholesale_markups(db_manager: DatabaseManager, wholesale_markups):
     # first clear all existing data
-    db_manager.db.execute('DELETE FROM wholesale_markups')
+    db_manager.execute_query('DELETE FROM wholesale_markups')
 
     # Insert each value into the table
-    db_manager.cursor.executemany('INSERT INTO wholesale_markups (product, markup) VALUES (?, ?)', wholesale_markups)
+    db_manager.executemany('INSERT INTO wholesale_markups (product, markup) VALUES (?, ?)', wholesale_markups)
 
-    
-def db_delete_records_by_inventory_group(db_manager, inventory_group_code):
+    db_manager.commit()
+
+
+def db_delete_records_by_inventory_group(db_manager: DatabaseManager, inventory_group_code: str):
     """
     Delete all items from given group
 
@@ -287,29 +255,30 @@ def db_delete_records_by_inventory_group(db_manager, inventory_group_code):
     """
 
     # Delete from inventory_items
-    db_manager.db.execute('DELETE FROM inventory_items WHERE inventory_group_code = ?', (inventory_group_code,))
+    db_manager.execute_query('DELETE FROM inventory_items WHERE inventory_group_code = ?', (inventory_group_code,))
     
     # Delete from pricing_data
-    db_manager.cursor.execute('DELETE FROM pricing_data WHERE inventory_group_code = ?', (inventory_group_code,))
+    db_manager.execute_query('DELETE FROM pricing_data WHERE inventory_group_code = ?', (inventory_group_code,))
+
+    db_manager.commit()
 
 
-def db_delete_items_not_in_unleashed(db_manager):
+def db_delete_items_not_in_unleashed(db_manager: DatabaseManager):
     """
 
     :param db_manager:
     """
 
     # Retrieve all supplier codes from the unleashed products table
-    db_manager.db.execute('SELECT DISTINCT SupplierProductCode FROM unleashed_products')
-    existing_supplier_codes = {row[0].lower() for row in db_manager.cursor.fetchall()}
+    cursor = db_manager.execute_query('SELECT DISTINCT SupplierProductCode FROM unleashed_products')
+    existing_supplier_codes = {row[0].lower() for row in cursor.fetchall()}
 
     # Delete inventory items with supplier codes not found in the unleashed products,
     # and ignore items with a blank SupplierProductCode
-    db_manager.db.execute(
+    db_manager.execute_query(
         'DELETE FROM inventory_items WHERE SupplierProductCode NOT IN ({}) AND SupplierProductCode <> ""'.format(
         ', '.join(['?'] * len(existing_supplier_codes))
-    ), list(existing_supplier_codes))
-
+    ), list(existing_supplier_codes), auto_commit=True)
     
     
 def validate_data(data, required_fields):

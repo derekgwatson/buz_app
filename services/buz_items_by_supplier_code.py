@@ -25,7 +25,7 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
     # Load expected headers from config.json
     with open("config.json", "r") as file:
         config = json.load(file)
-    expected_headers = config["expected_buz_inventory_item_file_headers"]
+    expected_headers = config["headers"]["buz_inventory_item_file"]
 
     # Load all sheets into a dictionary of DataFrames
     sheets = pd.read_excel(uploaded_file, sheet_name=None, engine='openpyxl', header=None)

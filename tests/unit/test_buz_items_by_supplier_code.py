@@ -1,4 +1,3 @@
-import pytest
 import pandas as pd
 from io import BytesIO
 from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes

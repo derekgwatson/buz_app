@@ -1,30 +1,14 @@
-import json
 import os
-from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
+
+from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory,\
+    Blueprint
 import time
 
-from services.data_processing import (search_items_by_supplier_code, insert_unleashed_data,
-                                      get_inventory_group_codes,
-                                      db_delete_records_by_inventory_group, db_delete_inventory_group,
-                                      get_table_row_count, get_unique_inventory_group_count,
-                                      db_delete_items_not_in_unleashed)
-
-from services.process_buz_workbooks import process_workbook
-                             
-from services.database import get_db_connection, close_db_connection, DatabaseManager, init_db
-from services.google_sheets_service import GoogleSheetsService
-from services.helper import generate_multiple_unique_ids
-from services.constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
-from services.group_options_check import (extract_codes_from_excel_flat_dedup, map_inventory_items_to_tabs,
-                                          filter_inventory_items, extract_duplicate_codes_with_locations)
-from services.backorders import process_inventory_backorder_with_services
-from services.remove_old_items import delete_deprecated_items_request
+from services.group_options_check import extract_codes_from_excel_flat_dedup
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 
 import logging
-from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
-from services.get_matching_buz_items import process_matching_buz_items
 
 
 logging.basicConfig(
@@ -33,36 +17,51 @@ logging.basicConfig(
 )
 
 
-def create_app(upload_folder="uploads"):
-    _app = Flask(__name__)
-    _app.secret_key = os.urandom(24)
-    _app.config['UPLOAD_FOLDER'] = upload_folder
-    return _app
+# Define a blueprint
+main_routes = Blueprint("main_routes", __name__)
 
 
-app = create_app()
+def create_app():
+    from services.database import DatabaseManager, init_db_command
+    import sqlite3
+    from dotenv import load_dotenv
+
+    app = Flask(__name__)
+
+    load_dotenv()
+    app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
+
+    # Configure database
+    app.config['DB_CONNECTOR'] = sqlite3.connect
+    app.config['DB_PARAMS'] = {'database': 'buz_data.db'}
+    app.config['DB_MANAGER'] = DatabaseManager(app.config['DB_CONNECTOR'](**app.config['DB_PARAMS']))
+
+    # note, ConfigManager updates app.config, so we pass in app
+    ConfigManager(app)
+
+    # Register the CLI command
+    app.cli.add_command(init_db_command)    # type: ignore
+
+    # Register Blueprints
+    app.register_blueprint(main_routes)
+
+    return app
 
 
-@app.cli.command("init-db")
-def initialize_database():
-    """Initialize the database tables."""
-    get_db_connection()
-    init_db(DatabaseManager(g.db))
-    print("Database initialized.")
-
-
-@app.before_request
+@main_routes.before_request
 def before_request():
     """
     Initialize and close database connection for each request
     """
+    from services.database import get_db_connection
+
     get_db_connection()
 
     """Track the start time of each request."""
     g.start_time = time.time()
 
 
-@app.after_request
+@main_routes.after_request
 def after_request(response):
     if hasattr(g, 'start_time'):
         duration = time.time() - g.start_time
@@ -77,24 +76,27 @@ def after_request(response):
     return response
 
 
-@app.teardown_request
+@main_routes.teardown_request
 def teardown_request(exception):
-    close_db_connection(exception)
+    app.config["DB_MANAGER"].close()
 
 
-@app.route('/debug')
+@main_routes.route('/debug')
 def debug():
     """Debug route to check g variables."""
     return f"g.start_time: {getattr(g, 'start_time', 'None')}, g.request_duration: {getattr(g, 'request_duration', 'None')}"
 
 
-@app.route('/')
+@main_routes.route('/')
 def homepage():
     return render_template('home.html')
 
 
-@app.route('/upload')
+@main_routes.route('/upload')
 def upload_form():
+    from services.data_processing import get_unique_inventory_group_count
+    from services.data_processing import get_table_row_count
+
     return render_template(
         'upload.html',
         inventory_count=get_table_row_count('inventory_items'),
@@ -104,8 +106,12 @@ def upload_form():
     )
     
 
-@app.route('/upload', methods=['POST'])
+@main_routes.route('/upload', methods=['POST'])
 def upload_file():
+    from services.data_processing import insert_unleashed_data
+    from services.process_buz_workbooks import process_workbook
+    from services.constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
+
     print("Upload request received.")  # Debug: Log when the function is called
 
     # Check for files in the request
@@ -118,7 +124,7 @@ def upload_file():
 
     if inventory_file:
         print(f"Received inventory_file: {inventory_file.filename}")  # Debug: Log file name
-        inventory_file_path = os.path.join(app.config['UPLOAD_FOLDER'], inventory_file.filename)
+        inventory_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), inventory_file.filename)
         print(f"Saving inventory file to: {inventory_file_path}")  # Debug: Log the save path
         inventory_file.save(inventory_file_path)
         print("Inventory file saved successfully.")  # Debug: Confirmation of save
@@ -132,7 +138,7 @@ def upload_file():
 
     if pricing_file:
         print(f"Received pricing_file: {pricing_file.filename}")  # Debug: Log file name
-        pricing_file_path = os.path.join(app.config['UPLOAD_FOLDER'], pricing_file.filename)
+        pricing_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), pricing_file.filename)
         print(f"Saving pricing file to: {pricing_file_path}")  # Debug: Log the save path
         pricing_file.save(pricing_file_path)
         print("Pricing file saved successfully.")  # Debug: Confirmation of save
@@ -146,7 +152,7 @@ def upload_file():
 
     if unleashed_file:
         print(f"Received unleashed_file: {unleashed_file.filename}")  # Debug: Log file name
-        unleashed_file_path = os.path.join(app.config['UPLOAD_FOLDER'], unleashed_file.filename)
+        unleashed_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), unleashed_file.filename)
         print(f"Saving unleashed file to: {unleashed_file_path}")  # Debug: Log the save path
         unleashed_file.save(unleashed_file_path)
         print("Unleashed file saved successfully.")  # Debug: Confirmation of save
@@ -161,7 +167,7 @@ def upload_file():
     return redirect(url_for('upload_form'))
 
 
-@app.route('/upload_inventory_group_codes', methods=['POST'])
+@main_routes.route('/upload_inventory_group_codes', methods=['POST'])
 def upload_inventory_group_codes():
     if 'group_codes_file' not in request.files:
         flash('No file part')
@@ -180,7 +186,7 @@ def upload_inventory_group_codes():
         for line in lines:
             group_code = line.strip()  # Remove any surrounding whitespace
             if group_code:  # Only add non-empty lines
-                db_manager.insert_item('inventory_group_codes', {'group_code': group_code})                
+                app.config["DB_MANAGER"].insert_item('inventory_group_codes', {'group_code': group_code})
                 codes_added.append(group_code)
 
     flash(f'Added inventory group codes: {", ".join(codes_added)}')
@@ -188,8 +194,10 @@ def upload_inventory_group_codes():
 
 
 # Route to search for items by supplier product code
-@app.route('/search', methods=['GET', 'POST'])
+@main_routes.route('/search', methods=['GET', 'POST'])
 def search():
+    from services.data_processing import search_items_by_supplier_code
+
     results = []
     if request.method == 'POST':
         code = request.form['code']
@@ -197,13 +205,14 @@ def search():
     return render_template('search.html', results=results)
     
 
-@app.route('/manage_inventory_groups', methods=['GET', 'POST'])
+@main_routes.route('/manage_inventory_groups', methods=['GET', 'POST'])
 def manage_inventory_groups():
+    from services.data_processing import get_inventory_group_codes
+
     if request.method == 'POST':
-        db_manager = DatabaseManager(g.db)
         # Handle adding a new inventory group code
         new_group_code = request.form['new_group_code']
-        db_manager.insert_item("inventory_group_codes", new_group_code)
+        app.config["DB_MANAGER"].insert_item("inventory_group_codes", new_group_code)
         flash(f'Added inventory group code: {new_group_code}')
         return redirect(url_for('manage_inventory_groups'))
 
@@ -212,12 +221,13 @@ def manage_inventory_groups():
     return render_template('manage_inventory_groups.html', allowed_groups=allowed_groups)
 
 
-@app.route('/delete_inventory_group/<string:inventory_group_code>', methods=['POST'])
+@main_routes.route('/delete_inventory_group/<string:inventory_group_code>', methods=['POST'])
 def delete_inventory_group(inventory_group_code):
-    db_manager = DatabaseManager(g.db)
+    from services.data_processing import db_delete_inventory_group
+    from services.data_processing import db_delete_records_by_inventory_group
 
     # Delete inventory group code
-    db_manager.delete_item("inventory_group_codes", {"group_code": inventory_group_code})
+    app.config["DB_MANAGER"].delete_item("inventory_group_codes", {"group_code": inventory_group_code})
 
     # Delete records from items and pricing tables
     db_delete_records_by_inventory_group(inventory_group_code)
@@ -229,23 +239,27 @@ def delete_inventory_group(inventory_group_code):
     return redirect(url_for('manage_inventory_groups'))
 
 
-@app.route('/download/<filename>')
+@main_routes.route('/download/<filename>')
 def download_file(filename):
     uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
     file_path = os.path.join(uploads_dir, filename)
     return send_file(file_path, as_attachment=True)
 
 
-@app.route('/delete_items_not_in_unleashed', methods=['POST'])
+@main_routes.route('/delete_items_not_in_unleashed', methods=['POST'])
 def delete_items_not_in_unleashed():
+    from services.data_processing import db_delete_items_not_in_unleashed
+
     db_delete_items_not_in_unleashed()
     flash('All inventory items not found in the unleashed products and with a blank SupplierProductCode ' +
           'have been deleted.')
     return redirect(url_for('get_items_not_in_unleashed'))  # Redirect to the report page
 
 
-@app.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
+@main_routes.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
 def get_items_not_in_unleashed():
+    from services.remove_old_items import delete_deprecated_items_request
+
     if request.method == 'POST':
         output_file = delete_deprecated_items_request(request)
 
@@ -255,9 +269,12 @@ def get_items_not_in_unleashed():
         return render_template('delete_items_not_in_unleashed.html')
 
 
-@app.route('/get_group_option_codes', methods=['GET', 'POST'])
+@main_routes.route('/get_group_option_codes', methods=['GET', 'POST'])
 def get_group_option_codes():
     if request.method == 'POST':
+        from services.group_options_check import map_inventory_items_to_tabs
+        from services.group_options_check import filter_inventory_items
+
         # Initialize the file handler for the input workbook
         g_file_handler = OpenPyXLFileHandler(file=request.files.get('group_options_file'))
         items = extract_codes_from_excel_flat_dedup(g_file_handler)
@@ -271,9 +288,11 @@ def get_group_option_codes():
         return render_template('get_group_option_codes.html')
 
 
-@app.route('/get_duplicate_codes', methods=["GET", "POST"])
+@main_routes.route('/get_duplicate_codes', methods=["GET", "POST"])
 def get_group_codes_duplicated():
     if request.method == 'POST':
+        from services.group_options_check import extract_duplicate_codes_with_locations
+
         # Initialize the file handler for the input workbook
         g_file_handler = OpenPyXLFileHandler(file=request.files.get('group_options_file'))
         items = extract_codes_from_excel_flat_dedup(g_file_handler)
@@ -285,9 +304,11 @@ def get_group_codes_duplicated():
         return render_template('get_duplicate_codes.html')
 
 
-@app.route('/generate_codes', methods=["GET", "POST"])
+@main_routes.route('/generate_codes', methods=["GET", "POST"])
 def generate_codes():
     if request.method == "POST":
+        from services.helper import generate_multiple_unique_ids
+
         try:
             count = int(request.form.get("count", 1))
             if count <= 0:
@@ -303,8 +324,10 @@ def generate_codes():
         return render_template('show_generated_ids.html')
 
 
-@app.route('/generate_backorder_file', methods=["GET", "POST"])
+@main_routes.route('/generate_backorder_file', methods=["GET", "POST"])
 def generate_backorder_file():
+    from services.google_sheets_service import GoogleSheetsService
+
     # Get the directory where the script is located
     base_dir = os.path.dirname(os.path.abspath(__file__))
     uploads_dir = os.path.join(base_dir, 'uploads')
@@ -314,17 +337,12 @@ def generate_backorder_file():
         os.makedirs(uploads_dir)
 
     if request.method == "POST":
-        # Load the existing config
+        # Update config with user-provided values
         config_manager = ConfigManager()
 
-        # Update config with user-provided values
-        spreadsheet_id_old = config_manager.config.get('backorder_spreadsheet_id')
         spreadsheet_id = request.args.get('spreadsheet_id')
-        spreadsheet_range_old = config_manager.config.get('backorder_spreadsheet_range')
         spreadsheet_range = request.args.get('spreadsheet_range')
-        config_manager.update_config_backorder(spreadsheet_id=spreadsheet_id, spreadsheet_range=spreadsheet_range)
-        config_updated = spreadsheet_range_old != spreadsheet_range or spreadsheet_id_old != spreadsheet_id
-        if config_updated:
+        if config_manager.update_config_backorders(spreadsheet_id, spreadsheet_range):
             flash('Config updated', 'success')
 
         if 'inventory_items_file' in request.files:
@@ -338,6 +356,8 @@ def generate_backorder_file():
                 g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_items_file'))
                 g_sheets_service = GoogleSheetsService(json_file=os.path.join(os.path.dirname(__file__), 'static',
                                                                               'buz-app-439103-b6ae046c4723.json'))
+
+                from services.backorders import process_inventory_backorder_with_services
 
                 # Save updated config back to the file
                 process_inventory_backorder_with_services(
@@ -355,33 +375,30 @@ def generate_backorder_file():
                     upload_filename=upload_filename
                 )
             else:
-                if not config_updated:
-                    flash('Inventory files upload file is empty.', 'warning')
                 return render_template(
                     'generate_backorder_file.html',
-                    spreadsheet_id = config_manager.config.get('backorder_spreadsheet_id'),
-                    spreadsheet_range= config_manager.config.get('backorder_spreadsheet_range'),
+                    spreadsheet_id = app.config["spreadsheets.backorders.id"],
+                    spreadsheet_range= app.config["spreadsheets.backorders.range"],
                 )
         else:
             flash('No file uploaded.', 'warning')
     else:
-        # Load config for defaults
-        with open("config.json") as f:
-            config = json.load(f)
         return render_template(
             'generate_backorder_file.html',
-            spreadsheet_id=config['backorder_spreadsheet_id'],
-            spreadsheet_range=config['backorder_spreadsheet_range']
+            spreadsheet_id=app.config["spreadsheets.backorders.id"],
+            spreadsheet_range=app.config["spreadsheets.backorders.range"]
         )
 
 
-@app.route('/robots.txt')
+@main_routes.route('/robots.txt')
 def robots_txt():
     return send_from_directory(app.static_folder, 'robots.txt')
 
 
-@app.route('/get_buz_items_by_supplier_codes', methods=['GET', 'POST'])
+@main_routes.route('/get_buz_items_by_supplier_codes', methods=['GET', 'POST'])
 def get_buz_items_by_supplier_codes():
+    from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
+
     if request.method == 'POST':
         uploaded_file = request.files.get('file')
         supplier_codes_input = request.form.get('supplier_codes')
@@ -414,16 +431,18 @@ def get_buz_items_by_supplier_codes():
     return render_template('get_buz_items_by_supplier_codes.html')
 
 
-@app.route("/get_matching_buz_items", methods=["GET", "POST"])
+@main_routes.route("/get_matching_buz_items", methods=["GET", "POST"])
 def get_matching_buz_items():
+    from services.get_matching_buz_items import process_matching_buz_items
+
     if request.method == "POST":
         # Get the uploaded files
         first_file = request.files["first_file"]
         second_file = request.files["second_file"]
 
         # Save the uploaded files
-        first_path = os.path.join(app.config['UPLOAD_FOLDER'], first_file.filename)
-        second_path = os.path.join(app.config['UPLOAD_FOLDER'], second_file.filename)
+        first_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), first_file.filename)
+        second_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), second_file.filename)
         first_file.save(first_path)
         second_file.save(second_path)
 
@@ -443,4 +462,5 @@ def get_matching_buz_items():
 
 if __name__ == '__main__':
     # Initialize your API wrappers
+    app = create_app()
     app.run(debug=True)

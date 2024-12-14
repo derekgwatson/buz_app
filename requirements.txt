@@ -61,3 +61,6 @@ Werkzeug==3.0.1
 wsproto==1.2.0
 zope.event==4.5.0
 zope.interface==5.5.2
+
+pytest~=7.2.0
+python-dotenv~=1.0.1
