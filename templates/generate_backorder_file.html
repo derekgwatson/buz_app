@@ -7,9 +7,9 @@
     <h1>Generate Backorder File</h1>
 
     {% if upload_filename %}
-        <a href="{{ url_for('download_file', filename='original_file.xlsx') }}">Original File</a>
+        <a href="{{ url_for('download_file', filename=original_filename) }}">Original File</a>
         <br>
-        <a href="{{ url_for('download_file', filename='upload_file.xlsx') }}">Upload File</a>
+        <a href="{{ url_for('download_file', filename=upload_filename) }}">Upload File</a>
     {% else %}
         <form action="/generate_backorder_file" method="POST" enctype="multipart/form-data">
             <div class="mb-3">

@@ -9,8 +9,6 @@ def process_inventory_backorder_with_services(
     _sheets_service: GoogleSheetsService,
     spreadsheet_id: str,
     range_name: str,
-    original_filename: str,
-    upload_filename: str,
     header_row: int = 1,
 ):
     """
@@ -131,8 +129,5 @@ def process_inventory_backorder_with_services(
             for original_row in original_rows:
                 original_sheet.append(list(original_row.values()))
 
-    # Step 4: Save the workbooks
-    upload_workbook.save(upload_filename)
-    original_workbook.save(original_filename)
-    print(f"Upload file created: {upload_filename}")
-    print(f"Original values file created: {original_filename}")
+    # Step 4: return the workbooks (to save them, or inspect them if testing)
+    return upload_workbook, original_workbook

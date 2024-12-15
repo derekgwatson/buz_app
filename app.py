@@ -1,7 +1,6 @@
 import os
 
-from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory,\
-    Blueprint
+from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
 import time
 
 from services.group_options_check import extract_codes_from_excel_flat_dedup
@@ -43,7 +42,7 @@ def before_request():
     """
     from services.database import get_db_connection
 
-    get_db_connection()
+    g.db = get_db_connection()
 
     """Track the start time of each request."""
     g.start_time = time.time()
@@ -66,7 +65,9 @@ def after_request(response):
 
 @app.teardown_request
 def teardown_request(exception):
-    app.config["DB_MANAGER"].close()
+    db = getattr(g, 'db', None)
+    if db is not None:
+        db.close()
 
 
 @app.route('/debug')
@@ -100,8 +101,6 @@ def upload_file():
     from services.process_buz_workbooks import process_workbook
     from services.constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
 
-    print("Upload request received.")  # Debug: Log when the function is called
-
     # Check for files in the request
     inventory_file = request.files.get('inventory_file')
     pricing_file = request.files.get('pricing_file')
@@ -111,11 +110,8 @@ def upload_file():
     uploaded_files = []
 
     if inventory_file:
-        print(f"Received inventory_file: {inventory_file.filename}")  # Debug: Log file name
         inventory_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), inventory_file.filename)
-        print(f"Saving inventory file to: {inventory_file_path}")  # Debug: Log the save path
         inventory_file.save(inventory_file_path)
-        print("Inventory file saved successfully.")  # Debug: Confirmation of save
         process_workbook(
             file_handler=OpenPyXLFileHandler(file_path=inventory_file_path),
             table_name='inventory_items',
@@ -125,11 +121,8 @@ def upload_file():
         uploaded_files.append('inventory_file')
 
     if pricing_file:
-        print(f"Received pricing_file: {pricing_file.filename}")  # Debug: Log file name
         pricing_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), pricing_file.filename)
-        print(f"Saving pricing file to: {pricing_file_path}")  # Debug: Log the save path
         pricing_file.save(pricing_file_path)
-        print("Pricing file saved successfully.")  # Debug: Confirmation of save
         process_workbook(
             file_handler=OpenPyXLFileHandler(file_path=pricing_file_path),
             table_name='pricing_data',
@@ -139,16 +132,12 @@ def upload_file():
         uploaded_files.append('pricing_file')
 
     if unleashed_file:
-        print(f"Received unleashed_file: {unleashed_file.filename}")  # Debug: Log file name
         unleashed_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), unleashed_file.filename)
-        print(f"Saving unleashed file to: {unleashed_file_path}")  # Debug: Log the save path
         unleashed_file.save(unleashed_file_path)
-        print("Unleashed file saved successfully.")  # Debug: Confirmation of save
         insert_unleashed_data(unleashed_file_path)
         uploaded_files.append('unleashed_file')
 
     if not uploaded_files:
-        print("No files to upload.")  # Debug: Log when no files are present
         return 'No files to upload'
 
     flash(f'Files successfully uploaded and data stored in the database')
@@ -328,39 +317,42 @@ def generate_backorder_file():
         # Update config with user-provided values
         config_manager = ConfigManager()
 
-        spreadsheet_id = request.args.get('spreadsheet_id')
-        spreadsheet_range = request.args.get('spreadsheet_range')
+        spreadsheet_id = request.form.get('spreadsheet_id')
+        spreadsheet_range = request.form.get('spreadsheet_range')
         if config_manager.update_config_backorders(spreadsheet_id, spreadsheet_range):
             flash('Config updated', 'success')
 
         if 'inventory_items_file' in request.files:
-            original_filename = os.path.join(uploads_dir, 'original_file.xlsx')
-            upload_filename = os.path.join(uploads_dir, 'upload_file.xlsx')
-
             inventory_items_file = request.files.get('inventory_items_file')
+
             if inventory_items_file and \
                     inventory_items_file.filename.strip() != '' and \
-                    inventory_items_file.content_length > 0:
-                g_file_handler = OpenPyXLFileHandler(file=request.files.get('inventory_items_file'))
-                g_sheets_service = GoogleSheetsService(json_file=os.path.join(os.path.dirname(__file__), 'static',
+                    len(inventory_items_file.read()) > 0:
+                inventory_items_file.seek(0)
+                g_file_handler = OpenPyXLFileHandler(file=inventory_items_file)
+                g_sheets_service = GoogleSheetsService(json_file=os.path.join(os.path.dirname(__file__), 'credentials',
                                                                               'buz-app-439103-b6ae046c4723.json'))
 
                 from services.backorders import process_inventory_backorder_with_services
 
                 # Save updated config back to the file
-                process_inventory_backorder_with_services(
+                upload_wb, original_wb = process_inventory_backorder_with_services(
                     _file_handler=g_file_handler,
                     _sheets_service=g_sheets_service,
                     spreadsheet_id=spreadsheet_id,
                     range_name=spreadsheet_range,
-                    original_filename=original_filename,
-                    upload_filename=upload_filename,
                     header_row=2,
                 )
+                original_filename = 'original_file.xlsx'
+                upload_filename = 'upload_file.xlsx'
+
+                upload_wb.save(upload_filename)
+                original_wb.save(original_filename)
+
                 return render_template(
                     'generate_backorder_file.html',
                     original_filename=original_filename,
-                    upload_filename=upload_filename
+                    upload_filename=upload_filename,
                 )
             else:
                 return render_template(
@@ -396,7 +388,6 @@ def get_buz_items_by_supplier_codes():
 
         # Process multi-line supplier codes input
         supplier_codes = [code.strip() for code in supplier_codes_input.splitlines() if code.strip()]
-        print(f"Processed supplier codes: {supplier_codes}")  # Debugging: Log supplier codes
 
         if uploaded_file.filename.endswith(('.xlsx', '.xlsm')):
             try:
@@ -411,7 +402,6 @@ def get_buz_items_by_supplier_codes():
                 if app.debug:
                     raise e
                 else:
-                    print(f"Error during processing: {e}")  # Debugging: Log exception
                     flash(f"Error: {e}")
 
         flash("Error: Only .xlsx or .xlsm files are supported.")
