@@ -9,6 +9,9 @@ from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 
 import logging
+from services.database import DatabaseManager, init_db_command
+import sqlite3
+from dotenv import load_dotenv
 
 
 logging.basicConfig(
@@ -16,39 +19,24 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+app = Flask(__name__)
 
-# Define a blueprint
-main_routes = Blueprint("main_routes", __name__)
+load_dotenv()
+app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
 
+# Configure database
+app.config['DB_CONNECTOR'] = sqlite3.connect
+app.config['DB_PARAMS'] = {'database': 'buz_data.db'}
+app.config['DB_MANAGER'] = DatabaseManager(app.config['DB_CONNECTOR'](**app.config['DB_PARAMS']))
 
-def create_app():
-    from services.database import DatabaseManager, init_db_command
-    import sqlite3
-    from dotenv import load_dotenv
+# note, ConfigManager updates app.config, so we pass in app
+ConfigManager(app)
 
-    app = Flask(__name__)
-
-    load_dotenv()
-    app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
-
-    # Configure database
-    app.config['DB_CONNECTOR'] = sqlite3.connect
-    app.config['DB_PARAMS'] = {'database': 'buz_data.db'}
-    app.config['DB_MANAGER'] = DatabaseManager(app.config['DB_CONNECTOR'](**app.config['DB_PARAMS']))
-
-    # note, ConfigManager updates app.config, so we pass in app
-    ConfigManager(app)
-
-    # Register the CLI command
-    app.cli.add_command(init_db_command)    # type: ignore
-
-    # Register Blueprints
-    app.register_blueprint(main_routes)
-
-    return app
+# Register the CLI command
+app.cli.add_command(init_db_command)    # type: ignore
 
 
-@main_routes.before_request
+@app.before_request
 def before_request():
     """
     Initialize and close database connection for each request
@@ -61,7 +49,7 @@ def before_request():
     g.start_time = time.time()
 
 
-@main_routes.after_request
+@app.after_request
 def after_request(response):
     if hasattr(g, 'start_time'):
         duration = time.time() - g.start_time
@@ -76,23 +64,23 @@ def after_request(response):
     return response
 
 
-@main_routes.teardown_request
+@app.teardown_request
 def teardown_request(exception):
     app.config["DB_MANAGER"].close()
 
 
-@main_routes.route('/debug')
+@app.route('/debug')
 def debug():
     """Debug route to check g variables."""
     return f"g.start_time: {getattr(g, 'start_time', 'None')}, g.request_duration: {getattr(g, 'request_duration', 'None')}"
 
 
-@main_routes.route('/')
+@app.route('/')
 def homepage():
     return render_template('home.html')
 
 
-@main_routes.route('/upload')
+@app.route('/upload')
 def upload_form():
     from services.data_processing import get_unique_inventory_group_count
     from services.data_processing import get_table_row_count
@@ -106,7 +94,7 @@ def upload_form():
     )
     
 
-@main_routes.route('/upload', methods=['POST'])
+@app.route('/upload', methods=['POST'])
 def upload_file():
     from services.data_processing import insert_unleashed_data
     from services.process_buz_workbooks import process_workbook
@@ -167,7 +155,7 @@ def upload_file():
     return redirect(url_for('upload_form'))
 
 
-@main_routes.route('/upload_inventory_group_codes', methods=['POST'])
+@app.route('/upload_inventory_group_codes', methods=['POST'])
 def upload_inventory_group_codes():
     if 'group_codes_file' not in request.files:
         flash('No file part')
@@ -194,7 +182,7 @@ def upload_inventory_group_codes():
 
 
 # Route to search for items by supplier product code
-@main_routes.route('/search', methods=['GET', 'POST'])
+@app.route('/search', methods=['GET', 'POST'])
 def search():
     from services.data_processing import search_items_by_supplier_code
 
@@ -205,7 +193,7 @@ def search():
     return render_template('search.html', results=results)
     
 
-@main_routes.route('/manage_inventory_groups', methods=['GET', 'POST'])
+@app.route('/manage_inventory_groups', methods=['GET', 'POST'])
 def manage_inventory_groups():
     from services.data_processing import get_inventory_group_codes
 
@@ -221,7 +209,7 @@ def manage_inventory_groups():
     return render_template('manage_inventory_groups.html', allowed_groups=allowed_groups)
 
 
-@main_routes.route('/delete_inventory_group/<string:inventory_group_code>', methods=['POST'])
+@app.route('/delete_inventory_group/<string:inventory_group_code>', methods=['POST'])
 def delete_inventory_group(inventory_group_code):
     from services.data_processing import db_delete_inventory_group
     from services.data_processing import db_delete_records_by_inventory_group
@@ -239,14 +227,14 @@ def delete_inventory_group(inventory_group_code):
     return redirect(url_for('manage_inventory_groups'))
 
 
-@main_routes.route('/download/<filename>')
+@app.route('/download/<filename>')
 def download_file(filename):
     uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
     file_path = os.path.join(uploads_dir, filename)
     return send_file(file_path, as_attachment=True)
 
 
-@main_routes.route('/delete_items_not_in_unleashed', methods=['POST'])
+@app.route('/delete_items_not_in_unleashed', methods=['POST'])
 def delete_items_not_in_unleashed():
     from services.data_processing import db_delete_items_not_in_unleashed
 
@@ -256,7 +244,7 @@ def delete_items_not_in_unleashed():
     return redirect(url_for('get_items_not_in_unleashed'))  # Redirect to the report page
 
 
-@main_routes.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
+@app.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
 def get_items_not_in_unleashed():
     from services.remove_old_items import delete_deprecated_items_request
 
@@ -269,7 +257,7 @@ def get_items_not_in_unleashed():
         return render_template('delete_items_not_in_unleashed.html')
 
 
-@main_routes.route('/get_group_option_codes', methods=['GET', 'POST'])
+@app.route('/get_group_option_codes', methods=['GET', 'POST'])
 def get_group_option_codes():
     if request.method == 'POST':
         from services.group_options_check import map_inventory_items_to_tabs
@@ -288,7 +276,7 @@ def get_group_option_codes():
         return render_template('get_group_option_codes.html')
 
 
-@main_routes.route('/get_duplicate_codes', methods=["GET", "POST"])
+@app.route('/get_duplicate_codes', methods=["GET", "POST"])
 def get_group_codes_duplicated():
     if request.method == 'POST':
         from services.group_options_check import extract_duplicate_codes_with_locations
@@ -304,7 +292,7 @@ def get_group_codes_duplicated():
         return render_template('get_duplicate_codes.html')
 
 
-@main_routes.route('/generate_codes', methods=["GET", "POST"])
+@app.route('/generate_codes', methods=["GET", "POST"])
 def generate_codes():
     if request.method == "POST":
         from services.helper import generate_multiple_unique_ids
@@ -324,7 +312,7 @@ def generate_codes():
         return render_template('show_generated_ids.html')
 
 
-@main_routes.route('/generate_backorder_file', methods=["GET", "POST"])
+@app.route('/generate_backorder_file', methods=["GET", "POST"])
 def generate_backorder_file():
     from services.google_sheets_service import GoogleSheetsService
 
@@ -390,12 +378,12 @@ def generate_backorder_file():
         )
 
 
-@main_routes.route('/robots.txt')
+@app.route('/robots.txt')
 def robots_txt():
     return send_from_directory(app.static_folder, 'robots.txt')
 
 
-@main_routes.route('/get_buz_items_by_supplier_codes', methods=['GET', 'POST'])
+@app.route('/get_buz_items_by_supplier_codes', methods=['GET', 'POST'])
 def get_buz_items_by_supplier_codes():
     from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
 
@@ -431,7 +419,7 @@ def get_buz_items_by_supplier_codes():
     return render_template('get_buz_items_by_supplier_codes.html')
 
 
-@main_routes.route("/get_matching_buz_items", methods=["GET", "POST"])
+@app.route("/get_matching_buz_items", methods=["GET", "POST"])
 def get_matching_buz_items():
     from services.get_matching_buz_items import process_matching_buz_items
 
@@ -462,5 +450,4 @@ def get_matching_buz_items():
 
 if __name__ == '__main__':
     # Initialize your API wrappers
-    app = create_app()
     app.run(debug=True)
