@@ -7,6 +7,15 @@ import click
 DATABASE = 'buz_data.db'
 
 
+def create_db_manager():
+    db_connector = sqlite3.connect
+    db_params = {
+        "database": DATABASE,
+        "detect_types": sqlite3.PARSE_DECLTYPES
+    }
+    return DatabaseManager(db_connector(**db_params))
+
+
 def get_db_connection():
     """
     Get a database connection and store it in the Flask `g` object.
@@ -25,9 +34,9 @@ def init_db_command():
     """
     Initialize the database using the CLI command.
     """
-    db_manager = current_app.config['DB_MANAGER']
     try:
         print("Initializing the database...")
+        db_manager = create_db_manager()
         tables = {
             "inventory_items": '''
                 CREATE TABLE IF NOT EXISTS inventory_items (

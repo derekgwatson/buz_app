@@ -8,7 +8,7 @@ from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 
 import logging
-from services.database import DatabaseManager, init_db_command
+from services.database import init_db_command
 import sqlite3
 from dotenv import load_dotenv
 
@@ -26,7 +26,6 @@ app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
 # Configure database
 app.config['DB_CONNECTOR'] = sqlite3.connect
 app.config['DB_PARAMS'] = {'database': 'buz_data.db'}
-app.config['DB_MANAGER'] = DatabaseManager(app.config['DB_CONNECTOR'](**app.config['DB_PARAMS']))
 
 # note, ConfigManager updates app.config, so we pass in app
 ConfigManager(app)
@@ -40,9 +39,9 @@ def before_request():
     """
     Initialize and close database connection for each request
     """
-    from services.database import get_db_connection
+    from services.database import create_db_manager
 
-    g.db = get_db_connection()
+    g.db = create_db_manager()
 
     """Track the start time of each request."""
     g.start_time = time.time()
@@ -88,10 +87,10 @@ def upload_form():
 
     return render_template(
         'upload.html',
-        inventory_count=get_table_row_count('inventory_items'),
-        pricing_count=get_table_row_count('pricing_data'),
-        unleashed_count=get_table_row_count('unleashed_products'),
-        inventory_group_count=get_unique_inventory_group_count()
+        inventory_count=get_table_row_count(g.db, 'inventory_items'),
+        pricing_count=get_table_row_count(g.db, 'pricing_data'),
+        unleashed_count=get_table_row_count(g.db, 'unleashed_products'),
+        inventory_group_count=get_unique_inventory_group_count(g.db)
     )
     
 
