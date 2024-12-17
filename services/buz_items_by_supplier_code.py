@@ -13,13 +13,15 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
     import pandas as pd
     from io import BytesIO
     import json
+    from werkzeug.datastructures import FileStorage
+    import re
 
     # Check if the file is provided and not empty
     if not uploaded_file:
         raise ValueError("No file uploaded.")
 
     # Check if the uploaded file is empty
-    if not isinstance(uploaded_file, BytesIO):
+    if not isinstance(uploaded_file, FileStorage):
         raise TypeError("Unsupported file type. Expected a BytesIO object.")
 
     # Load expected headers from config.json
@@ -33,15 +35,30 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
     filtered_sheets = {}
 
     for sheet_name, df in sheets.items():
+        if sheet_name != 'ROLL':
+            continue
         print(f"Processing sheet: {sheet_name}")  # Debugging: Log sheet name
 
         # Check if the sheet has at least two rows
         if df.shape[0] > 1:
             row_2 = df.iloc[1].fillna("")  # Row 2 (index 1), fill NaN with empty strings
 
+            # Normalize headers: Convert to strings, strip whitespace, and remove trailing '*'
+            def clean_header(cell):
+                return re.sub(r'\*+$', '', str(cell).strip())  # Remove trailing '*' and strip whitespace
+
+            actual_headers = [clean_header(cell) for cell in row_2.tolist()[:len(expected_headers)]]
+
+            print(f"Expected: {expected_headers}")
+            print(f"Actual: {actual_headers}")
+
             # Validate headers: either empty or matches expected headers
-            if row_2.str.strip().tolist() == [""] * len(row_2) or row_2.tolist()[
-                                                                  :len(expected_headers)] == expected_headers:
+            if all(cell == "" for cell in row_2) or actual_headers == expected_headers:
+                print("Headers validated successfully.")
+            else:
+                print("Header validation failed.")
+
+            if all(cell == "" for cell in row_2) or actual_headers == expected_headers:
                 print(f"Valid headers in sheet '{sheet_name}'.")
 
                 # Remove trailing asterisks from titles in row 2

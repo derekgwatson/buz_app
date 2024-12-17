@@ -391,19 +391,23 @@ def get_buz_items_by_supplier_codes():
         if uploaded_file.filename.endswith(('.xlsx', '.xlsm')):
             try:
                 filtered_excel = process_buz_items_by_supplier_codes(uploaded_file, supplier_codes)
-                return send_file(
-                    filtered_excel,
-                    as_attachment=True,
-                    download_name='filtered_items.xlsx',
-                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                )
+                if filtered_excel:
+                    return send_file(
+                        filtered_excel,
+                        as_attachment=True,
+                        download_name='filtered_items.xlsx',
+                        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
+                else:
+                    flash("Nothing found")
             except Exception as e:
                 if app.debug:
                     raise e
                 else:
                     flash(f"Error: {e}")
 
-        flash("Error: Only .xlsx or .xlsm files are supported.")
+        else:
+            flash("Error: Only .xlsx or .xlsm files are supported.")
 
     return render_template('get_buz_items_by_supplier_codes.html')
 

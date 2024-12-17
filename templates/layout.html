@@ -8,166 +8,202 @@
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
 
-    <style>
-        /* General Body Styling for Dark Theme */
-        body {
-            background-color: #121212; /* Dark background */
-            color: #e0e0e0; /* Light text for contrast */
-            font-family: 'Arial', sans-serif; /* Clean, readable font */
-        }
+<style>
+/* General Body Styling for Dark Theme */
+body {
+    background: linear-gradient(135deg, #121212, #1c1c1c, #262626); /* Gradient background */
+    color: #e0e0e0; /* Light text for contrast */
+    font-family: 'Arial', sans-serif; /* Clean, readable font */
+}
 
-        /* Navbar Styling */
-        .navbar {
-            background-color: #1f1f1f; /* Dark navbar */
-            color: #f1f1f1; /* Light text on navbar */
-            margin-bottom: 20px;
-        }
+/* Navbar Styling */
+.navbar {
+    background-color: #1f1f1f; /* Dark background */
+    border-bottom: 2px solid #66d9ef; /* Subtle border */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
 
-        .navbar a {
-            color: #f1f1f1; /* Light links */
-        }
+.navbar-brand {
+    color: #66d9ef !important; /* Bright teal for branding */
+    font-weight: bold;
+    font-size: 20px;
+}
 
-        .navbar a:hover {
-            color: #66aaff; /* Highlighted links */
-        }
+.navbar-nav > li > a {
+    color: #f1f1f1 !important; /* Light grey for links */
+    font-weight: 500;
+    transition: color 0.3s ease;
+}
 
-        /* Bootstrap Navbar adjustments for dark theme */
-        .navbar-default .navbar-nav>li>a {
-            color: #f1f1f1; /* Navbar links */
-        }
+.navbar-nav > li > a:hover,
+.navbar-nav > li > a:focus {
+    color: #2aa198 !important; /* Teal hover */
+    background-color: transparent;
+}
 
-        .navbar-default .navbar-nav>li>a:hover {
-            color: #66aaff; /* Hover color for navbar links */
-        }
+/* Active and Open Menu Title */
+.navbar-nav > li.open > a,
+.navbar-nav > li.open > a:focus,
+.navbar-nav > li.open > a:hover {
+    background-color: #2a2a2a !important; /* Dark background for open state */
+    color: #66d9ef !important; /* Bright text for open dropdown */
+    border-bottom: 2px solid #66d9ef; /* Optional: underline */
+}
 
-        /* Container Styling */
-        .container {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 20px;
-        }
+/* Dropdown Menu */
+.dropdown-menu {
+    background-color: #2a2a2a; /* Dark background */
+    border: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5); /* Subtle shadow */
+    padding: 5px 0;
+    min-width: 200px; /* Ensure dropdown has decent width */
+}
 
-        /* Footer Styling */
-        footer {
-            margin-top: 40px;
-            padding: 10px 0;
-            text-align: center;
-            background-color: #1f1f1f; /* Dark footer */
-            color: #e0e0e0; /* Light text */
-        }
+.dropdown-menu > li > a {
+    color: #e0e0e0; /* Light grey text */
+    padding: 10px 15px;
+    transition: background 0.3s ease, color 0.3s ease;
+}
 
-        /* Button Styling */
-        button, .btn {
-            background-color: #666;
-            color: white;
-            border: 1px solid #444;
-            padding: 10px 20px;
-            cursor: pointer;
-        }
+.dropdown-menu > li > a:hover {
+    background-color: #2aa198; /* Teal background on hover */
+    color: #ffffff; /* White text on hover */
+}
 
-        button:hover, .btn:hover {
-            background-color: #888;
-        }
+.dropdown-menu > li.active > a,
+.dropdown-menu > li.active > a:focus {
+    background-color: #66d9ef; /* Highlight active dropdown item */
+    color: #ffffff;
+}
 
-        /* Input Fields (Adjusting Bootstrap forms) */
-        input, select, textarea, .form-control {
-            background-color: #333; /* Dark background for inputs */
-            color: white;
-            border: 1px solid #444;
-            padding: 10px;
-            width: 100%;
-            margin-top: 10px;
-            margin-bottom: 10px;
-        }
+/* Disabled Dropdown Menu Title */
+.navbar-nav > li.disabled > a {
+    color: #777777 !important; /* Muted text */
+    pointer-events: none;
+    background-color: transparent;
+}
 
-        /* Card or Box Elements (Adjusting for Bootstrap cards) */
-        .panel, .card {
-            background-color: #2a2a2a; /* Dark background for panels */
-            color: #f1f1f1; /* Light text */
-            border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            padding: 20px;
-            margin-bottom: 20px;
-        }
+/* Buttons */
+button, .btn {
+    background-color: #3c8dbc; /* Blue button */
+    color: white;
+    border: 1px solid #357ca5;
+    padding: 10px 20px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
 
-        /* Links */
-        a {
-            color: #66aaff; /* Light blue for links */
-        }
+button:hover, .btn:hover {
+    background-color: #2aa198; /* Teal hover */
+    color: white;
+}
 
-        a:hover {
-            color: #33b5ff; /* Hover state for links */
-        }
+/* Input Fields */
+input, select, textarea, .form-control {
+    background-color: #333; /* Dark input fields */
+    color: white;
+    border: 1px solid #444;
+    padding: 10px;
+    margin: 10px 0;
+}
 
-       /* Override Jumbotron background */
-        .jumbotron {
-            background-color: #2a2a2a; /* Dark background for Jumbotron */
-            color: #e0e0e0; /* Light text color for contrast */
-            border-radius: 8px; /* Optional: add rounded corners */
-            padding: 30px; /* Adjust padding as needed */
-        }
+/* Force file input and textarea to behave consistently */
+input[type="file"], textarea {
+    display: block; /* Force new line */
+    width: 100%; /* Match container width */
+    margin-bottom: 15px; /* Add spacing between elements */
+}
 
-        /* Jumbotron headings */
-        .jumbotron h1, .jumbotron h2, .jumbotron h3 {
-            color: #f1f1f1; /* Light headings for better visibility */
-        }
+/* Optional: Improve file input appearance */
+input[type="file"] {
+    background-color: #333;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    padding: 8px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
 
-        /* Jumbotron links */
-        .jumbotron a {
-            color: #66aaff; /* Light blue links */
-        }
+input[type="file"]:hover {
+    background-color: #444;
+}
 
-        .jumbotron a:hover {
-            color: #33b5ff; /* Hover state for links */
-        }
+/* Cards and Panels */
+.panel, .card {
+    background: linear-gradient(135deg, #2e2e2e, #3b3b3b);
+    color: #f1f1f1; /* Light text */
+    border-left: 5px solid #66d9ef; /* Highlight edge */
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Jumbotron */
+.jumbotron {
+    background: linear-gradient(135deg, #2a2a2a, #343434); /* Dark gradient */
+    color: #e0e0e0;
+    border-radius: 8px;
+    padding: 30px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.jumbotron h1, .jumbotron h2 {
+    color: #f1f1f1;
+}
+
+.jumbotron a {
+    color: #66d9ef;
+}
+
+.jumbotron a:hover {
+    color: #2aa198;
+}
+
+/* Footer */
+footer {
+    background-color: #1f1f1f;
+    color: #e0e0e0;
+    text-align: center;
+    padding: 10px 0;
+    margin-top: 40px;
+    border-top: 2px solid #66d9ef;
+}
 </style>
+
 
 </head>
 <body>
 
 <nav class="navbar navbar-default">
-  <div class="container-fluid">
-    <div class="navbar-header">
-      <a class="navbar-brand" href="/">Buz Tool</a>
+    <div class="container-fluid">
+        <div class="navbar-header">
+            <a class="navbar-brand" href="/">Buz Tool</a>
+        </div>
+        <ul class="nav navbar-nav">
+            <li><a href="/search">Search</a></li>
+            <li><a href="/upload">Upload</a></li>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle" data-toggle="dropdown">Reports <span class="caret"></span></a>
+                <ul class="dropdown-menu">
+                    <li><a href="/supplier-code-report">Supplier Code Report</a></li>
+                    <li><a href="/get_items_not_in_unleashed">Get Items Not In Unleashed</a></li>
+                    <li><a href="/get_duplicate_codes">Get Duplicated Group Option Codes</a></li>
+                </ul>
+            </li>
+            <li class="dropdown">
+                <a href="#" class="dropdown-toggle" data-toggle="dropdown">Tools <span class="caret"></span></a>
+                <ul class="dropdown-menu">
+                    <li><a href="/generate_codes">Generate Random Unique Codes</a></li>
+                    <li><a href="/get_buz_items_by_supplier_codes">Buz Items by Supplier Code</a></li>
+                    <li><a href="/get_matching_buz_items">Get Matching Buz Items</a></li>
+                </ul>
+            </li>
+            <li><a href="/generate_backorder_file">Generate Backorder File</a></li>
+            <li><a href="/manage_inventory_groups">Manage Inventory Groups</a></li>
+        </ul>
     </div>
-    <ul class="nav navbar-nav">
-      <li class="{% if request.path == '/search' %}active{% endif %}">
-        <a href="/search">Search</a>
-      </li>
-      <li class="{% if request.path == '/upload' %}active{% endif %}">
-        <a href="/upload">Upload</a>
-      </li>
-      <li class="{% if request.path == '/supplier-code-report' %}active{% endif %}">
-        <a href="/supplier-code-report">Supplier Code Report</a>
-      </li>
-      <li class="{% if request.path == '/manage_inventory_groups' %}active{% endif %}">
-        <a href="/manage_inventory_groups">Manage Inventory Groups</a>
-      </li>
-      <li class="{% if request.path == '/generate_codes' %}active{% endif %}">
-        <a href="/generate_codes">Generate random unique codes</a>
-      </li>
-      <li class="{% if request.path == '/get_items_not_in_unleashed' %}active{% endif %}">
-        <a href="/get_items_not_in_unleashed">Get Items Not In Unleashed</a>
-      </li>
-      <li class="{% if request.path == '/get_group_option_codes' %}active{% endif %}">
-        <a href="/get_group_option_codes">Get Group Options Codes</a>
-      </li>
-      <li class="{% if request.path == '/get_duplicate_codes' %}active{% endif %}">
-        <a href="/get_duplicate_codes">Get Duplicated Group Option Codes</a>
-      </li>
-      <li class="{% if request.path == '/generate_backorder_file' %}active{% endif %}">
-        <a href="/generate_backorder_file">Generate Backorder File</a>
-      </li>
-      <li class="{% if request.path == '/get_buz_items_by_supplier_codes' %}active{% endif %}">
-        <a href="/get_buz_items_by_supplier_codes">Buz Items by Supplier Code</a>
-      </li>
-      <li class="{% if request.path == '/get_matching_buz_items' %}active{% endif %}">
-        <a href="/get_matching_buz_items">Get Matching Buz Items</a>
-      </li>
-
-    </ul>
-  </div>
 </nav>
+
     
     <!-- Main Content -->
     <div class="container">
