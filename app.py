@@ -2,19 +2,18 @@ import os
 
 from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
 import time
-
+from datetime import timezone
 from services.group_options_check import extract_codes_from_excel_flat_dedup
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 
 import logging
 from services.database import init_db_command, create_db_manager
-import sqlite3
 from dotenv import load_dotenv
 
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
@@ -31,7 +30,7 @@ logging.debug(app.config)
 app.extensions['db_manager'] = create_db_manager(app.config['database'])
 
 # Register the CLI command
-app.cli.add_command(init_db_command)
+app.cli.add_command(init_db_command)    # type: ignore
 
 
 @app.before_request
@@ -80,69 +79,63 @@ def homepage():
     return render_template('home.html')
 
 
-@app.route('/upload')
-def upload_form():
-    from services.data_processing import get_unique_inventory_group_count
-    from services.data_processing import get_table_row_count
+@app.route('/upload', methods=['GET', 'POST'])
+def upload_raw_data():
+    from services.data_processing import (
+        get_unique_inventory_group_count,
+        get_table_row_count
+    )
+    from services.upload import upload, get_last_upload_time
+
+    # Initialize last upload times with current database values
+    last_upload_times = {
+        'inventory_file': get_last_upload_time(g.db, 'inventory_items'),
+        'pricing_file': get_last_upload_time(g.db, 'pricing_data'),
+        'unleashed_file': get_last_upload_time(g.db, 'unleashed_products')
+    }
+    logging.info(last_upload_times)
+
+    if request.method == 'POST':
+
+        # Check for files in the request
+        inventory_file = request.files.get('inventory_file')
+        pricing_file = request.files.get('pricing_file')
+        unleashed_file = request.files.get('unleashed_file')
+
+        uploaded_files  = upload(
+            db_manager=g.db,
+            inventory_file=inventory_file,
+            inventory_file_expected_headers=app.config['headers']['buz_inventory_item_file'],
+            pricing_file=pricing_file,
+            pricing_file_expected_headers=app.config['headers']['buz_pricing_file'],
+            unleashed_file=unleashed_file,
+            unleashed_file_expected_headers=app.config['headers']['unleashed_fields'],
+            upload_folder=app.config['upload_folder'],
+            invalid_pkid=app.config['invalid_pkid']
+        )
+
+        if uploaded_files:
+            last_upload_times.update(uploaded_files)
+            flash('Files successfully uploaded and data stored in the database')
+        else:
+            flash('No files to upload')
 
     return render_template(
         'upload.html',
         inventory_count=get_table_row_count(g.db, 'inventory_items'),
         pricing_count=get_table_row_count(g.db, 'pricing_data'),
         unleashed_count=get_table_row_count(g.db, 'unleashed_products'),
-        inventory_group_count=get_unique_inventory_group_count(g.db)
+        inventory_group_count=get_unique_inventory_group_count(g.db),
+        last_upload_times=last_upload_times
     )
-    
 
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    from services.data_processing import insert_unleashed_data
-    from services.process_buz_workbooks import process_workbook
-    from services.constants import EXPECTED_HEADERS_ITEMS, EXPECTED_HEADERS_PRICING
 
-    # Check for files in the request
-    inventory_file = request.files.get('inventory_file')
-    pricing_file = request.files.get('pricing_file')
-    unleashed_file = request.files.get('unleashed_file')
-
-    # Initialize a list to store which files are uploaded
-    uploaded_files = []
-
-    if inventory_file:
-        inventory_file_path = os.path.join(app.config['upload_folder'], inventory_file.filename)
-        inventory_file.save(inventory_file_path)
-        process_workbook(
-            db_manager=g.db,
-            file_handler=OpenPyXLFileHandler(file_path=inventory_file_path),
-            table_name='inventory_items',
-            expected_headers=EXPECTED_HEADERS_ITEMS,
-            header_row=2,
-            invalid_pkid=app.config['invalid_pkid']
-        )
-        uploaded_files.append('inventory_file')
-
-    if pricing_file:
-        pricing_file_path = os.path.join(app.config['upload_folder'], pricing_file.filename)
-        pricing_file.save(pricing_file_path)
-        process_workbook(
-            file_handler=OpenPyXLFileHandler(file_path=pricing_file_path),
-            table_name='pricing_data',
-            expected_headers=EXPECTED_HEADERS_PRICING,
-            header_row=1
-        )
-        uploaded_files.append('pricing_file')
-
-    if unleashed_file:
-        unleashed_file_path = os.path.join(app.config['upload_folder'], unleashed_file.filename)
-        unleashed_file.save(unleashed_file_path)
-        insert_unleashed_data(unleashed_file_path)
-        uploaded_files.append('unleashed_file')
-
-    if not uploaded_files:
-        return 'No files to upload'
-
-    flash(f'Files successfully uploaded and data stored in the database')
-    return redirect(url_for('upload_form'))
+@app.template_filter('datetimeformat')
+def datetimeformat(value):
+    if value:
+        # Convert to UTC and format as ISO 8601
+        return value.astimezone(timezone.utc).isoformat() + "Z"
+    return "N/A"
 
 
 @app.route('/upload_inventory_group_codes', methods=['POST'])
@@ -179,7 +172,7 @@ def search():
     results = []
     if request.method == 'POST':
         code = request.form['code']
-        results = search_items_by_supplier_code(code)
+        results = search_items_by_supplier_code(db_manager=g.db, code=code)
     return render_template('search.html', results=results)
     
 
@@ -194,8 +187,8 @@ def manage_inventory_groups():
         flash(f'Added inventory group code: {new_group_code}')
         return redirect(url_for('manage_inventory_groups'))
 
-    allowed_groups = get_inventory_group_codes()  # Fetch only the codes
-    logging.INFO(f"allowed groups: {allowed_groups}")
+    allowed_groups = get_inventory_group_codes(g.db)  # Fetch only the codes
+    logging.info(f"allowed groups: {allowed_groups}")
     return render_template('manage_inventory_groups.html', allowed_groups=allowed_groups)
 
 
@@ -262,8 +255,7 @@ def get_group_option_codes():
 
         return render_template('get_group_option_codes.html', codes=items)
 
-    else:
-        return render_template('get_group_option_codes.html')
+    return render_template('get_group_option_codes.html')
 
 
 @app.route('/get_duplicate_codes', methods=["GET", "POST"])

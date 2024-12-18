@@ -3,7 +3,7 @@ from flask import g, current_app
 from flask.cli import with_appcontext
 import click
 import logging
-from services.config_service import ConfigManager
+from click import Command
 
 
 # Configure logging
@@ -76,7 +76,7 @@ def init_db_command():
                     Warning TEXT,
                     RptCat TEXT,
                     Active TEXT,
-                    LastEditDate TEXT,
+                    LastEditDate DATE,
                     Operation TEXT
                 );
             ''',
@@ -200,6 +200,14 @@ def init_db_command():
                     markup REAL
                 );
             ''',
+
+            "upload_history": '''
+                CREATE TABLE IF NOT EXISTS upload_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    table_name TEXT UNIQUE NOT NULL,
+                    last_upload TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+        ''',
         }
 
         for name, schema in tables.items():
@@ -350,10 +358,10 @@ class DatabaseManager:
         :raises DatabaseError: If the bulk execution fails.
         """
         try:
-            with self.connection.cursor() as cursor:
-                cursor.executemany(query, param_list)
-                self.commit()
-                return cursor.rowcount
+            cursor = self.connection.cursor()
+            cursor.executemany(query, param_list)
+            self.commit()
+            return cursor.rowcount
         except Exception as e:
             raise DatabaseError(f"Bulk execution failed: {e}")
 

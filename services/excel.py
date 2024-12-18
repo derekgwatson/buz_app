@@ -41,6 +41,7 @@ class OpenPyXLFileHandler:
             self.workbook = openpyxl.load_workbook(self.file_path, data_only=data_only)
         elif self.file:
             self.workbook = openpyxl.load_workbook(BytesIO(self.file.read()), data_only=data_only)
+        return self.workbook
 
     def get_sheet_names(self):
         """
@@ -115,3 +116,4 @@ class OpenPyXLFileHandler:
             all_data[sheet_name] = [dict(zip(headers, row)) for row in rows if any(row)]
 
         return all_data
+

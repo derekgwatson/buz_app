@@ -1,4 +1,3 @@
-import json
 import logging
 
 
@@ -40,8 +39,6 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
     filtered_sheets = {}
 
     for sheet_name, df in sheets.items():
-        if sheet_name != 'ROLL':
-            continue
         logger.debug(f"Processing sheet: {sheet_name}")
 
         # Check if the sheet has at least two rows
@@ -58,11 +55,6 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
             logger.debug(f"Actual: {actual_headers}")
 
             # Validate headers: either empty or matches expected headers
-            if all(cell == "" for cell in row_2) or actual_headers == expected_headers:
-                logger.debug("Headers validated successfully.")
-            else:
-                logger.warning("Header validation failed.")
-
             if all(cell == "" for cell in row_2) or actual_headers == expected_headers:
                 logger.debug(f"Valid headers in sheet '{sheet_name}'.")
 

@@ -1,6 +1,8 @@
 import re
 from services.database import DatabaseManager
+from services.process_buz_workbooks import validate_headers
 import logging
+from datetime import datetime
 
 
 # Configure logging
@@ -38,17 +40,17 @@ def clear_unleashed_table(db_manager: DatabaseManager):
     db_manager.execute_query('DELETE FROM unleashed_products', auto_commit=True)  # Clear all rows
 
     
-def insert_unleashed_data(db_manager: DatabaseManager, file_path: str, expected_headers_count: int):
+def insert_unleashed_data(db_manager: DatabaseManager, file_path: str, expected_headers: list[str]):
     import csv
 
     clear_unleashed_table(db_manager)  # Clear the table before inserting new data
 
     with open(file_path, 'r', encoding='UTF-8', newline='') as csvfile:
         reader = csv.DictReader(csvfile)
-        
-        # Clean the headers by removing '*' and any leading/trailing whitespace
-        cleaned_headers = [header.replace('*', '').strip() for header in reader.fieldnames]
-        cleaned_headers = [re.sub(r'[\x00-\x1F\x7F-\x9F\uFEFF]', '', header).strip() for header in cleaned_headers]  # Remove BOM and control chars
+
+        is_valid, cleaned_headers = validate_headers(reader.fieldnames, expected_headers)
+        if not is_valid:
+            return None
 
         # Iterate through each row in the CSV
         for row in reader:
@@ -103,8 +105,8 @@ def insert_unleashed_data(db_manager: DatabaseManager, file_path: str, expected_
             )
             
             # Check if the number of values matches the number of columns in the table
-            if len(values) != expected_headers_count:
-                logger.warning(f"Warning: Expected {expected_headers_count} values but got {len(values)}. Row: {cleaned_row}")
+            if len(values) != len(expected_headers):
+                logger.warning(f"Warning: Expected {len(expected_headers)} values but got {len(values)}. Row: {cleaned_row}")
                 continue
             
             db_manager.execute_query('''
@@ -198,7 +200,7 @@ def search_items_by_supplier_code(db_manager: DatabaseManager, code: str):
     return results
 
 
-def get_inventory_group_codes(db_manager: DatabaseManager):
+def get_inventory_group_codes(db_manager: DatabaseManager) -> list[str]:
     """
     Retrieve all inventory group codes from the database.
 
@@ -295,3 +297,33 @@ def validate_data(data, required_fields):
 def transform_data(data):
     """Apply necessary transformations, e.g., convert all text to uppercase."""
     return {key: value.upper() if isinstance(value, str) else value for key, value in data.items()}
+
+
+def max_last_edit_date(db_manager: DatabaseManager) -> datetime or None:
+    cursor = db_manager.execute_query('SELECT MAX(LastEditDate) FROM inventory_items')
+    result = cursor.fetchone()
+    if result and result[0]:
+        # Ensure it's a datetime object
+        return datetime.strptime(result[0], '%Y-%m-%d')
+    return None
+
+
+def update_table_history(db_manager: DatabaseManager, table_name: str):
+    query = '''
+            INSERT INTO upload_history (table_name, last_upload)
+            VALUES (?, CURRENT_TIMESTAMP)
+            ON CONFLICT(table_name)
+            DO UPDATE SET last_upload = CURRENT_TIMESTAMP;
+        '''
+    db_manager.execute_query(query, (table_name,), True)
+
+
+def get_last_upload_time(db_manager: DatabaseManager, table_name: str):
+    query = '''
+            SELECT last_upload 
+            FROM upload_history 
+            WHERE table_name = ?;
+        '''
+    cursor = db_manager.execute_query(query, (table_name,))
+    result = cursor.fetchone()
+    return result[0] if result else None

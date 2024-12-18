@@ -21,10 +21,53 @@
 </form>
 
 <h2>Current Row Counts</h2>
-    <ul>
-        <li>Inventory Groups: {{ inventory_group_count }}</li>
-        <li>Inventory Items: {{ inventory_count }}</li>
-        <li>Pricing Data: {{ pricing_count }}</li>
-        <li>Unleashed Products: {{ unleashed_count }}</li>
-    </ul>
+<ul>
+    <li>Inventory Groups: {{ inventory_group_count }}</li>
+    <li>Inventory Items: {{ inventory_count }}
+        {% if last_upload_times.get('inventory_file') %}
+        (Last Upload: <span class="local-time" data-time="{{ last_upload_times['inventory_file'] }}"></span>)
+        {% endif %}
+    </li>
+    <li>Pricing Data: {{ pricing_count }}
+        {% if last_upload_times.get('pricing_file') %}
+        (Last Upload: <span class="local-time" data-time="{{ last_upload_times['pricing_file'] }}"></span>)
+        {% endif %}
+    </li>
+    <li>Unleashed Products: {{ unleashed_count }}
+        {% if last_upload_times.get('unleashed_file') %}
+        (Last Upload: <span class="local-time" data-time="{{ last_upload_times['unleashed_file'] }}"></span>)
+        {% endif %}
+    </li>
+</ul>
+
+<!-- JavaScript for Local Time Conversion with Debugging -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".local-time").forEach(el => {
+        const serverTime = el.getAttribute("data-time");
+        console.log("Server Time:", serverTime);  // Debug Log
+
+        if (serverTime) {
+            try {
+                // Force correct parsing using ISO 8601 UTC format
+                const utcTime = new Date(serverTime + "Z");
+                console.log("Parsed UTC Time:", utcTime);  // Debug Log
+
+                // Convert to Local Time
+                const localTime = utcTime.toLocaleString(undefined, {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit',
+                    timeZoneName: 'short'
+                });
+
+                el.textContent = localTime;
+            } catch (error) {
+                console.error("Date Parsing Error:", error);
+            }
+        }
+    });
+});
+
+</script>
+
 {% endblock %}

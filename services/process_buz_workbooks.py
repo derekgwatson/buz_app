@@ -1,20 +1,29 @@
-import re
 from services.database import DatabaseManager
 import logging
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
+from typing import Sequence, Optional
+import re
+from datetime import datetime
 
 
 logger = logging.getLogger(__name__)
 config = ConfigManager()
 
 
-def clean_header(header: str) -> str:
-    """Remove spaces, asterisks, and content inside parentheses/brackets."""
-    if header is None:
-        return ""
-    header = re.sub(r'\s*\(.*?\)', '', header)  # Remove content in ( ) or [ ]
-    return header.replace('*', '').replace(' ', '').strip()
+def parse_excel_date(cell_value):
+    """
+    Convert Excel cell value to a proper date string.
+    """
+    if isinstance(cell_value, datetime):
+        return cell_value.strftime('%Y-%m-%d')
+    if isinstance(cell_value, str):
+        try:
+            parsed_date = datetime.strptime(cell_value, '%d/%m/%Y')  # Adjust format if needed
+            return parsed_date.strftime('%Y-%m-%d')
+        except ValueError:
+            pass  # Not a valid date string, return as is
+    return cell_value  # Return the original if not recognized
 
 
 def is_group_allowed(db_manager: DatabaseManager, inventory_group_code: str) -> bool:
@@ -29,16 +38,34 @@ def is_group_allowed(db_manager: DatabaseManager, inventory_group_code: str) -> 
     :rtype: bool
     """
 
-    query = 'SELECT 1 FROM inventory_group_codes WHERE group_code = ?'
-    return db_manager.get_item(query, [inventory_group_code]) is not None
+    return db_manager.get_item("inventory_group_codes", {"group_code": inventory_group_code}) is not None
 
 
-def validate_headers(sheet, expected_headers: list[str], header_row: int) -> tuple[bool, list[str]]:
-    """Validate that the headers in the sheet match the expected headers."""
-    headers = [sheet.cell(row=header_row, column=col).value for col in range(1, sheet.max_column + 1)]
-    cleaned_headers = [clean_header(header) for header in headers]
+def clean_header(header: Optional[str]) -> str:
+    """Remove spaces, asterisks, and content inside parentheses/brackets."""
+    if header is None:
+        return ""
+    header = re.sub(r'\s*\(.*?\)', '', header)  # Remove content in ( ) or [ ]
+    return header.replace('*', '').replace(' ', '').strip()
+
+
+def validate_headers(
+    actual_headers: Optional[Sequence[str]],
+    expected_headers: Sequence[str]
+) -> tuple[bool, list[str]]:
+    """
+    Validate that two lists of headers match, ignoring trailing '*'.
+
+    :param actual_headers: List or Sequence of actual headers from the file
+    :param expected_headers: List of expected headers to compare against
+    :return: A tuple (bool, cleaned actual headers)
+    """
+    if actual_headers is None:
+        return False, []
+
+    cleaned_actual = [clean_header(header) for header in actual_headers]
     cleaned_expected = [clean_header(header) for header in expected_headers]
-    return cleaned_headers == cleaned_expected, cleaned_headers
+    return cleaned_actual == cleaned_expected, cleaned_actual
 
 
 def process_workbook(
@@ -88,7 +115,8 @@ def process_workbook(
         sheet = workbook[sheet_name]
 
         # Validate headers
-        is_valid, cleaned_headers = validate_headers(sheet, expected_headers, header_row)
+        actual_headers = [sheet.cell(row=header_row, column=col).value for col in range(1, sheet.max_column + 1)]
+        is_valid, cleaned_headers = validate_headers(actual_headers, expected_headers)
         if not is_valid:
             logger.warning(
                 f"Skipping sheet '{sheet_name}': Incorrect headers.\n"
@@ -99,7 +127,7 @@ def process_workbook(
 
         # Extract and validate rows
         rows = [
-            (sheet_name, *row)
+            (sheet_name, *[parse_excel_date(cell) if cleaned_headers[idx] == 'LastEditDate' else cell for idx, cell in enumerate(row)])
             for row in sheet.iter_rows(min_row=header_row + 1, values_only=True)
             if any(row) and row[0] is not None  # Skip empty rows or rows with None in the first column
         ]

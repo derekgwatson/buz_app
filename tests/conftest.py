@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
-import json
 from io import BytesIO
 from services.config_service import ConfigManager
+from services.database import create_db_manager
 
 
 # Initialize config manager once
@@ -86,3 +86,15 @@ def mock_unleashed_data(unleashed_expected_headers):
         ]
     }
     return create_mock_excel(unleashed_expected_headers, sheet_data)
+
+
+@pytest.fixture(scope='session')
+def app_config():
+    config_manager = ConfigManager()
+    return config_manager.config
+
+
+@pytest.fixture(scope='session')
+def get_db_manager():
+    return create_db_manager(config_manager.config.get('database'))
+
