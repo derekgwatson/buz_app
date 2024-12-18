@@ -297,70 +297,46 @@ def generate_codes():
 @app.route('/generate_backorder_file', methods=["GET", "POST"])
 def generate_backorder_file():
     from services.google_sheets_service import GoogleSheetsService
-
-    # Get the directory where the script is located
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    uploads_dir = os.path.join(base_dir, 'uploads')
-
-    # Ensure the uploads directory exists
-    if not os.path.exists(uploads_dir):
-        os.makedirs(uploads_dir)
+    from services.config_service import SpreadsheetConfigUpdater
 
     if request.method == "POST":
         # Update config with user-provided values
-        config_manager = ConfigManager()
+        spreadsheet_config_manager = SpreadsheetConfigUpdater(ConfigManager())
 
         spreadsheet_id = request.form.get('spreadsheet_id')
         spreadsheet_range = request.form.get('spreadsheet_range')
-        if config_manager.update_config_backorders(spreadsheet_id, spreadsheet_range):
+        if spreadsheet_config_manager.update_spreadsheet_config("backorders", spreadsheet_id, spreadsheet_range):
             flash('Config updated', 'success')
 
-        if 'inventory_items_file' in request.files:
-            inventory_items_file = request.files.get('inventory_items_file')
+        g_sheets_service = GoogleSheetsService(json_file=os.path.join(os.path.dirname(__file__), 'credentials',
+                                                                      'buz-app-439103-b6ae046c4723.json'))
 
-            if inventory_items_file and \
-                    inventory_items_file.filename.strip() != '' and \
-                    len(inventory_items_file.read()) > 0:
-                inventory_items_file.seek(0)
-                g_file_handler = OpenPyXLFileHandler(file=inventory_items_file)
-                g_sheets_service = GoogleSheetsService(json_file=os.path.join(os.path.dirname(__file__), 'credentials',
-                                                                              'buz-app-439103-b6ae046c4723.json'))
+        from services.backorders import process_inventory_backorder_with_services
 
-                from services.backorders import process_inventory_backorder_with_services
+        # Save updated config back to the file
+        upload_wb, original_wb = process_inventory_backorder_with_services(
+            _db_manager=g.db,
+            _sheets_service=g_sheets_service,
+            spreadsheet_id=spreadsheet_id,
+            range_name=spreadsheet_range
+        )
+        original_filename = 'original_file.xlsx'
+        upload_filename = 'upload_file.xlsx'
 
-                # Save updated config back to the file
-                upload_wb, original_wb = process_inventory_backorder_with_services(
-                    _file_handler=g_file_handler,
-                    _sheets_service=g_sheets_service,
-                    spreadsheet_id=spreadsheet_id,
-                    range_name=spreadsheet_range,
-                    header_row=2,
-                )
-                original_filename = 'original_file.xlsx'
-                upload_filename = 'upload_file.xlsx'
+        upload_wb.save(app.config["upload_folder"] + '/' + upload_filename)
+        original_wb.save(app.config["upload_folder"] + '/' + original_filename)
 
-                upload_wb.save(upload_filename)
-                original_wb.save(original_filename)
-
-                return render_template(
-                    'generate_backorder_file.html',
-                    original_filename=original_filename,
-                    upload_filename=upload_filename,
-                )
-            else:
-                return render_template(
-                    'generate_backorder_file.html',
-                    spreadsheet_id = app.config["spreadsheets"]["backorders"]["id"],
-                    spreadsheet_range= app.config["spreadsheets"]["backorders"]["range"],
-                )
-        else:
-            flash('No file uploaded.', 'warning')
-    else:
         return render_template(
             'generate_backorder_file.html',
-            spreadsheet_id=app.config["spreadsheets"]["backorders"]["id"],
-            spreadsheet_range=app.config["spreadsheets"]["backorders"]["range"]
+            original_filename=original_filename,
+            upload_filename=upload_filename,
         )
+
+    return render_template(
+        'generate_backorder_file.html',
+        spreadsheet_id=app.config["spreadsheets"]["backorders"]["id"],
+        spreadsheet_range=app.config["spreadsheets"]["backorders"]["range"]
+    )
 
 
 @app.route('/robots.txt')

@@ -69,6 +69,7 @@ class ConfigManager:
                 return default
         return config
 
+
 class SpreadsheetConfigUpdater:
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager

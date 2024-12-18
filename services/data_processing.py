@@ -209,7 +209,7 @@ def get_inventory_group_codes(db_manager: DatabaseManager) -> list[str]:
     :rtype: list[str]
     """
     cursor = db_manager.execute_query('SELECT group_code FROM inventory_group_codes')
-    codes = [row['group_code'] for row in cursor.fetchall()]
+    codes = [row[0] for row in cursor.fetchall()]
     codes.sort(key=lambda x: x.lower())  # Sort manually if necessary
     return codes
 
@@ -239,6 +239,23 @@ def get_unique_inventory_group_count(db_manager: DatabaseManager):
     cursor = db_manager.execute_query(sql)
     count = cursor.fetchone()[0]  # Get the first item from the result
     return count
+
+
+def get_all_inventory_items_by_group(db_manager: DatabaseManager):
+    sql = 'SELECT * FROM inventory_items'
+    cursor = db_manager.execute_query(sql)
+    rows = cursor.fetchall()
+
+    # Organize data by tab (inventory_group_code)
+    inventory_data = {}
+    for row in rows:
+        tab_name = row['inventory_group_code']
+        if tab_name not in inventory_data:
+            inventory_data[tab_name] = []
+
+        inventory_data[tab_name].append(row)
+
+    return inventory_data
 
 
 def get_wholesale_markups(db_manager: DatabaseManager, wholesale_markups):

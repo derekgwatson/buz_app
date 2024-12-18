@@ -3,7 +3,6 @@ from flask import g, current_app
 from flask.cli import with_appcontext
 import click
 import logging
-from click import Command
 
 
 # Configure logging
@@ -20,7 +19,9 @@ def create_db_manager(db_file: str):
         "detect_types": sqlite3.PARSE_DECLTYPES
     }
 
-    return DatabaseManager(db_connector(**db_params))
+    connection = db_connector(**db_params)
+    connection.row_factory = sqlite3.Row  # Enable dict-like row access
+    return DatabaseManager(connection)
 
 
 @click.command('init-db')

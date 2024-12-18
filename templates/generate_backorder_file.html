@@ -12,18 +12,15 @@
         <a href="{{ url_for('download_file', filename=upload_filename) }}">Upload File</a>
     {% else %}
         <form action="/generate_backorder_file" method="POST" enctype="multipart/form-data">
-            <div class="mb-3">
-                <label for="inventory_items_file" class="form-label">Inventory Items File:</label>
-                <input type="file" name="inventory_items_file" id="inventory_items_file" class="form-control">
-            </div>
-
-            <hr>
-
             <div class="alert alert-info" role="alert">
                 <strong>Note:</strong> You can change the spreadsheet and/or range details below.
                 If you change the spreadsheet, ensure that you share it with the service account
                 user just like the old one.
             </div>
+
+            This will generate an original and upload file using the current items uploaded via the upload area.
+            If you're unsure when this was last updated, check in the <a href="/upload">upload area</a>.
+            <hr>
 
             <div class="mb-3">
                 <label for="spreadsheet_id" class="form-label">Spreadsheet ID:</label>
