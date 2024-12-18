@@ -2,30 +2,25 @@ import sqlite3
 from flask import g, current_app
 from flask.cli import with_appcontext
 import click
+import logging
+from services.config_service import ConfigManager
 
 
-DATABASE = 'buz_data.db'
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
-def create_db_manager():
+def create_db_manager(db_file: str):
+    """
+    Creates a DatabaseManager instance with a static SQLite connection.
+    """
     db_connector = sqlite3.connect
     db_params = {
-        "database": DATABASE,
+        "database": db_file,
         "detect_types": sqlite3.PARSE_DECLTYPES
     }
+
     return DatabaseManager(db_connector(**db_params))
-
-
-def get_db_connection():
-    """
-    Get a database connection and store it in the Flask `g` object.
-
-    :return: Database connection object.
-    """
-    if not hasattr(g, 'db'):
-        db_connector = current_app.config['DB_CONNECTOR']
-        db_params = current_app.config['DB_PARAMS']
-        g.db = DatabaseManager(db_connector(**db_params))
 
 
 @click.command('init-db')
@@ -34,9 +29,9 @@ def init_db_command():
     """
     Initialize the database using the CLI command.
     """
+    db_manager = current_app.extensions['db_manager']  # Use the already initialized manager
     try:
-        print("Initializing the database...")
-        db_manager = create_db_manager()
+        logger.info("Initializing the database...")
         tables = {
             "inventory_items": '''
                 CREATE TABLE IF NOT EXISTS inventory_items (
@@ -208,41 +203,13 @@ def init_db_command():
         }
 
         for name, schema in tables.items():
-            print(f"Creating table: {name} (if required)")
+            logger.info(f"Creating table: {name} (if required)")
             db_manager.execute_query(schema)
 
         db_manager.commit()
-        print("Database initialized successfully!")
+        logger.info("Database initialized successfully!")
     except DatabaseError as e:
-        print(f"An error occurred: {e}")
-
-
-def clear_database(db_manager):
-    """
-    Clear all records from the database tables.
-
-    :param db_manager: An instance of DatabaseManager.
-    :type db_manager: DatabaseManager
-    """
-    tables_to_clear = [
-        "inventory_items",
-        "pricing_data",
-        "unleashed_products",
-        "inventory_group_codes",
-        "wholesale_markups",
-    ]
-
-    try:
-        for table in tables_to_clear:
-            print(f"Clearing data in table: {table} (if required)")
-            db_manager.execute_query(f"DELETE FROM {table}")
-        db_manager.commit()
-
-    except DatabaseError as e:
-        print(f"An error occurred: {e}")
-    finally:
-        db_manager.commit()
-        print("Database cleared")
+        logger.error(f"An error occurred: {e}")
 
 
 class DatabaseError(Exception):
@@ -278,12 +245,13 @@ class DatabaseManager:
         try:
             self.close()
         except DatabaseError as e:
-            print(f"Warning: {e}")  # Consider logging this instead
+            logger.error(f"Warning: {e}")
 
     def execute_query(self, query, params=None, auto_commit=False):
         """
         Execute a single SQL query with optional parameters.
 
+        :param auto_commit:
         :param query: The SQL query to execute.
         :type query: str
         :param params: A list or tuple of query parameters, defaults to None.
@@ -388,3 +356,33 @@ class DatabaseManager:
                 return cursor.rowcount
         except Exception as e:
             raise DatabaseError(f"Bulk execution failed: {e}")
+
+
+def clear_database(db_manager: DatabaseManager):
+    """
+    Clear all records from the database tables.
+
+    :param db_manager: An instance of DatabaseManager.
+    :type db_manager: DatabaseManager
+    """
+    tables_to_clear = [
+        "inventory_items",
+        "pricing_data",
+        "unleashed_products",
+        "inventory_group_codes",
+        "wholesale_markups",
+    ]
+
+    try:
+        for table in tables_to_clear:
+            logger.info(f"Clearing data in table: {table} (if required)")
+            db_manager.execute_query(f"DELETE FROM {table}")
+        db_manager.commit()
+
+    except DatabaseError as e:
+        logger.error(f"An error occurred: {e}")
+    finally:
+        db_manager.commit()
+        logger.info("Database cleared")
+
+

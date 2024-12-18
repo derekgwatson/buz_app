@@ -3,8 +3,8 @@ from services.google_sheets_service import GoogleSheetsService
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 
+
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

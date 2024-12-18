@@ -1,12 +1,10 @@
 import logging
-
 import pandas as pd
 from datetime import datetime, timedelta
 from services.excel import OpenPyXLFileHandler
 from services.google_sheets_service import GoogleSheetsService
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +26,7 @@ def load_inventory_items(file_handler):
         # Check if 'PkId' is in cell A2
         a2_value = worksheet['A2'].value
         if a2_value != "PkId":
-            logging.info(f"Skipping sheet: {sheet} - 'PkId' not found in A2.")
+            logger.info(f"Skipping sheet: {sheet} - 'PkId' not found in A2.")
             continue
 
         for row in worksheet.iter_rows(min_row=3, values_only=True):  # Start from row 3 (data rows)
@@ -66,18 +64,18 @@ def load_google_sheet_data(google_sheets_service, spreadsheet_id, range_name):
                 divisor = 1
             else:
                 if not divisor or divisor == 0:
-                    logging.error(f"Width required but missing for Unleashed code {code}")
+                    logger.error(f"Width required but missing for Unleashed code {code}")
                     continue
 
             try:
                 raw_price = float(raw_price)
                 divisor = float(divisor)
             except ValueError:
-                logging.error(f"Invalid price value for {code}: {raw_price} with UOM {unit} and width {divisor}")
+                logger.error(f"Invalid price value for {code}: {raw_price} with UOM {unit} and width {divisor}")
                 continue
 
             if divisor == 0:
-                logging.error(f"Width still zero for {code}: {raw_price} with UOM {unit}. Why?!")
+                logger.error(f"Width still zero for {code}: {raw_price} with UOM {unit}. Why?!")
                 continue
 
             _google_sheet_dict[code] = raw_price / divisor
@@ -98,7 +96,7 @@ def process_pricing_file(pricing_file_path, inventory_dict, google_sheet_dict, t
         # Check if 'PkId' is in cell A1
         a1_value = sheet['A1'].value
         if a1_value != "PkId":
-            logging.info(f"Deleting sheet: {sheet_name} - 'PkId' not found in A1.")
+            logger.info(f"Deleting sheet: {sheet_name} - 'PkId' not found in A1.")
             wb.remove(sheet)  # Remove the sheet
             continue
 
@@ -112,14 +110,14 @@ def process_pricing_file(pricing_file_path, inventory_dict, google_sheet_dict, t
 
             if not supplier_code:
                 # Skip rows without a matching supplier code
-                logging.warning(f"No matching supplier code ({supplier_code}) found for {code}")
+                logger.warning(f"No matching supplier code ({supplier_code}) found for {code}")
                 continue
 
             # Perform pricing lookup
             google_price = google_sheet_dict.get(supplier_code)
             if google_price is None:
                 # Skip rows without a matching price
-                logging.warning(f"Supplier code ({supplier_code}) for {code} not found in Unleashed")
+                logger.warning(f"Supplier code ({supplier_code}) for {code} not found in Unleashed")
                 continue
 
             # Find first non-zero price in columns M-Q
@@ -127,10 +125,10 @@ def process_pricing_file(pricing_file_path, inventory_dict, google_sheet_dict, t
             prices = [row[col] for col in price_columns if row[col] > 0]
 
             if len(prices) == 0:
-                logging.warning(f"No prices found in {price_columns} for row {code}.")
+                logger.warning(f"No prices found in {price_columns} for row {code}.")
                 continue
             elif len(prices) > 1:
-                logging.warning(f"Multiple non-zero prices found in {price_columns} for row {code}. Taking first value.")
+                logger.warning(f"Multiple non-zero prices found in {price_columns} for row {code}. Taking first value.")
 
             excel_price = prices[0]
 

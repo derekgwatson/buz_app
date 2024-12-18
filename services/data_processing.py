@@ -1,6 +1,10 @@
 import re
-
 from services.database import DatabaseManager
+import logging
+
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 def safe_float(value):
@@ -34,7 +38,7 @@ def clear_unleashed_table(db_manager: DatabaseManager):
     db_manager.execute_query('DELETE FROM unleashed_products', auto_commit=True)  # Clear all rows
 
     
-def insert_unleashed_data(db_manager: DatabaseManager, file_path: str):
+def insert_unleashed_data(db_manager: DatabaseManager, file_path: str, expected_headers_count: int):
     import csv
 
     clear_unleashed_table(db_manager)  # Clear the table before inserting new data
@@ -99,8 +103,8 @@ def insert_unleashed_data(db_manager: DatabaseManager, file_path: str):
             )
             
             # Check if the number of values matches the number of columns in the table
-            if len(values) != 55:
-                print(f"Warning: Expected 55 values but got {len(values)}. Row: {cleaned_row}")
+            if len(values) != expected_headers_count:
+                logger.warning(f"Warning: Expected {expected_headers_count} values but got {len(values)}. Row: {cleaned_row}")
                 continue
             
             db_manager.execute_query('''
@@ -140,7 +144,6 @@ def insert_unleashed_data(db_manager: DatabaseManager, file_path: str):
 
     # Now, delete records where IsObsoleted='yes' or IsSellable='no'
     db_manager.execute_query("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes' OR IsSellable = 'No'")
-
     db_manager.commit()
 
     

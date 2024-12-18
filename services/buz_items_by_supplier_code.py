@@ -1,4 +1,9 @@
 import json
+import logging
+
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
@@ -37,7 +42,7 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
     for sheet_name, df in sheets.items():
         if sheet_name != 'ROLL':
             continue
-        print(f"Processing sheet: {sheet_name}")  # Debugging: Log sheet name
+        logger.debug(f"Processing sheet: {sheet_name}")
 
         # Check if the sheet has at least two rows
         if df.shape[0] > 1:
@@ -49,17 +54,17 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
 
             actual_headers = [clean_header(cell) for cell in row_2.tolist()[:len(expected_headers)]]
 
-            print(f"Expected: {expected_headers}")
-            print(f"Actual: {actual_headers}")
+            logger.debug(f"Expected: {expected_headers}")
+            logger.debug(f"Actual: {actual_headers}")
 
             # Validate headers: either empty or matches expected headers
             if all(cell == "" for cell in row_2) or actual_headers == expected_headers:
-                print("Headers validated successfully.")
+                logger.debug("Headers validated successfully.")
             else:
-                print("Header validation failed.")
+                logger.warning("Header validation failed.")
 
             if all(cell == "" for cell in row_2) or actual_headers == expected_headers:
-                print(f"Valid headers in sheet '{sheet_name}'.")
+                logger.debug(f"Valid headers in sheet '{sheet_name}'.")
 
                 # Remove trailing asterisks from titles in row 2
                 df.iloc[1] = df.iloc[1].astype(str).str.rstrip('*')
@@ -84,14 +89,14 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
                     # Store the filtered DataFrame
                     filtered_sheets[sheet_name] = result_df
                 else:
-                    print(f"Skipping sheet '{sheet_name}' as no rows matched the supplier codes.")
+                    logger.info(f"Skipping sheet '{sheet_name}' as no rows matched the supplier codes.")
             else:
-                print(f"Skipping sheet '{sheet_name}' due to invalid headers.")
+                logger.info(f"Skipping sheet '{sheet_name}' due to invalid headers.")
         else:
-            print(f"Skipping sheet '{sheet_name}' due to insufficient rows.")
+            logger.info(f"Skipping sheet '{sheet_name}' due to insufficient rows.")
 
     if not filtered_sheets:
-        print("No sheets met the criteria for processing or contained matching rows.")
+        logger.warning("No sheets met the criteria for processing or contained matching rows.")
         return None  # or {} if you prefer returning an empty dict
 
     # Save all filtered sheets to a new Excel file

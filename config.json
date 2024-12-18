@@ -1,4 +1,6 @@
 {
+  "invalid_pkid": "00000000-0000-0000-0000-000000000000",
+  "database": "buz_data.db",
   "upload_folder": "uploads",
   "spreadsheets": {
     "backorders": {

@@ -8,7 +8,7 @@ from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 
 import logging
-from services.database import init_db_command
+from services.database import init_db_command, create_db_manager
 import sqlite3
 from dotenv import load_dotenv
 
@@ -23,15 +23,15 @@ app = Flask(__name__)
 load_dotenv()
 app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
 
-# Configure database
-app.config['DB_CONNECTOR'] = sqlite3.connect
-app.config['DB_PARAMS'] = {'database': 'buz_data.db'}
-
 # note, ConfigManager updates app.config, so we pass in app
-ConfigManager(app)
+app.config.update(ConfigManager().config)  # No flattening
+logging.debug(app.config)
+
+# Initialize DatabaseManager and store it in app extensions
+app.extensions['db_manager'] = create_db_manager(app.config['database'])
 
 # Register the CLI command
-app.cli.add_command(init_db_command)    # type: ignore
+app.cli.add_command(init_db_command)
 
 
 @app.before_request
@@ -41,7 +41,7 @@ def before_request():
     """
     from services.database import create_db_manager
 
-    g.db = create_db_manager()
+    g.db = create_db_manager(app.config['database'])
 
     """Track the start time of each request."""
     g.start_time = time.time()
@@ -109,18 +109,20 @@ def upload_file():
     uploaded_files = []
 
     if inventory_file:
-        inventory_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), inventory_file.filename)
+        inventory_file_path = os.path.join(app.config['upload_folder'], inventory_file.filename)
         inventory_file.save(inventory_file_path)
         process_workbook(
+            db_manager=g.db,
             file_handler=OpenPyXLFileHandler(file_path=inventory_file_path),
             table_name='inventory_items',
             expected_headers=EXPECTED_HEADERS_ITEMS,
-            header_row=2
+            header_row=2,
+            invalid_pkid=app.config['invalid_pkid']
         )
         uploaded_files.append('inventory_file')
 
     if pricing_file:
-        pricing_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), pricing_file.filename)
+        pricing_file_path = os.path.join(app.config['upload_folder'], pricing_file.filename)
         pricing_file.save(pricing_file_path)
         process_workbook(
             file_handler=OpenPyXLFileHandler(file_path=pricing_file_path),
@@ -131,7 +133,7 @@ def upload_file():
         uploaded_files.append('pricing_file')
 
     if unleashed_file:
-        unleashed_file_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), unleashed_file.filename)
+        unleashed_file_path = os.path.join(app.config['upload_folder'], unleashed_file.filename)
         unleashed_file.save(unleashed_file_path)
         insert_unleashed_data(unleashed_file_path)
         uploaded_files.append('unleashed_file')
@@ -162,7 +164,7 @@ def upload_inventory_group_codes():
         for line in lines:
             group_code = line.strip()  # Remove any surrounding whitespace
             if group_code:  # Only add non-empty lines
-                app.config["DB_MANAGER"].insert_item('inventory_group_codes', {'group_code': group_code})
+                g.db.insert_item('inventory_group_codes', {'group_code': group_code})
                 codes_added.append(group_code)
 
     flash(f'Added inventory group codes: {", ".join(codes_added)}')
@@ -188,7 +190,7 @@ def manage_inventory_groups():
     if request.method == 'POST':
         # Handle adding a new inventory group code
         new_group_code = request.form['new_group_code']
-        app.config["DB_MANAGER"].insert_item("inventory_group_codes", new_group_code)
+        g.db.insert_item("inventory_group_codes", new_group_code)
         flash(f'Added inventory group code: {new_group_code}')
         return redirect(url_for('manage_inventory_groups'))
 
@@ -203,7 +205,7 @@ def delete_inventory_group(inventory_group_code):
     from services.data_processing import db_delete_records_by_inventory_group
 
     # Delete inventory group code
-    app.config["DB_MANAGER"].delete_item("inventory_group_codes", {"group_code": inventory_group_code})
+    g.db.delete_item("inventory_group_codes", {"group_code": inventory_group_code})
 
     # Delete records from items and pricing tables
     db_delete_records_by_inventory_group(inventory_group_code)
@@ -356,16 +358,16 @@ def generate_backorder_file():
             else:
                 return render_template(
                     'generate_backorder_file.html',
-                    spreadsheet_id = app.config["spreadsheets.backorders.id"],
-                    spreadsheet_range= app.config["spreadsheets.backorders.range"],
+                    spreadsheet_id = app.config["spreadsheets"]["backorders"]["id"],
+                    spreadsheet_range= app.config["spreadsheets"]["backorders"]["range"],
                 )
         else:
             flash('No file uploaded.', 'warning')
     else:
         return render_template(
             'generate_backorder_file.html',
-            spreadsheet_id=app.config["spreadsheets.backorders.id"],
-            spreadsheet_range=app.config["spreadsheets.backorders.range"]
+            spreadsheet_id=app.config["spreadsheets"]["backorders"]["id"],
+            spreadsheet_range=app.config["spreadsheets"]["backorders"]["range"]
         )
 
 
@@ -399,15 +401,18 @@ def get_buz_items_by_supplier_codes():
                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     )
                 else:
+                    logging.warning("No items found that match the list of supplier codes")
                     flash("Nothing found")
             except Exception as e:
+                logging.error(f"Error: {e}")
                 if app.debug:
                     raise e
                 else:
                     flash(f"Error: {e}")
 
         else:
-            flash("Error: Only .xlsx or .xlsm files are supported.")
+            logging.warning("Only .xlsx or .xlsm files are supported.")
+            flash("Only .xlsx or .xlsm files are supported.")
 
     return render_template('get_buz_items_by_supplier_codes.html')
 
@@ -422,8 +427,8 @@ def get_matching_buz_items():
         second_file = request.files["second_file"]
 
         # Save the uploaded files
-        first_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), first_file.filename)
-        second_path = os.path.join(app.config['APP_CONFIG'].get('UPLOAD_FOLDER'), second_file.filename)
+        first_path = os.path.join(app.config['upload_folder'], first_file.filename)
+        second_path = os.path.join(app.config['upload_folder'], second_file.filename)
         first_file.save(first_path)
         second_file.save(second_path)
 

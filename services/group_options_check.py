@@ -1,7 +1,10 @@
 from collections import defaultdict
-
 from services.excel import OpenPyXLFileHandler
 from typing import List, Tuple
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def extract_codes_from_excel_flat_dedup(file_handler: OpenPyXLFileHandler) -> List[Tuple[str, str]]:

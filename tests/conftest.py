@@ -5,6 +5,10 @@ from io import BytesIO
 from services.config_service import ConfigManager
 
 
+# Initialize config manager once
+config_manager = ConfigManager()
+
+
 def create_mock_excel(expected_headers, sheet_data):
     """
     Create a mock Excel file with multiple sheets, each with headers in row 2 and mock data from row 3 onwards.
@@ -55,9 +59,15 @@ def mock_buz_inventory_items():
         ],
         "EmptySheet": []  # No data rows
     }
-    mock_excel_file = create_mock_excel(ConfigManager().get("headers","buz_inventory_item_file"), sheet_data)
-    print(mock_excel_file)
-    return mock_excel_file
+
+    expected_headers = config_manager.get("headers", "buz_inventory_item_file")
+    return create_mock_excel(expected_headers, sheet_data)
+
+
+@pytest.fixture
+def unleashed_expected_headers():
+    """Fixture for expected headers in the Unleashed CSV file."""
+    return config_manager.get("headers", "unleashed_csv_file")
 
 
 @pytest.fixture
@@ -67,5 +77,12 @@ def supplier_codes():
 
 
 @pytest.fixture
-def mock_unleashed_data():
-    pass
+def mock_unleashed_data(unleashed_expected_headers):
+    """Fixture for mock Unleashed data."""
+    sheet_data = {
+        "DataSheet": [
+            {"Supplier Code": "PG1", "Item Name": "Item A", "Price": 10.0},
+            {"Supplier Code": "001", "Item Name": "Item D", "Price": 20.0},
+        ]
+    }
+    return create_mock_excel(unleashed_expected_headers, sheet_data)

@@ -2,9 +2,11 @@ import re
 from services.database import DatabaseManager
 import logging
 from services.excel import OpenPyXLFileHandler
+from services.config_service import ConfigManager
+
 
 logger = logging.getLogger(__name__)
-INVALID_PKID = "00000000-0000-0000-0000-000000000000"
+config = ConfigManager()
 
 
 def clean_header(header: str) -> str:
@@ -44,7 +46,8 @@ def process_workbook(
     table_name: str,
     expected_headers: list[str],
     header_row: int,
-    db_manager: DatabaseManager
+    db_manager: DatabaseManager,
+    invalid_pkid: str
 ) -> dict[str, int]:
     """
     Process an Excel workbook and insert its data into the specified database table.
@@ -54,6 +57,7 @@ def process_workbook(
     are not in the allowed list, have invalid headers, or contain no data. Existing
     rows for the corresponding inventory group are deleted before inserting new data.
 
+    :param invalid_pkid:
     :param file_handler: An instance of `OpenPyXLFileHandler` used to load and interact
                          with the Excel workbook.
     :param table_name: The name of the database table where the data will be inserted.
@@ -112,7 +116,7 @@ def process_workbook(
             insert_data(db_manager, table_name, ['inventory_group_code'] + cleaned_headers, rows)
 
             # Delete rows with invalid PKID
-            delete_invalid_rows(db_manager, table_name, sheet_name, INVALID_PKID)
+            delete_invalid_rows(db_manager, table_name, sheet_name, invalid_pkid)
 
             summary["processed_sheets"] += 1
             summary["rows_inserted"] += len(rows)

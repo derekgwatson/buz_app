@@ -55,7 +55,7 @@ class GoogleSheetsService:
             worksheet = sheet.worksheet(range_name.split('!')[0])
             return worksheet.get_all_values()
         except Exception as e:
-            logging.error(f"Error fetching data from spreadsheet {spreadsheet_id}: {e}")
+            logger.error(f"Error fetching data from spreadsheet {spreadsheet_id}: {e}")
             return []
 
     def insert_row(self, spreadsheet_id: str, row_data: list[str], worksheet_name: str = 'Sheet1'):
@@ -67,7 +67,7 @@ class GoogleSheetsService:
             worksheet = sheet.worksheet(worksheet_name)
             worksheet.append_row(row_data)
         except Exception as e:
-            logging.error(f"Error inserting row into spreadsheet {spreadsheet_id}: {e}")
+            logger.error(f"Error inserting row into spreadsheet {spreadsheet_id}: {e}")
 
 
 def filter_google_sheet_second_column_numeric(
@@ -90,7 +90,7 @@ def filter_google_sheet_second_column_numeric(
     # Fetch data from the specified range
     data = sheets_service.fetch_sheet_data(spreadsheet_id, range_name)
     if not data:
-        logging.warning("No data fetched from Google Sheets.")
+        logger.warning("No data fetched from Google Sheets.")
         return []
 
     def is_numeric(value: str) -> bool:
