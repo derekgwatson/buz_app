@@ -414,6 +414,22 @@ def get_matching_buz_items():
     return render_template("get_matching_buz_items.html")
 
 
+@app.route("/sync_pricing", methods=["GET", "POST"])
+def sync_pricing():
+    from services.sync_pricing import compare_and_export
+
+    if request.method == "POST":
+        filenames = compare_and_export(
+            db_manager=g.db,
+            upload_folder=app.config['upload_folder'],
+            inventory_item_fields=app.config['headers']['buz_inventory_item_file'],
+            pricing_fields=app.config["headers"]["buz_pricing_file"],
+            wastage_percentages=app.config["wastage_percentages"]
+        )
+        return render_template("sync_pricing.html", filenames=filenames)
+    return render_template("sync_pricing.html")
+
+
 if __name__ == '__main__':
     # Initialize your API wrappers
     app.run(debug=True)

@@ -42,10 +42,16 @@ def is_group_allowed(db_manager: DatabaseManager, inventory_group_code: str) -> 
 
 
 def clean_header(header: Optional[str]) -> str:
-    """Remove spaces, asterisks, and content inside parentheses/brackets."""
+    """
+    Remove spaces, asterisks, and content inside parentheses/brackets.
+
+    :param header: Header string to clean
+    :return: Cleaned header
+    """
     if header is None:
         return ""
     header = re.sub(r'\s*\(.*?\)', '', header)  # Remove content in ( ) or [ ]
+    header = header.lstrip('*')  # Strip leading asterisks
     return header.replace('*', '').replace(' ', '').strip()
 
 

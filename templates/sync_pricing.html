@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Buz Application{% endblock %}
+
+{% block content %}
+
+    <h1>Sync Pricing</h1>
+
+    {% if filenames %}
+        <h2>Generated Files:</h2>
+        <ul>
+            {% for filename in filenames %}
+                <li><a href="{{ url_for('download_file', filename=filename) }}" download>{{ filename }}</a></li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <form action="/sync_pricing" method="POST">
+            <button type="submit" class="btn btn-primary">Go!</button>
+        </form>
+    {% endif %}
+
+{% endblock %}

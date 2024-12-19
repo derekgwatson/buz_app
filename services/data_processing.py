@@ -1,8 +1,8 @@
 import re
 from services.database import DatabaseManager
 from services.process_buz_workbooks import validate_headers
-import logging
 from datetime import datetime
+import logging
 
 
 # Configure logging
@@ -45,13 +45,18 @@ def insert_unleashed_data(db_manager: DatabaseManager, file_path: str, expected_
 
     clear_unleashed_table(db_manager)  # Clear the table before inserting new data
 
-    with open(file_path, 'r', encoding='UTF-8', newline='') as csvfile:
+    logger.debug("insert_unleashed_data: Starting")
+    with open(file_path, 'r', encoding='utf-8-sig', newline='') as csvfile:
         reader = csv.DictReader(csvfile)
 
         is_valid, cleaned_headers = validate_headers(reader.fieldnames, expected_headers)
         if not is_valid:
+            logger.debug("insert_unleashed_data: file is NOT valid")
+            logger.debug(f"insert_unleashed_data: expected headers {expected_headers}")
+            logger.debug(f"insert_unleashed_data: actual headers {reader.fieldnames}")
             return None
 
+        logger.debug("insert_unleashed_data: file is valid")
         # Iterate through each row in the CSV
         for row in reader:
             # Clean the row keys and values
@@ -344,3 +349,23 @@ def get_last_upload_time(db_manager: DatabaseManager, table_name: str):
     cursor = db_manager.execute_query(query, (table_name,))
     result = cursor.fetchone()
     return result[0] if result else None
+
+
+def get_pricing_data(db_manager: DatabaseManager):
+    query = '''
+    SELECT 
+        ii.*, pd.*,
+        up.sellpricetier9 as up_sellpricetier9, 
+        up.defaultpurchaseprice as up_defaultpurchaseprice,
+        up.unitofmeasure as up_unitofmeasure, 
+        up.width AS up_width
+    FROM inventory_items ii
+    INNER JOIN pricing_data pd ON ii.code = pd.inventorycode
+    INNER JOIN unleashed_products up ON ii.supplierproductcode = up.productcode;
+    '''
+    cursor = db_manager.execute_query(query=query)
+    data = cursor.fetchall()
+    columns = [col[0] for col in cursor.description]
+    logger.debug(f"Pricing data rows returned: {len(data)}")
+    logger.debug(f"Pricing data columns returned: {columns}")
+    return data, columns
