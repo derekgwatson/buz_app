@@ -41,43 +41,11 @@ def is_group_allowed(db_manager: DatabaseManager, inventory_group_code: str) -> 
     return db_manager.get_item("inventory_group_codes", {"group_code": inventory_group_code}) is not None
 
 
-def clean_header(header: Optional[str]) -> str:
-    """
-    Remove spaces, asterisks, and content inside parentheses/brackets.
-
-    :param header: Header string to clean
-    :return: Cleaned header
-    """
-    if header is None:
-        return ""
-    header = re.sub(r'\s*\(.*?\)', '', header)  # Remove content in ( ) or [ ]
-    header = header.lstrip('*')  # Strip leading asterisks
-    return header.replace('*', '').replace(' ', '').strip()
-
-
-def validate_headers(
-    actual_headers: Optional[Sequence[str]],
-    expected_headers: Sequence[str]
-) -> tuple[bool, list[str]]:
-    """
-    Validate that two lists of headers match, ignoring trailing '*'.
-
-    :param actual_headers: List or Sequence of actual headers from the file
-    :param expected_headers: List of expected headers to compare against
-    :return: A tuple (bool, cleaned actual headers)
-    """
-    if actual_headers is None:
-        return False, []
-
-    cleaned_actual = [clean_header(header) for header in actual_headers]
-    cleaned_expected = [clean_header(header) for header in expected_headers]
-    return cleaned_actual == cleaned_expected, cleaned_actual
-
-
 def process_workbook(
     file_handler: OpenPyXLFileHandler,
     table_name: str,
     expected_headers: list[str],
+    db_fields: list[str],
     header_row: int,
     db_manager: DatabaseManager,
     invalid_pkid: str
@@ -95,6 +63,7 @@ def process_workbook(
                          with the Excel workbook.
     :param table_name: The name of the database table where the data will be inserted.
     :param expected_headers: A list of expected column headers for validation.
+    :param db_fields: A list of corresponding database fields to be updated.
     :param header_row: The row number in the Excel sheet that contains the headers.
     :param db_manager: An instance of `DatabaseManager` used for database operations.
 
@@ -121,19 +90,23 @@ def process_workbook(
         sheet = workbook[sheet_name]
 
         # Validate headers
-        actual_headers = [sheet.cell(row=header_row, column=col).value for col in range(1, sheet.max_column + 1)]
-        is_valid, cleaned_headers = validate_headers(actual_headers, expected_headers)
-        if not is_valid:
+        actual_headers = [
+            str(sheet.cell(row=header_row, column=col).value).strip().rstrip('*')
+            if sheet.cell(row=header_row, column=col).value is not None else ""
+            for col in range(1, sheet.max_column + 1)
+        ]
+
+        if actual_headers != expected_headers:
             logger.warning(
                 f"Skipping sheet '{sheet_name}': Incorrect headers.\n"
-                f"Expected: {expected_headers}, Found: {cleaned_headers}"
+                f"Expected: {expected_headers}, Found: {actual_headers}"
             )
             summary["skipped_sheets"] += 1
             continue
 
         # Extract and validate rows
         rows = [
-            (sheet_name, *[parse_excel_date(cell) if cleaned_headers[idx] == 'LastEditDate' else cell for idx, cell in enumerate(row)])
+            (sheet_name, *[parse_excel_date(cell) if actual_headers[idx] == 'Last Edit Date' else cell for idx, cell in enumerate(row)])
             for row in sheet.iter_rows(min_row=header_row + 1, values_only=True)
             if any(row) and row[0] is not None  # Skip empty rows or rows with None in the first column
         ]
@@ -147,7 +120,7 @@ def process_workbook(
             delete_existing_data(db_manager, table_name, sheet_name)
 
             # Insert all valid rows into the table
-            insert_data(db_manager, table_name, ['inventory_group_code'] + cleaned_headers, rows)
+            insert_data(db_manager, table_name, ['inventory_group_code'] + db_fields, rows)
 
             # Delete rows with invalid PKID
             delete_invalid_rows(db_manager, table_name, sheet_name, invalid_pkid)

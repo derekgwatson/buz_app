@@ -1,12 +1,13 @@
 import os
 
-from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
+from flask import Flask, render_template, request, url_for, flash, redirect, send_file, g, send_from_directory, jsonify
+from flask_httpauth import HTTPBasicAuth
 import time
 from datetime import timezone
 from services.group_options_check import extract_codes_from_excel_flat_dedup
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
-
+import json
 import logging
 from services.database import init_db_command, create_db_manager
 from dotenv import load_dotenv
@@ -22,9 +23,13 @@ app = Flask(__name__)
 load_dotenv()
 app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
 
+auth = HTTPBasicAuth()
+
+# Load users from the .env file
+users = json.loads(os.getenv("USERS", "{}"))
+
 # note, ConfigManager updates app.config, so we pass in app
 app.config.update(ConfigManager().config)  # No flattening
-logging.debug(app.config)
 
 # Initialize DatabaseManager and store it in app extensions
 app.extensions['db_manager'] = create_db_manager(app.config['database'])
@@ -68,6 +73,12 @@ def teardown_request(exception):
         db.close()
 
 
+@auth.verify_password
+def verify_password(username, password):
+    if username in users and users[username] == password:
+        return username
+
+
 @app.route('/debug')
 def debug():
     """Debug route to check g variables."""
@@ -75,11 +86,13 @@ def debug():
 
 
 @app.route('/')
+@auth.login_required
 def homepage():
     return render_template('home.html')
 
 
 @app.route('/upload', methods=['GET', 'POST'])
+@auth.login_required
 def upload_raw_data():
     from services.data_processing import (
         get_unique_inventory_group_count,
@@ -102,14 +115,39 @@ def upload_raw_data():
         pricing_file = request.files.get('pricing_file')
         unleashed_file = request.files.get('unleashed_file')
 
+        inventory_file_expected_headers = [
+            col["spreadsheet_column"]
+            for col in app.config["headers"]["buz_inventory_item_file"]
+        ]
+        inventory_file_db_fields = [
+            col["database_field"]
+            for col in app.config["headers"]["buz_inventory_item_file"]
+        ]
+
+        pricing_file_expected_headers = [
+            col["spreadsheet_column"]
+            for col in app.config["headers"]["buz_pricing_file"]
+        ]
+        pricing_file_db_fields = [
+            col["database_field"]
+            for col in app.config["headers"]["buz_pricing_file"]
+        ]
+
+        unleashed_file_expected_headers = [
+            col["spreadsheet_column"]
+            for col in app.config["headers"]["unleashed_fields"]
+        ]
+
         uploaded_files  = upload(
             db_manager=g.db,
             inventory_file=inventory_file,
-            inventory_file_expected_headers=app.config['headers']['buz_inventory_item_file'],
+            inventory_file_expected_headers=inventory_file_expected_headers,
+            inventory_file_db_fields=inventory_file_db_fields,
             pricing_file=pricing_file,
-            pricing_file_expected_headers=app.config['headers']['buz_pricing_file'],
+            pricing_file_expected_headers=pricing_file_expected_headers,
+            pricing_file_db_fields=pricing_file_db_fields,
             unleashed_file=unleashed_file,
-            unleashed_file_expected_headers=app.config['headers']['unleashed_fields'],
+            unleashed_file_expected_headers=unleashed_file_expected_headers,
             upload_folder=app.config['upload_folder'],
             invalid_pkid=app.config['invalid_pkid']
         )
@@ -131,6 +169,7 @@ def upload_raw_data():
 
 
 @app.template_filter('datetimeformat')
+@auth.login_required
 def datetimeformat(value):
     if value:
         # Convert to UTC and format as ISO 8601
@@ -139,6 +178,7 @@ def datetimeformat(value):
 
 
 @app.route('/upload_inventory_group_codes', methods=['POST'])
+@auth.login_required
 def upload_inventory_group_codes():
     if 'group_codes_file' not in request.files:
         flash('No file part')
@@ -166,6 +206,7 @@ def upload_inventory_group_codes():
 
 # Route to search for items by supplier product code
 @app.route('/search', methods=['GET', 'POST'])
+@auth.login_required
 def search():
     from services.data_processing import search_items_by_supplier_code
 
@@ -177,6 +218,7 @@ def search():
     
 
 @app.route('/manage_inventory_groups', methods=['GET', 'POST'])
+@auth.login_required
 def manage_inventory_groups():
     from services.data_processing import get_inventory_group_codes
 
@@ -193,6 +235,7 @@ def manage_inventory_groups():
 
 
 @app.route('/delete_inventory_group/<string:inventory_group_code>', methods=['POST'])
+@auth.login_required
 def delete_inventory_group(inventory_group_code):
     from services.data_processing import db_delete_inventory_group
     from services.data_processing import db_delete_records_by_inventory_group
@@ -211,6 +254,7 @@ def delete_inventory_group(inventory_group_code):
 
 
 @app.route('/download/<filename>')
+@auth.login_required
 def download_file(filename):
     uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
     file_path = os.path.join(uploads_dir, filename)
@@ -218,6 +262,7 @@ def download_file(filename):
 
 
 @app.route('/delete_items_not_in_unleashed', methods=['POST'])
+@auth.login_required
 def delete_items_not_in_unleashed():
     from services.data_processing import db_delete_items_not_in_unleashed
 
@@ -228,6 +273,7 @@ def delete_items_not_in_unleashed():
 
 
 @app.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
+@auth.login_required
 def get_items_not_in_unleashed():
     from services.remove_old_items import delete_deprecated_items_request
 
@@ -241,6 +287,7 @@ def get_items_not_in_unleashed():
 
 
 @app.route('/get_group_option_codes', methods=['GET', 'POST'])
+@auth.login_required
 def get_group_option_codes():
     if request.method == 'POST':
         from services.group_options_check import map_inventory_items_to_tabs
@@ -259,6 +306,7 @@ def get_group_option_codes():
 
 
 @app.route('/get_duplicate_codes', methods=["GET", "POST"])
+@auth.login_required
 def get_group_codes_duplicated():
     if request.method == 'POST':
         from services.group_options_check import extract_duplicate_codes_with_locations
@@ -275,6 +323,7 @@ def get_group_codes_duplicated():
 
 
 @app.route('/generate_codes', methods=["GET", "POST"])
+@auth.login_required
 def generate_codes():
     if request.method == "POST":
         from services.helper import generate_multiple_unique_ids
@@ -295,6 +344,7 @@ def generate_codes():
 
 
 @app.route('/generate_backorder_file', methods=["GET", "POST"])
+@auth.login_required
 def generate_backorder_file():
     from services.google_sheets_service import GoogleSheetsService
     from services.config_service import SpreadsheetConfigUpdater
@@ -345,6 +395,7 @@ def robots_txt():
 
 
 @app.route('/get_buz_items_by_supplier_codes', methods=['GET', 'POST'])
+@auth.login_required
 def get_buz_items_by_supplier_codes():
     from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
 
@@ -386,6 +437,7 @@ def get_buz_items_by_supplier_codes():
 
 
 @app.route("/get_matching_buz_items", methods=["GET", "POST"])
+@auth.login_required
 def get_matching_buz_items():
     from services.get_matching_buz_items import process_matching_buz_items
 
@@ -415,6 +467,7 @@ def get_matching_buz_items():
 
 
 @app.route("/sync_pricing", methods=["GET", "POST"])
+@auth.login_required
 def sync_pricing():
     from services.sync_pricing import compare_and_export
 

@@ -1,6 +1,5 @@
 import re
 from services.database import DatabaseManager
-from services.process_buz_workbooks import validate_headers
 from datetime import datetime
 import logging
 
@@ -40,7 +39,11 @@ def clear_unleashed_table(db_manager: DatabaseManager):
     db_manager.execute_query('DELETE FROM unleashed_products', auto_commit=True)  # Clear all rows
 
     
-def insert_unleashed_data(db_manager: DatabaseManager, file_path: str, expected_headers: list[str]):
+def insert_unleashed_data(
+        db_manager: DatabaseManager,
+        file_path: str,
+        expected_headers: list[str]
+):
     import csv
 
     clear_unleashed_table(db_manager)  # Clear the table before inserting new data
@@ -49,8 +52,7 @@ def insert_unleashed_data(db_manager: DatabaseManager, file_path: str, expected_
     with open(file_path, 'r', encoding='utf-8-sig', newline='') as csvfile:
         reader = csv.DictReader(csvfile)
 
-        is_valid, cleaned_headers = validate_headers(reader.fieldnames, expected_headers)
-        if not is_valid:
+        if reader.fieldnames != expected_headers:
             logger.debug("insert_unleashed_data: file is NOT valid")
             logger.debug(f"insert_unleashed_data: expected headers {expected_headers}")
             logger.debug(f"insert_unleashed_data: actual headers {reader.fieldnames}")

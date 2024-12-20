@@ -33,6 +33,9 @@ def base36_encode(number):
         result = digits[remainder] + result
     return result or "0"
 
-# Generate a unique identifier
-#unique_id = generate_unique_id()
-#print(f"Generated Unique ID: {unique_id}")
+
+def get_list_from_dict(dict, key):
+    return [
+        col[key]
+        for col in dict
+    ]

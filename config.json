@@ -158,18 +158,17 @@
   },
   "wastage_percentages": {
     "ROLL": 0.25,
+    "ROLC": 0.25,
+    "ROLLCB": 0.25,
     "ROLLEMPIRE": 0.25,
     "PANGV2": 0.30,
     "VERTV2": 0.30,
     "VERIV2": 0.10,
     "AWNGV2": 0.20,
     "ALPHAV2": 0.20,
-    "HNYCV2": 0.0,
     "RECOVERV2": 0.20,
     "ZIPSV2": 0.20,
-    "PELMDD": 0.20,
     "PERF": 0.20,
-    "AWNS2K": 0.30,
-    "RLSH": 0.20
+    "PELMDD": 0.20
   }
 }

@@ -10,8 +10,10 @@ def upload(
         db_manager: DatabaseManager,
         inventory_file: FileStorage,
         inventory_file_expected_headers: list[str],
+        inventory_file_db_fields: list[str],
         pricing_file: FileStorage,
         pricing_file_expected_headers: list[str],
+        pricing_file_db_fields: list[str],
         unleashed_file: FileStorage,
         unleashed_file_expected_headers: list[str],
         upload_folder: str,
@@ -27,6 +29,7 @@ def upload(
             file_handler=OpenPyXLFileHandler(file_path=inventory_file_path),
             table_name='inventory_items',
             expected_headers=inventory_file_expected_headers,
+            db_fields=inventory_file_db_fields,
             header_row=2,
             invalid_pkid=invalid_pkid
         )
@@ -42,6 +45,7 @@ def upload(
             file_handler=OpenPyXLFileHandler(file_path=pricing_file_path),
             table_name='pricing_data',
             expected_headers=pricing_file_expected_headers,
+            db_fields=pricing_file_db_fields,
             header_row=1,
             invalid_pkid=invalid_pkid
         )
@@ -55,7 +59,7 @@ def upload(
         insert_unleashed_data(
             db_manager=db_manager,
             file_path=unleashed_file_path,
-            expected_headers=unleashed_file_expected_headers,
+            expected_headers=unleashed_file_expected_headers
         )
         update_table_history(db_manager=db_manager, table_name='unleashed_products')
         last_upload = get_last_upload_time(db_manager, 'unleashed_products')

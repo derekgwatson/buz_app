@@ -26,17 +26,14 @@ def compare_and_export(
     data, columns = get_pricing_data(db_manager=db_manager)
     mismatches = []
 
-    for row in data:
+    # Filter data to only include rows with inventory_group_code in wastage_percentages
+    logger.debug(f"Initially there were  {len(data)} rows")
+    filtered_data = [row for row in data if dict(zip(columns, row))['inventory_group_code'] in wastage_percentages]
+    logger.debug(f"Now processing {len(filtered_data)} rows")
+    for row in filtered_data:
         row_dict = dict(zip(columns, row))
 
-        # ignore items with zero cost for now
-        if row_dict['CostSQM'] == 0:
-            continue
-
         # for now lets just focus on Zips
-        if row_dict['inventory_group_code'] != 'ZIPSV2':
-            continue
-
         unleashed_price = get_unleashed_price(
             row_dict['up_unitofmeasure'], row_dict['up_width'],
             row_dict['up_sellpricetier9'], row_dict['up_defaultpurchaseprice']
