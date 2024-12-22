@@ -4,6 +4,9 @@ class Config:
     SECRET_KEY = "supersecretkey"
 
 
+class ProductionConfig(Config):
+
+
 class DevelopmentConfig(Config):
     DEBUG = True
 
