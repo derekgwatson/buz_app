@@ -11,11 +11,14 @@ from services.config_service import ConfigManager
 from app.routes import main_routes
 
 
+# immediately load environment variables to they're available even before create_app is run
+load_dotenv()
+
+
 def create_app(config_name='default'):
     app = Flask(__name__)
 
     # Load environment variables
-    load_dotenv()
     app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
 
     # Configure Flask app (no duplication)

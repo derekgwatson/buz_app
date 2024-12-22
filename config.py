@@ -1,7 +1,13 @@
+import os
+
+
 class Config:
     DEBUG = False
     TESTING = False
-    SECRET_KEY = "supersecretkey"
+
+
+class ProductionConfig(Config):
+    pass
 
 
 class DevelopmentConfig(Config):
