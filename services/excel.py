@@ -12,36 +12,99 @@ class OpenPyXLFileHandler:
     A file handler class that abstracts operations for reading Excel files using openpyxl.
     """
 
-    def __init__(self, file=None, file_path=None):
+    def __init__(self, workbook=None):
         """
-        Initialize the file handler with either a file-like object or a file path.
-
-        :param file: A file-like object (e.g., from `request.files`)
-        :type file: file-like object
-        :param file_path: Path to the Excel file
-        :type file_path: str
+        Initialize the file handler with an existing workbook.
         """
-        if file and file_path:
-            raise ValueError("Provide either a file or a file_path, not both.")
-        if not file and not file_path:
-            raise ValueError("You must provide either a file or a file_path.")
+        self.workbook = workbook
 
-        self.file = file
-        self.file_path = file_path
-        self.workbook = None
-
-    def load_workbook(self, data_only=True):
+    @classmethod
+    def from_file(cls, file_path, data_only=True):
         """
-        Load the workbook into memory.
+        Initialize the file handler with an Excel file from disk.
 
-        :param data_only: Whether to read the values instead of formulas
-        :type data_only: bool
+        Args:
+            file_path (str): Path to the Excel file.
+            data_only (bool): Whether to read the values instead of formulas.
+
+        Returns:
+            OpenPyXLFileHandler: An initialized file handler.
         """
-        if self.file_path:
-            self.workbook = openpyxl.load_workbook(self.file_path, data_only=data_only)
-        elif self.file:
-            self.workbook = openpyxl.load_workbook(BytesIO(self.file.read()), data_only=data_only)
-        return self.workbook
+        logger.debug(f"File path we're loading the excel from is {file_path}")
+        workbook = openpyxl.load_workbook(file_path, data_only=data_only)
+        return cls(workbook=workbook)
+
+    @classmethod
+    def from_file_like(cls, file, data_only=True):
+        """
+        Initialize the file handler with a file-like object.
+
+        Args:
+            file: A file-like object (e.g., from `request.files`).
+            data_only (bool): Whether to read the values instead of formulas.
+
+        Returns:
+            OpenPyXLFileHandler: An initialized file handler.
+        """
+        workbook = openpyxl.load_workbook(BytesIO(file.read()), data_only=data_only)
+        return cls(workbook=workbook)
+
+    @classmethod
+    def from_sheets_data(cls, sheets_data):
+        """
+        Initialize the file handler with sheets data.
+
+        Args:
+            sheets_data (dict): Dictionary where keys are sheet names, and values are tuples containing:
+                                (data, headers, header_row). `header_row` is optional and defaults to 1.
+
+        Returns:
+            OpenPyXLFileHandler: An initialized file handler.
+        """
+        handler = cls()
+        handler._create_excel_file(sheets_data)
+        return handler
+
+    @classmethod
+    def from_items(cls, items, headers_config, header_row=1):
+        """
+        Initialize the file handler with items and headers configuration.
+
+        Args:
+            items (list[dict]): Inventory items to process.
+            headers_config (list[dict]): Configuration mapping database fields to headers.
+            header_row (int): Row where headers are located in the Excel sheet.
+
+        Returns:
+            OpenPyXLFileHandler: An initialized file handler.
+        """
+        sheets_data = cls.transform_items_to_sheets_data(items, headers_config, header_row)
+        return cls.from_sheets_data(sheets_data)
+
+    @staticmethod
+    def transform_items_to_sheets_data(items, headers_config, header_row=1):
+        """
+        Transform items into sheets data format for Excel creation.
+        """
+        headers = [header["spreadsheet_column"] for header in headers_config]
+        database_fields = [header["database_field"] for header in headers_config]
+
+        grouped_data = {}
+        for item in items:
+            group_code = item["inventory_group_code"]
+            if group_code not in grouped_data:
+                grouped_data[group_code] = []
+            grouped_data[group_code].append({field: item[field] for field in database_fields})
+
+        sheets_data = {}
+        for group_code, group_items in grouped_data.items():
+            sheet_data = [
+                [item[field] for field in database_fields]
+                for item in group_items
+            ]
+            sheets_data[group_code] = (sheet_data, headers, header_row)
+
+        return sheets_data
 
     def get_sheet_names(self):
         """
@@ -51,7 +114,7 @@ class OpenPyXLFileHandler:
         :rtype: list[str]
         """
         if self.workbook is None:
-            raise ValueError("Workbook is not loaded. Call load_workbook() first.")
+            raise ValueError("Workbook is not loaded.")
         return self.workbook.sheetnames
 
     def get_sheet(self, sheet_name):
@@ -64,7 +127,7 @@ class OpenPyXLFileHandler:
         :rtype: openpyxl.worksheet.worksheet.Worksheet
         """
         if self.workbook is None:
-            raise ValueError("Workbook is not loaded. Call load_workbook() first.")
+            raise ValueError("Workbook is not loaded.")
         return self.workbook[sheet_name]
 
     def get_headers(self, sheet, header_row):
@@ -104,7 +167,7 @@ class OpenPyXLFileHandler:
         :rtype: dict[str, list[dict]]
         """
         if self.workbook is None:
-            raise ValueError("Workbook is not loaded. Call load_workbook() first.")
+            raise ValueError("Workbook is not loaded.")
 
         # Default to header row 1 for all sheets if no configuration is provided
         all_data = {}
@@ -116,4 +179,66 @@ class OpenPyXLFileHandler:
             all_data[sheet_name] = [dict(zip(headers, row)) for row in rows if any(row)]
 
         return all_data
+
+    def _create_excel_file(self, sheets_data):
+        """
+         Internal method to create a new Excel workbook with multiple sheets.
+
+        Args:
+            :param sheets_data: Dictionary where keys are sheet names, and values are tuples containing:
+                                (data, headers, header_row). `header_row` is optional and defaults to 1.
+                                Example:
+                                {
+                                    "Sheet1": (data1, headers1, header_row1),
+                                    "Sheet2": (data2, headers2),  # Defaults to header_row=1
+                                }
+            :type sheets_data: dict[str, tuple[list[list], list[str], int]]
+
+        Modifies:
+            self.workbook: Sets this attribute to the newly created workbook.
+        """
+        # Create a new workbook
+        self.workbook = openpyxl.Workbook()
+
+        for idx, (sheet_name, sheet_data) in enumerate(sheets_data.items(), start=1):
+            # Unpack the sheet data
+            data = sheet_data[0]
+            headers = sheet_data[1]
+            header_row = sheet_data[2] if len(sheet_data) > 2 else 1
+
+            # Add a new sheet or use the default active sheet
+            if idx == 1:
+                sheet = self.workbook.active
+                sheet.title = sheet_name
+            else:
+                sheet = self.workbook.create_sheet(title=sheet_name)
+
+            # Write headers if provided
+            if headers:
+                for col_num, header in enumerate(headers, start=1):
+                    sheet.cell(row=header_row, column=col_num, value=header)
+
+            # Write data starting below the header row
+            data_start_row = header_row + 1
+            for row_idx, row in enumerate(data, start=data_start_row):
+                for col_idx, value in enumerate(row, start=1):
+                    sheet.cell(row=row_idx, column=col_idx, value=value)
+
+        # Save the workbook to a BytesIO object
+        file_stream = BytesIO()
+        self.workbook.save(file_stream)
+        file_stream.seek(0)
+
+    def save_workbook(self, save_path):
+        """
+        Save the current workbook to the specified file path.
+
+        :param save_path: The file path where the workbook should be saved.
+        :type save_path: str
+        """
+        if self.workbook is None:
+            raise ValueError("No workbook is loaded or created to save.")
+
+        self.workbook.save(save_path)
+        logger.info(f"Workbook saved to {save_path}")
 

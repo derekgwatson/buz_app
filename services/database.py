@@ -187,10 +187,11 @@ def init_db_command():
                 );
             ''',
 
-            "inventory_group_codes": '''
-                CREATE TABLE IF NOT EXISTS inventory_group_codes (
+            "inventory_groups": '''
+                CREATE TABLE IF NOT EXISTS inventory_groups (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    group_code TEXT UNIQUE NOT NULL
+                    group_code TEXT UNIQUE NOT NULL,
+                    group_description TEXT NOT NULL
                 );
             ''',
 
@@ -208,7 +209,30 @@ def init_db_command():
                     table_name TEXT UNIQUE NOT NULL,
                     last_upload TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
-        ''',
+            ''',
+
+            "fabrics": '''
+                CREATE TABLE IF NOT EXISTS fabrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    supplier_code VARCHAR(50) UNIQUE NOT NULL,
+                    description_1 VARCHAR(255),
+                    description_2 VARCHAR(255),
+                    description_3 VARCHAR(255),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ''',
+
+            "fabric_group_mappings": '''
+                CREATE TABLE IF NOT EXISTS fabric_group_mappings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fabric_id INTEGER NOT NULL,
+                    inventory_group_code VARCHAR(50) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (fabric_id) REFERENCES fabrics (id) ON DELETE CASCADE
+                );
+            '''
         }
 
         for name, schema in tables.items():

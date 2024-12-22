@@ -10,11 +10,11 @@
         <h2>Generated Files:</h2>
         <ul>
             {% for filename in filenames %}
-                <li><a href="{{ url_for('download_file', filename=filename) }}" download>{{ filename }}</a></li>
+                <li><a href="{{ url_for('main_routes.download_file', filename=filename) }}" download>{{ filename }}</a></li>
             {% endfor %}
         </ul>
     {% else %}
-        <form action="/sync_pricing" method="POST">
+        <form action="{{ url_for('main_routes.sync_pricing') }}" method="POST">
             <button type="submit" class="btn btn-primary">Go!</button>
         </form>
     {% endif %}

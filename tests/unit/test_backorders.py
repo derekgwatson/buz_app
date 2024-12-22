@@ -31,7 +31,6 @@ class TestInventoryBackorder(unittest.TestCase):
         self.assertIn("Missing required columns", str(context.exception))
 
     def test_successful_backorder_processing(self):
-        self.file_handler.load_workbook.return_value = None
         self.file_handler.read_sheet_to_dict.return_value = {
             "Product1": [
                 {
@@ -69,7 +68,6 @@ class TestInventoryBackorder(unittest.TestCase):
             self.range_name,
         )
 
-        self.file_handler.load_workbook.assert_called_once()
         self.file_handler.read_sheet_to_dict.assert_called_once_with(header_row=1)
 
         # Assertions: Upload file checks
@@ -100,7 +98,6 @@ class TestInventoryBackorder(unittest.TestCase):
         self.assertEqual(original_row2[2], "", "Original sheet Product2 warning should be empty.")
 
     def test_expired_backorder_message(self):
-        self.file_handler.load_workbook.return_value = None
         self.file_handler.read_sheet_to_dict.return_value = {
             "Inventory": [
                 {
@@ -126,7 +123,6 @@ class TestInventoryBackorder(unittest.TestCase):
             self.range_name,
         )
 
-        self.file_handler.load_workbook.assert_called_once()
         self.file_handler.read_sheet_to_dict.assert_called_once_with(header_row=1)
 
 

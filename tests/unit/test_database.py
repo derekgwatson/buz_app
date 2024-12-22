@@ -61,7 +61,7 @@ class TestDatabaseManager(unittest.TestCase):
         tables = {row['name'] for row in cursor.fetchall()}
 
         expected_tables = {'inventory_items', 'pricing_data', 'unleashed_products',
-                           'inventory_group_codes', 'wholesale_markups'}
+                           'inventory_groups', 'wholesale_markups'}
         self.assertTrue(expected_tables.issubset(tables))
         
 

@@ -28,7 +28,6 @@ def extract_codes_from_excel_flat_dedup(file_handler: OpenPyXLFileHandler) -> Li
             - The sheet name.
             - A single code from that sheet.
     """
-    file_handler.load_workbook()
     results = set()  # Use a set to ensure uniqueness
 
     for sheet_name in file_handler.workbook.sheetnames:
@@ -86,7 +85,6 @@ def map_inventory_items_to_tabs(
               If the item is not found, "Not Found" is added instead.
     """
     # Load the inventory workbook
-    file_handler.load_workbook()
     inventory_mapping = []
 
     # Iterate through the codes list

@@ -26,7 +26,7 @@ def upload(
         inventory_file.save(inventory_file_path)
         process_workbook(
             db_manager=db_manager,
-            file_handler=OpenPyXLFileHandler(file_path=inventory_file_path),
+            file_handler=OpenPyXLFileHandler.from_file(file_path=inventory_file_path),
             table_name='inventory_items',
             expected_headers=inventory_file_expected_headers,
             db_fields=inventory_file_db_fields,
@@ -42,7 +42,7 @@ def upload(
         pricing_file.save(pricing_file_path)
         process_workbook(
             db_manager=db_manager,
-            file_handler=OpenPyXLFileHandler(file_path=pricing_file_path),
+            file_handler=OpenPyXLFileHandler.from_file(file_path=pricing_file_path),
             table_name='pricing_data',
             expected_headers=pricing_file_expected_headers,
             db_fields=pricing_file_db_fields,
@@ -66,3 +66,20 @@ def upload(
         uploaded_files['unleashed_file'] = last_upload
 
     return uploaded_files
+
+
+def parse_headers(config, key):
+    """Parse headers from the application configuration."""
+    headers = config["headers"].get(key, [])
+    expected_headers = [col["spreadsheet_column"] for col in headers]
+    db_fields = [col["database_field"] for col in headers]
+    return expected_headers, db_fields
+
+
+def init_last_upload_times(db_manager):
+    """Initialize last upload times for each file."""
+    return {
+        'inventory_file': get_last_upload_time(db_manager, 'inventory_items'),
+        'pricing_file': get_last_upload_time(db_manager, 'pricing_data'),
+        'unleashed_file': get_last_upload_time(db_manager, 'unleashed_products')
+    }

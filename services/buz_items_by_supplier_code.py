@@ -1,11 +1,16 @@
 import logging
+import pandas as pd
+from io import BytesIO
+import json
+from werkzeug.datastructures import FileStorage
+import re
 
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 
-def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
+def process_buz_items_by_supplier_codes(uploaded_file: FileStorage, supplier_codes: list[str]):
     """
     Process all sheets in the uploaded Excel file to filter rows based on supplier codes,
     while ensuring row 2 contains the expected headers or is blank.
@@ -14,11 +19,6 @@ def process_buz_items_by_supplier_codes(uploaded_file, supplier_codes):
     :param supplier_codes: List of supplier codes to filter by.
     :return: BytesIO object containing the filtered Excel file, or None if no valid sheets.
     """
-    import pandas as pd
-    from io import BytesIO
-    import json
-    from werkzeug.datastructures import FileStorage
-    import re
 
     # Check if the file is provided and not empty
     if not uploaded_file:

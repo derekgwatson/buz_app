@@ -33,7 +33,7 @@
         {% if request.method == 'POST' %}
             <p class="alert alert-info">No duplicated group options codes found. Please upload a file to search for duplicates.</p>
         {% endif %}
-        <form action="/get_duplicate_codes" method="POST" enctype="multipart/form-data">
+        <form action="{{ url_for('main_routes.get_duplicate_codes') }}" method="POST" enctype="multipart/form-data">
             <div class="mb-3">
                 <label for="group_options_file" class="form-label">Group Options File:</label>
                 <input type="file" name="group_options_file" id="group_options_file" class="form-control">

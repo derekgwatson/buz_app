@@ -15,7 +15,7 @@
     {% endwith %}
 
     <h3>Upload codes in bulk:</h3>
-    <form action="{{ url_for('upload_inventory_group_codes') }}" method="POST" enctype="multipart/form-data">
+    <form action="{{ url_for('main_routes.upload_inventory_groups') }}" method="POST" enctype="multipart/form-data">
         <label for="group_codes_file">Upload Group Codes (One per line):</label>
         <input type="file" name="group_codes_file" accept=".txt">
 
@@ -26,26 +26,32 @@
     <h3>Or add them one by one:</h3>
     <form method="POST" class="form-inline">
         <div class="form-group">
-            <label for="new_group_code">Add New Group Code:</label>
+            <label for="new_group_code">New Group Code:</label>
             <input type="text" name="new_group_code" id="new_group_code" class="form-control" required>
+        </div>
+        <div class="form-group">
+            <label for="new_group_description">New Group Description:</label>
+            <input type="text" name="new_group_description" id="new_group_description" class="form-control" required>
         </div>
         <button type="submit" class="btn btn-primary">Add</button>
     </form>
 
-    <h3>Existing Group Codes:</h3>
+    <h3>Existing Groups:</h3>
     <table class="table table-bordered">
         <thead>
             <tr>
-                <th>Inventory Group Code</th>
+                <th>Code</th>
+                <th>Description</th>
                 <th>Action</th>
             </tr>
         </thead>
         <tbody>
-            {% for group_code in allowed_groups %}
+            {% for inventory_group in inventory_groups %}
             <tr>
-                <td>{{ group_code }}</td>
+                <td>{{ inventory_group.group_code }}</td>
+                <td>{{ inventory_group.group_description }}</td>
                 <td>
-                    <form action="{{ url_for('delete_inventory_group', inventory_group_code=group_code) }}" method="POST" style="display:inline;">
+                    <form action="{{ url_for('main_routes.delete_inventory_group', inventory_group_code=inventory_group.group_code) }}" method="POST" style="display:inline;">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                     </form>
                 </td>

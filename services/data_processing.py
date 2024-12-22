@@ -203,22 +203,24 @@ def search_items_by_supplier_code(db_manager: DatabaseManager, code: str):
         FROM inventory_items 
         WHERE SupplierProductCode = ?
     '''
-    results = db_manager.execute_query(query, (code,)).fetchall()
-    return results
+    return db_manager.execute_query(query, (code,)).fetchall()
 
 
-def get_inventory_group_codes(db_manager: DatabaseManager) -> list[str]:
+def get_inventory_groups(db_manager: DatabaseManager):
     """
-    Retrieve all inventory group codes from the database.
+    Retrieve all inventory group codes from the database, sorted by their descriptions.
 
     :param db_manager: Database Manager
-    :return: A list of inventory group codes as strings.
+    :return: A list of inventory group codes as strings, sorted by description.
     :rtype: list[str]
     """
-    cursor = db_manager.execute_query('SELECT group_code FROM inventory_group_codes')
-    codes = [row[0] for row in cursor.fetchall()]
-    codes.sort(key=lambda x: x.lower())  # Sort manually if necessary
-    return codes
+    query = '''
+        SELECT group_code, group_description 
+        FROM inventory_groups 
+        ORDER BY group_description 
+        COLLATE NOCASE ASC
+    '''
+    return db_manager.execute_query(query).fetchall()
 
 
 def db_delete_inventory_group(db_manager: DatabaseManager, group_code: str):
@@ -246,6 +248,12 @@ def get_unique_inventory_group_count(db_manager: DatabaseManager):
     cursor = db_manager.execute_query(sql)
     count = cursor.fetchone()[0]  # Get the first item from the result
     return count
+
+
+def get_unique_inventory_groups(db_manager: DatabaseManager):
+    sql = 'SELECT DISTINCT inventory_group_code FROM inventory_items'
+    cursor = db_manager.execute_query(sql)
+    return cursor.fetchall()
 
 
 def get_all_inventory_items_by_group(db_manager: DatabaseManager):
@@ -356,7 +364,7 @@ def get_last_upload_time(db_manager: DatabaseManager, table_name: str):
 def get_pricing_data(db_manager: DatabaseManager):
     query = '''
     SELECT 
-        ii.*, pd.*,
+        pd.*,
         up.sellpricetier9 as up_sellpricetier9, 
         up.defaultpurchaseprice as up_defaultpurchaseprice,
         up.unitofmeasure as up_unitofmeasure, 
@@ -371,3 +379,146 @@ def get_pricing_data(db_manager: DatabaseManager):
     logger.debug(f"Pricing data rows returned: {len(data)}")
     logger.debug(f"Pricing data columns returned: {columns}")
     return data, columns
+
+
+def add_fabric(
+        db_manager: DatabaseManager,
+        supplier_code: str,
+        description_1: str,
+        description_2: str,
+        description_3: str
+):
+    db_manager.execute_query(
+        query="""
+            INSERT INTO fabrics (supplier_code, description_1, description_2, description_3)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(supplier_code) DO UPDATE SET
+                description_1=excluded.description_1,
+                description_2=excluded.description_2,
+                description_3=excluded.description_3,
+                updated_at=CURRENT_TIMESTAMP;
+            """,
+        params=(supplier_code, description_1, description_2, description_3),
+        auto_commit=True
+    )
+
+
+def map_fabric_to_group(
+        db_manager: DatabaseManager,
+        fabric_id: int,
+        inventory_group_code: str
+):
+    db_manager.execute_query(
+        query="""
+            INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code)
+            VALUES (?, ?)
+            ON CONFLICT DO NOTHING;
+            """,
+        params=(fabric_id, inventory_group_code),
+        auto_commit=True
+    )
+
+
+def get_fabric_by_supplier_code(db_manager: DatabaseManager, supplier_code: str):
+    cursor = db_manager.execute_query(
+        query="SELECT * FROM fabrics WHERE supplier_code = ?",
+        params=(supplier_code,)
+    )
+    return cursor.fetchone()
+
+
+def get_groups_for_fabric(db_manager: DatabaseManager, fabric_id: int):
+    cursor = db_manager.execute_query(
+        query="SELECT inventory_group_code FROM fabric_group_mappings WHERE fabric_id = ?",
+        params=(fabric_id, )
+    )
+    return cursor.fetchall()
+
+
+def get_all_fabrics(db_manager: DatabaseManager):
+    cursor = db_manager.execute_query(
+        query="SELECT * FROM fabrics"
+    )
+    return cursor.fetchall()
+
+
+def get_all_fabric_group_mappings(db_manager: DatabaseManager):
+    cursor = db_manager.execute_query(
+        query="SELECT * FROM fabric_group_mappings"
+    )
+    return cursor.fetchall()
+
+
+def add_inventory_item(
+        db_manager: DatabaseManager,
+        inventory_group_code: str,
+        description_1: str,
+        description_2: str,
+        description_3: str,
+        supplier_product_code: str
+):
+    from services.helper import generate_unique_id
+
+    # Fetch a template item from the group
+    cursor = db_manager.execute_query(
+        query="""
+            SELECT * FROM inventory_items
+            WHERE inventory_group_code = ?
+            LIMIT 1;
+        """,
+        params=(inventory_group_code,)
+    )
+    template_item = cursor.fetchone()
+
+    # Handle case where no template item exists
+    if not template_item:
+        raise ValueError(f"No template item found for inventory group '{inventory_group_code}'")
+
+    # Filter out fields that will change
+    fields_to_copy = {key: value for key, value in template_item.items()
+                      if key not in ['PkId', 'Code', 'Description', 'DescnPart1', 'DescnPart2', 'DescnPart3',
+                                     'SupplierProductCode', 'id']}
+
+    code = generate_unique_id()
+    description = ""
+    # Build and execute the insert query
+    db_manager.execute_query(
+        query="""
+            INSERT INTO inventory_items (Code, Description, DescnPart1, DescnPart2, DescnPart3, 
+            SupplierProductCode, Operation, {fields})
+            VALUES (?, ?, ?, ?, ?, ?, ?, {placeholders})
+        """.format(
+            fields=", ".join(fields_to_copy.keys()),
+            placeholders=", ".join(["?"] * len(fields_to_copy))
+        ),
+        params=(code, description, description_1, description_2, description_3, supplier_product_code, "A",
+                *fields_to_copy.values()),
+        auto_commit=True
+    )
+
+    # Return the ID of the new item
+    return code
+
+
+def get_old_buz_items_unleashed(db_manager: DatabaseManager):
+    query = """
+        SELECT 
+            ii.*, 
+            "D" AS Operation
+        FROM inventory_items ii INNER JOIN 
+            unleashed_products up ON ii.SupplierProductCode = up.ProductCode
+        WHERE 
+            (up.IsObsoleted = "Yes" OR up.IsSellable = "No") AND
+            ii.Supplier = "UNLEASHED"
+                        
+    """
+    result = db_manager.execute_query(query).fetchall()
+
+    # Add "D" for Operation manually
+    updated_result = []
+    for row in result:
+        row_dict = dict(row)
+        row_dict['Operation'] = "D"
+        updated_result.append(row_dict)
+
+    return updated_result

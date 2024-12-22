@@ -38,7 +38,7 @@ def is_group_allowed(db_manager: DatabaseManager, inventory_group_code: str) -> 
     :rtype: bool
     """
 
-    return db_manager.get_item("inventory_group_codes", {"group_code": inventory_group_code}) is not None
+    return db_manager.get_item("inventory_groups", {"group_code": inventory_group_code}) is not None
 
 
 def process_workbook(
@@ -74,20 +74,14 @@ def process_workbook(
     """
     summary = {"processed_sheets": 0, "skipped_sheets": 0, "rows_inserted": 0}
 
-    try:
-        workbook = file_handler.load_workbook()
-    except Exception as e:
-        logger.error(f"Failed to load workbook: {e}")
-        return summary
-
-    for sheet_name in workbook.sheetnames:
+    for sheet_name in file_handler.workbook.sheetnames:
         if not is_group_allowed(db_manager, sheet_name):
             logger.warning(f"Skipping sheet {sheet_name} as it is not in the allowed list.")
             summary["skipped_sheets"] += 1
             continue
 
         logger.info(f"Processing sheet: {sheet_name}")
-        sheet = workbook[sheet_name]
+        sheet = file_handler.workbook[sheet_name]
 
         # Validate headers
         actual_headers = [

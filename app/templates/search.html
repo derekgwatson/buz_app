@@ -4,7 +4,7 @@
 
 {% block content %}
 <h1>Search Items by Supplier Product Code</h1>
-<form method="POST" action="/search" class="mb-4">
+<form action="{{ url_for('main_routes.search') }}" method="POST" class="mb-4">
     <div class="input-group">
         <input 
             type="text" 

@@ -23,7 +23,7 @@
         the process will complete without generating an output file.
     </p>
 
-    <form action="/get_matching_buz_items" method="post" enctype="multipart/form-data">
+    <form action="{{ url_for('main_routes.get_matching_buz_items') }}" method="post" enctype="multipart/form-data">
         <label for="first_file">Upload First Spreadsheet:</label>
         <input type="file" id="first_file" name="first_file" required><br><br>
 

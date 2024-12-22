@@ -32,7 +32,7 @@
         </ul>
 
 	{% else %}
-        <form action="/get_group_option_codes" method="POST" enctype="multipart/form-data">
+        <form action="{{ url_for('main_routes.get_group_option_codes') }}" method="POST" enctype="multipart/form-data">
             <div class="mb-3">
                 <label for="inventory_items_file" class="form-label">Inventory Items File:</label>
                 <input type="file" name="inventory_items_file" id="inventory_items_file" class="form-control">
