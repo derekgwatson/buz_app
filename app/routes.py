@@ -430,3 +430,11 @@ def sync_pricing():
         )
         return render_template("sync_pricing.html", filenames=filenames)
     return render_template("sync_pricing.html")
+
+
+@main_routes.route('/fabrics/create', methods=['GET'])
+def create_fabric():
+    """
+    Render the form to create a new fabric.
+    """
+    return render_template('create_fabric.html')

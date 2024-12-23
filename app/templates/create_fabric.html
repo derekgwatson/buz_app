@@ -1,0 +1,118 @@
+{% extends "layout.html" %}
+
+{% block title %}Create a New Fabric - Buz Application{% endblock %}
+
+{% block content %}
+
+<h1>Create a New Fabric</h1>
+<form action="/fabrics/create" method="POST" style="max-width: 600px; margin: auto;">
+    <div class="form-group">
+        <label for="code">Code</label>
+        <input type="text" id="code" name="code" required class="form-control">
+    </div>
+
+    <div class="form-group">
+        <label for="type">Product Type</label>
+        <select id="type" name="type" required class="form-control">
+            <option value="Curtain">Curtain</option>
+            <option value="Blind_Awning">Blind / Awning</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="description1">Description 1</label>
+        <input type="text" id="description1" name="description1" class="form-control">
+    </div>
+
+    <div class="form-group">
+        <label for="description2">Description 2</label>
+        <input type="text" id="description2" name="description2" class="form-control">
+    </div>
+
+    <div class="form-group">
+        <label for="description3">Description 3</label>
+        <input type="text" id="description3" name="description3" class="form-control">
+    </div>
+
+    <div class="form-group">
+        <label for="cost">Cost</label>
+        <input type="number" id="cost" name="cost" step="0.01" placeholder="Enter cost" required class="form-control">
+    </div>
+
+    <!-- Curtain-Specific Fields -->
+    <div id="curtain-fields" style="display: none;">
+        <div class="form-group">
+            <label for="width">Width (mm)</label>
+            <input type="number" id="width" name="width" placeholder="Enter fabric width in mm" class="form-control">
+        </div>
+
+        <div class="form-group">
+            <label for="available_directions">Available Directions</label>
+            <select id="available_directions" name="available_directions" class="form-control">
+                <option value="Drop">Drop</option>
+                <option value="Continuous">Continuous</option>
+                <option value="Both">Both</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="pattern_repeat">Vertical Pattern Repeat (mm)</label>
+            <input type="number" id="pattern_repeat" name="pattern_repeat" placeholder="Enter pattern repeat size in mm" class="form-control">
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Submit</button>
+</form>
+
+<script>
+    const typeSelect = document.getElementById("type");
+    const curtainFields = document.getElementById("curtain-fields");
+
+    function toggleCurtainFields() {
+        if (typeSelect.value === "Curtain") {
+            curtainFields.style.display = "block";
+        } else {
+            curtainFields.style.display = "none";
+        }
+    }
+
+    typeSelect.addEventListener("change", toggleCurtainFields);
+    toggleCurtainFields();
+</script>
+
+<style>
+    .form-group {
+        margin-bottom: 15px;
+    }
+
+    label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    input, select, button {
+        width: 100%;
+        padding: 10px; /* Increased padding for better spacing */
+        box-sizing: border-box;
+        font-size: 16px; /* Ensures text fits nicely */
+        min-height: 40px; /* Ensures enough height for dropdowns */
+        line-height: 1.5; /* Adjusts line height for better readability */
+    }
+
+    select {
+        appearance: none; /* Ensures consistent dropdown styling */
+        -moz-appearance: none;
+        -webkit-appearance: none;
+        background-color: white; /* Fixes color contrast issues if any */
+    }
+
+    .btn {
+        width: auto;
+        padding: 10px 15px;
+        margin-top: 10px;
+        font-size: 16px;
+    }
+</style>
+
+{% endblock %}

@@ -9,6 +9,180 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class DatabaseError(Exception):
+    """Custom exception raised for database-related errors."""
+    pass
+
+
+class DatabaseManager:
+    def __init__(self, connection):
+        """
+        Initialize the DatabaseManager with a database connection.
+
+        :param connection: A database connection object.
+        """
+        self.connection = connection
+
+    def close(self):
+        """
+        Close the database connection.
+
+        :raises DatabaseError: If closing the connection fails.
+        """
+        if self.connection:
+            try:
+                self.connection.close()
+            except Exception as e:
+                raise DatabaseError(f"Failed to close the database connection: {e}")
+
+    def __del__(self):
+        """
+        Ensure the database connection is closed when the object is deleted.
+        """
+        try:
+            self.close()
+        except DatabaseError as e:
+            logger.error(f"Warning: {e}")
+
+    def execute_query(self, query, params=None, auto_commit=False):
+        """
+        Execute a single SQL query with optional parameters.
+
+        :param auto_commit:
+        :param query: The SQL query to execute.
+        :type query: str
+        :param params: A list or tuple of query parameters, defaults to None.
+        :type params: list | tuple, optional
+        :return: The cursor after executing the query.
+        :rtype: sqlite3.Cursor
+        :raises DatabaseError: If an error occurs during query execution.
+        """
+        if params is None:
+            params = []
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query, params)
+
+            if auto_commit:
+                self.commit()
+
+            return cursor
+        except Exception as e:
+            raise DatabaseError(f"Database query failed: {e}")
+
+    def commit(self):
+        """
+        Commit the current database transaction.
+
+        :raises DatabaseError: If an error occurs during the commit operation.
+        """
+        try:
+            self.connection.commit()
+        except Exception as e:
+            raise DatabaseError(f"Commit failed: {e}")
+
+    def insert_item(self, table, data):
+        """
+        Insert a new record into a specified table.
+
+        :param table: The name of the table to insert into.
+        :type table: str
+        :param data: A dictionary of column-value pairs to insert.
+        :type data: dict
+        :raises DatabaseError: If the insertion fails.
+        """
+        query = f"INSERT OR IGNORE INTO {table} ({', '.join(data.keys())}) VALUES ({', '.join(['?'] * len(data))})"
+        try:
+            self.execute_query(query, tuple(data.values()))
+            self.commit()
+        except DatabaseError as e:
+            raise DatabaseError(f"Insertion failed: {e}")
+
+    def get_item(self, table, criteria):
+        """
+        Retrieve records from a table based on search criteria.
+
+        :param table: The name of the table to query.
+        :type table: str
+        :param criteria: A dictionary of column-value pairs for filtering results.
+        :type criteria: dict
+        :return: A list of matching records.
+        :rtype: list
+        :raises DatabaseError: If the retrieval fails.
+        """
+        query = f"SELECT * FROM {table} WHERE " + " AND ".join(f"{k}=?" for k in criteria.keys())
+        try:
+            cursor = self.execute_query(query, tuple(criteria.values()))
+            return cursor.fetchall()
+        except DatabaseError as e:
+            raise DatabaseError(f"Retrieval failed: {e}")
+
+    def delete_item(self, table, criteria):
+        """
+        Delete records from a table based on search criteria.
+
+        :param table: The name of the table to delete from.
+        :type table: str
+        :param criteria: A dictionary of column-value pairs for filtering records to delete.
+        :type criteria: dict
+        :raises DatabaseError: If the deletion fails.
+        """
+        query = f"DELETE FROM {table} WHERE " + " AND ".join(f"{k}=?" for k in criteria.keys())
+        try:
+            self.execute_query(query, tuple(criteria.values()))
+            self.commit()
+        except DatabaseError as e:
+            raise DatabaseError(f"Deletion failed: {e}")
+
+    def executemany(self, query, param_list):
+        """
+        Execute a SQL query multiple times with different parameter sets.
+
+        :param query: The SQL query to execute.
+        :type query: str
+        :param param_list: A list of parameter tuples to execute the query with.
+        :type param_list: list[tuple]
+        :return: The number of rows affected.
+        :rtype: int
+        :raises DatabaseError: If the bulk execution fails.
+        """
+        try:
+            cursor = self.connection.cursor()
+            cursor.executemany(query, param_list)
+            self.commit()
+            return cursor.rowcount
+        except Exception as e:
+            raise DatabaseError(f"Bulk execution failed: {e}")
+
+
+def clear_database(db_manager: DatabaseManager):
+    """
+    Clear all records from the database tables.
+
+    :param db_manager: An instance of DatabaseManager.
+    :type db_manager: DatabaseManager
+    """
+    tables_to_clear = [
+        "inventory_items",
+        "pricing_data",
+        "unleashed_products",
+        "inventory_group_codes",
+        "wholesale_markups",
+    ]
+
+    try:
+        for table in tables_to_clear:
+            logger.info(f"Clearing data in table: {table} (if required)")
+            db_manager.execute_query(f"DELETE FROM {table}")
+        db_manager.commit()
+
+    except DatabaseError as e:
+        logger.error(f"An error occurred: {e}")
+    finally:
+        db_manager.commit()
+        logger.info("Database cleared")
+
+
 def create_db_manager(db_file: str):
     """
     Creates a DatabaseManager instance with a static SQLite connection.
@@ -30,7 +204,14 @@ def init_db_command():
     """
     Initialize the database using the CLI command.
     """
-    db_manager = current_app.extensions['db_manager']  # Use the already initialized manager
+    db_manager = current_app.extensions['db_manager']
+    init_db(db_manager)
+
+
+def init_db(db_manager: DatabaseManager):
+    """
+    Initialize the database using the CLI command.
+    """
     try:
         logger.info("Initializing the database...")
         tables = {
@@ -243,179 +424,5 @@ def init_db_command():
         logger.info("Database initialized successfully!")
     except DatabaseError as e:
         logger.error(f"An error occurred: {e}")
-
-
-class DatabaseError(Exception):
-    """Custom exception raised for database-related errors."""
-    pass
-
-
-class DatabaseManager:
-    def __init__(self, connection):
-        """
-        Initialize the DatabaseManager with a database connection.
-
-        :param connection: A database connection object.
-        """
-        self.connection = connection
-
-    def close(self):
-        """
-        Close the database connection.
-
-        :raises DatabaseError: If closing the connection fails.
-        """
-        if self.connection:
-            try:
-                self.connection.close()
-            except Exception as e:
-                raise DatabaseError(f"Failed to close the database connection: {e}")
-
-    def __del__(self):
-        """
-        Ensure the database connection is closed when the object is deleted.
-        """
-        try:
-            self.close()
-        except DatabaseError as e:
-            logger.error(f"Warning: {e}")
-
-    def execute_query(self, query, params=None, auto_commit=False):
-        """
-        Execute a single SQL query with optional parameters.
-
-        :param auto_commit:
-        :param query: The SQL query to execute.
-        :type query: str
-        :param params: A list or tuple of query parameters, defaults to None.
-        :type params: list | tuple, optional
-        :return: The cursor after executing the query.
-        :rtype: sqlite3.Cursor
-        :raises DatabaseError: If an error occurs during query execution.
-        """
-        if params is None:
-            params = []
-        try:
-            cursor = self.connection.cursor()
-            cursor.execute(query, params)
-
-            if auto_commit:
-                self.commit()
-
-            return cursor
-        except Exception as e:
-            raise DatabaseError(f"Database query failed: {e}")
-
-    def commit(self):
-        """
-        Commit the current database transaction.
-
-        :raises DatabaseError: If an error occurs during the commit operation.
-        """
-        try:
-            self.connection.commit()
-        except Exception as e:
-            raise DatabaseError(f"Commit failed: {e}")
-
-    def insert_item(self, table, data):
-        """
-        Insert a new record into a specified table.
-
-        :param table: The name of the table to insert into.
-        :type table: str
-        :param data: A dictionary of column-value pairs to insert.
-        :type data: dict
-        :raises DatabaseError: If the insertion fails.
-        """
-        query = f"INSERT OR IGNORE INTO {table} ({', '.join(data.keys())}) VALUES ({', '.join(['?'] * len(data))})"
-        try:
-            self.execute_query(query, tuple(data.values()))
-            self.commit()
-        except DatabaseError as e:
-            raise DatabaseError(f"Insertion failed: {e}")
-
-    def get_item(self, table, criteria):
-        """
-        Retrieve records from a table based on search criteria.
-
-        :param table: The name of the table to query.
-        :type table: str
-        :param criteria: A dictionary of column-value pairs for filtering results.
-        :type criteria: dict
-        :return: A list of matching records.
-        :rtype: list
-        :raises DatabaseError: If the retrieval fails.
-        """
-        query = f"SELECT * FROM {table} WHERE " + " AND ".join(f"{k}=?" for k in criteria.keys())
-        try:
-            cursor = self.execute_query(query, tuple(criteria.values()))
-            return cursor.fetchall()
-        except DatabaseError as e:
-            raise DatabaseError(f"Retrieval failed: {e}")
-
-    def delete_item(self, table, criteria):
-        """
-        Delete records from a table based on search criteria.
-
-        :param table: The name of the table to delete from.
-        :type table: str
-        :param criteria: A dictionary of column-value pairs for filtering records to delete.
-        :type criteria: dict
-        :raises DatabaseError: If the deletion fails.
-        """
-        query = f"DELETE FROM {table} WHERE " + " AND ".join(f"{k}=?" for k in criteria.keys())
-        try:
-            self.execute_query(query, tuple(criteria.values()))
-            self.commit()
-        except DatabaseError as e:
-            raise DatabaseError(f"Deletion failed: {e}")
-
-    def executemany(self, query, param_list):
-        """
-        Execute a SQL query multiple times with different parameter sets.
-
-        :param query: The SQL query to execute.
-        :type query: str
-        :param param_list: A list of parameter tuples to execute the query with.
-        :type param_list: list[tuple]
-        :return: The number of rows affected.
-        :rtype: int
-        :raises DatabaseError: If the bulk execution fails.
-        """
-        try:
-            cursor = self.connection.cursor()
-            cursor.executemany(query, param_list)
-            self.commit()
-            return cursor.rowcount
-        except Exception as e:
-            raise DatabaseError(f"Bulk execution failed: {e}")
-
-
-def clear_database(db_manager: DatabaseManager):
-    """
-    Clear all records from the database tables.
-
-    :param db_manager: An instance of DatabaseManager.
-    :type db_manager: DatabaseManager
-    """
-    tables_to_clear = [
-        "inventory_items",
-        "pricing_data",
-        "unleashed_products",
-        "inventory_group_codes",
-        "wholesale_markups",
-    ]
-
-    try:
-        for table in tables_to_clear:
-            logger.info(f"Clearing data in table: {table} (if required)")
-            db_manager.execute_query(f"DELETE FROM {table}")
-        db_manager.commit()
-
-    except DatabaseError as e:
-        logger.error(f"An error occurred: {e}")
-    finally:
-        db_manager.commit()
-        logger.info("Database cleared")
 
 

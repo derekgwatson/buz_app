@@ -15,14 +15,14 @@ from app.routes import main_routes
 load_dotenv()
 
 
-def create_app(config_name='default'):
+def create_app(config_name=''):
     app = Flask(__name__)
 
     # Load environment variables
     app.secret_key = os.getenv("FLASK_SECRET", os.urandom(24))
 
     # Configure Flask app (no duplication)
-    app.config.from_object(f'config.{config_name.capitalize()}Config')
+    app.config.from_object(f'config.{config_name}Config')
     app.config.update(ConfigManager().config)  # Merge custom config
 
     # Resolve the root path of the project

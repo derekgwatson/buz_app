@@ -4,6 +4,8 @@ import pytest
 from io import BytesIO
 from services.config_service import ConfigManager
 from services.database import create_db_manager
+from app import create_app
+from flask import g
 
 
 @pytest.fixture(scope="session")
