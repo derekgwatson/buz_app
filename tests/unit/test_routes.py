@@ -9,10 +9,9 @@ class TestRoutes:
     """Class-based tests for Flask routes."""
 
     @pytest.fixture(autouse=True)
-    def setup(self):
+    def setup(self, client):
         """Set up the test client and app context."""
-        self.app = create_app('testing')
-        self.client = self.app.test_client()
+        self.client = client
 
     def test_home_route(self, auth_headers):
         """Test the home route."""

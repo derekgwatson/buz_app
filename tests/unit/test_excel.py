@@ -1,8 +1,7 @@
-import unittest
 from services.excel import OpenPyXLFileHandler
 
 
-class TestCreateExcelFile(unittest.TestCase):
+class TestCreateExcelFile:
     def setUp(self):
         # Set up mock data for the test
         self.sheets_data = {

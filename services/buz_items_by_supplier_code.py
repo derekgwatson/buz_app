@@ -1,8 +1,7 @@
 import logging
 import pandas as pd
 from io import BytesIO
-import json
-from werkzeug.datastructures import FileStorage
+from services.excel import OpenPyXLFileHandler
 import re
 
 
@@ -10,92 +9,109 @@ import re
 logger = logging.getLogger(__name__)
 
 
-def process_buz_items_by_supplier_codes(uploaded_file: FileStorage, supplier_codes: list[str]):
-    """
-    Process all sheets in the uploaded Excel file to filter rows based on supplier codes,
-    while ensuring row 2 contains the expected headers or is blank.
-
-    :param uploaded_file: FileStorage object of the uploaded Excel file.
-    :param supplier_codes: List of supplier codes to filter by.
-    :return: BytesIO object containing the filtered Excel file, or None if no valid sheets.
-    """
-
-    # Check if the file is provided and not empty
-    if not uploaded_file:
+def validate_uploaded_file(uploaded_file):
+    """Validate the uploaded file."""
+    if not uploaded_file or not hasattr(uploaded_file.workbook, 'sheetnames'):
         raise ValueError("No file uploaded.")
+    if not isinstance(uploaded_file, OpenPyXLFileHandler):
+        raise TypeError("Unsupported file type. Expected an OpenPyXLFileHandler object.")
 
-    # Check if the uploaded file is empty
-    if not isinstance(uploaded_file, FileStorage):
-        raise TypeError("Unsupported file type. Expected a BytesIO object.")
 
-    # Load expected headers from config.json
-    with open("config.json", "r") as file:
-        config = json.load(file)
-    expected_headers = config["headers"]["buz_inventory_item_file"]
+def extract_headers(sheet, header_row):
+    """Extract and clean headers from the specified row."""
+    def clean_header(cell_value):
+        """Trim the header and remove a trailing '*' if it exists."""
+        if not cell_value:
+            return ""
+        return cell_value.strip().rstrip("*")
 
-    # Load all sheets into a dictionary of DataFrames
-    sheets = pd.read_excel(uploaded_file, sheet_name=None, engine='openpyxl', header=None)
+    # Extract and clean headers
+    raw_headers = [cell.value for cell in sheet[header_row]]
+    headers = {clean_header(cell): idx for idx, cell in enumerate(raw_headers) if clean_header(cell)}
 
-    filtered_sheets = {}
+    return headers
 
-    for sheet_name, df in sheets.items():
-        logger.debug(f"Processing sheet: {sheet_name}")
 
-        # Check if the sheet has at least two rows
-        if df.shape[0] > 1:
-            row_2 = df.iloc[1].fillna("")  # Row 2 (index 1), fill NaN with empty strings
+def filter_rows(sheet, supplier_codes, supplier_code_col_idx, operation_col_idx, header_row):
+    """Filter rows based on supplier codes and update the 'Operation' column."""
+    filtered_rows = []
 
-            # Normalize headers: Convert to strings, strip whitespace, and remove trailing '*'
-            def clean_header(cell):
-                return re.sub(r'\*+$', '', str(cell).strip())  # Remove trailing '*' and strip whitespace
+    for row_index, row in enumerate(sheet.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
+        if len(row) <= max(supplier_code_col_idx, operation_col_idx):
+            logger.warning(f"Row {row_index} skipped: insufficient columns.")
+            continue
 
-            actual_headers = [clean_header(cell) for cell in row_2.tolist()[:len(expected_headers)]]
+        supplier_code_value = row[supplier_code_col_idx]
+        if supplier_code_value in supplier_codes:
+            row = list(row)
+            row[operation_col_idx] = 'E'
+            filtered_rows.append(row)
 
-            logger.debug(f"Expected: {expected_headers}")
-            logger.debug(f"Actual: {actual_headers}")
+    return filtered_rows
 
-            # Validate headers: either empty or matches expected headers
-            if all(cell == "" for cell in row_2) or actual_headers == expected_headers:
-                logger.debug(f"Valid headers in sheet '{sheet_name}'.")
 
-                # Remove trailing asterisks from titles in row 2
-                df.iloc[1] = df.iloc[1].astype(str).str.rstrip('*')
+def process_single_sheet(sheet, supplier_codes, header_row):
+    """Process a single sheet, returning filtered rows."""
+    headers = extract_headers(sheet, header_row)
 
-                # Access the 28th column (column AB in Excel terms)
-                ab_column = df.iloc[2:, 27]  # Start from row 3 (index 2) to ignore header rows
+    if "Operation" not in headers or "Supplier Product Code" not in headers:
+        logger.warning(f"Required headers missing in sheet '{sheet.title}'. Skipping.")
+        return None
 
-                # Filter rows based on supplier codes
-                filtered_df = df.iloc[2:]  # Ignore rows 0 and 1
-                filtered_df = filtered_df[ab_column.isin(supplier_codes)]
+    filtered_rows = filter_rows(
+        sheet,
+        supplier_codes,
+        headers["Supplier Product Code"],
+        headers["Operation"],
+        header_row
+    )
 
-                if not filtered_df.empty:
-                    # Add 'E' in the 41st column (column AO) for the filtered rows
-                    max_columns = max(41, filtered_df.shape[1])  # Ensure at least 41 columns exist
-                    filtered_df = filtered_df.reindex(columns=range(max_columns),
-                                                      fill_value="")  # Expand columns if needed
-                    filtered_df.iloc[:, 40] = 'E'  # Set 'E' in column AO for all rows in filtered_df
+    if not filtered_rows:
+        return None
 
-                    # Add back the header rows (0 and 1)
-                    result_df = pd.concat([df.iloc[:2], filtered_df])
+    # Add header rows back to the filtered rows
+    for row_num in range(1, header_row + 1):
+        filtered_rows.insert(row_num - 1, [cell.value for cell in sheet[row_num]])
 
-                    # Store the filtered DataFrame
-                    filtered_sheets[sheet_name] = result_df
-                else:
-                    logger.info(f"Skipping sheet '{sheet_name}' as no rows matched the supplier codes.")
-            else:
-                logger.info(f"Skipping sheet '{sheet_name}' due to invalid headers.")
-        else:
-            logger.info(f"Skipping sheet '{sheet_name}' due to insufficient rows.")
+    return filtered_rows
 
+
+def save_filtered_sheets_to_excel(filtered_sheets):
+    """Save filtered sheets to a new Excel file."""
     if not filtered_sheets:
-        logger.warning("No sheets met the criteria for processing or contained matching rows.")
-        return None  # or {} if you prefer returning an empty dict
+        logger.warning("No sheets met the criteria for processing.")
+        return None
 
-    # Save all filtered sheets to a new Excel file
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        for sheet_name, filtered_df in filtered_sheets.items():
-            filtered_df.to_excel(writer, index=False, header=False, sheet_name=sheet_name)
+        for sheet_name, rows in filtered_sheets.items():
+            df = pd.DataFrame(rows)
+            df.to_excel(writer, index=False, header=False, sheet_name=sheet_name)
     output.seek(0)
-
     return output
+
+
+def process_buz_items_by_supplier_codes(
+        uploaded_file: OpenPyXLFileHandler,
+        supplier_codes: list[str],
+        header_row: int = 2):
+    """
+    Process all sheets in the uploaded Excel file to filter rows based on supplier codes.
+
+    :param uploaded_file: OpenPyXLFileHandler object for the uploaded Excel file.
+    :param supplier_codes: List of supplier codes to filter by.
+    :param header_row: Row number containing the headers (1-based index). Defaults to 2.
+    :return: BytesIO object containing the filtered Excel file, or None if no valid sheets.
+    """
+    validate_uploaded_file(uploaded_file)
+
+    filtered_sheets = {}
+    for sheet_name in uploaded_file.workbook.sheetnames:
+        logger.debug(f"Processing sheet: {sheet_name}")
+        sheet = uploaded_file.get_sheet(sheet_name)
+
+        filtered_rows = process_single_sheet(sheet, supplier_codes, header_row)
+        if filtered_rows:
+            filtered_sheets[sheet_name] = filtered_rows
+
+    return save_filtered_sheets_to_excel(filtered_sheets)

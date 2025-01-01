@@ -26,14 +26,14 @@ class ConfigManager:
 
     def _load_config(self):
         """Load configuration from the file or initialize an empty config."""
-        if os.path.exists(self._config_path):
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), self._config_path)
+        if os.path.exists(path):
             try:
-                with open(self._config_path, "r") as f:
+                with open(path, "r") as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                logger.error(f"Invalid JSON in {self._config_path}. Loading empty configuration.")
+                logger.error(f"Invalid JSON in {path}. Loading empty configuration.")
         return {}
-
 
     def save_config(self):
         """Save the current configuration to the file."""

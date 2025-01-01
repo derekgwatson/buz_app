@@ -50,19 +50,21 @@ class OpenPyXLFileHandler:
         return cls(workbook=workbook)
 
     @classmethod
-    def from_sheets_data(cls, sheets_data):
+    def from_sheets_data(cls, sheets_data, sheets_header_data):
         """
         Initialize the file handler with sheets data.
 
         Args:
-            sheets_data (dict): Dictionary where keys are sheet names, and values are tuples containing:
-                                (data, headers, header_row). `header_row` is optional and defaults to 1.
+            sheets_data (dict): Dictionary where keys are sheet names, and values are lists of rows.
+            sheets_header_data (dict): Dictionary with:
+                - `headers`: List of column headers (shared by all sheets).
+                - `header_row`: Row index where headers should appear.
 
         Returns:
             OpenPyXLFileHandler: An initialized file handler.
         """
         handler = cls()
-        handler._create_excel_file(sheets_data)
+        handler._create_excel_file(sheets_data, sheets_header_data)
         return handler
 
     @classmethod
@@ -90,7 +92,7 @@ class OpenPyXLFileHandler:
         database_fields = [header["database_field"] for header in headers_config]
 
         grouped_data = {}
-        for item in items:
+        for item in items.values():
             group_code = item["inventory_group_code"]
             if group_code not in grouped_data:
                 grouped_data[group_code] = []
@@ -180,32 +182,25 @@ class OpenPyXLFileHandler:
 
         return all_data
 
-    def _create_excel_file(self, sheets_data):
+    def _create_excel_file(self, sheets_data, sheets_header_data):
         """
-         Internal method to create a new Excel workbook with multiple sheets.
+        Internal method to create a new Excel workbook with multiple sheets.
 
         Args:
-            :param sheets_data: Dictionary where keys are sheet names, and values are tuples containing:
-                                (data, headers, header_row). `header_row` is optional and defaults to 1.
-                                Example:
-                                {
-                                    "Sheet1": (data1, headers1, header_row1),
-                                    "Sheet2": (data2, headers2),  # Defaults to header_row=1
-                                }
-            :type sheets_data: dict[str, tuple[list[list], list[str], int]]
+            sheets_data (dict): Dictionary where keys are sheet names, and values are lists of rows.
+            sheets_header_data (dict): Contains:
+                - `headers`: List of column headers.
+                - `header_row`: Row index for headers (default is 1).
 
         Modifies:
             self.workbook: Sets this attribute to the newly created workbook.
         """
-        # Create a new workbook
         self.workbook = openpyxl.Workbook()
 
-        for idx, (sheet_name, sheet_data) in enumerate(sheets_data.items(), start=1):
-            # Unpack the sheet data
-            data = sheet_data[0]
-            headers = sheet_data[1]
-            header_row = sheet_data[2] if len(sheet_data) > 2 else 1
+        headers = sheets_header_data["headers"]
+        header_row = sheets_header_data.get("header_row", 1)
 
+        for idx, (sheet_name, rows) in enumerate(sheets_data.items(), start=1):
             # Add a new sheet or use the default active sheet
             if idx == 1:
                 sheet = self.workbook.active
@@ -213,21 +208,15 @@ class OpenPyXLFileHandler:
             else:
                 sheet = self.workbook.create_sheet(title=sheet_name)
 
-            # Write headers if provided
-            if headers:
-                for col_num, header in enumerate(headers, start=1):
-                    sheet.cell(row=header_row, column=col_num, value=header)
+            # Write headers
+            for col_num, header in enumerate(headers, start=1):
+                sheet.cell(row=header_row, column=col_num, value=header)
 
             # Write data starting below the header row
             data_start_row = header_row + 1
-            for row_idx, row in enumerate(data, start=data_start_row):
+            for row_idx, row in enumerate(rows, start=data_start_row):
                 for col_idx, value in enumerate(row, start=1):
                     sheet.cell(row=row_idx, column=col_idx, value=value)
-
-        # Save the workbook to a BytesIO object
-        file_stream = BytesIO()
-        self.workbook.save(file_stream)
-        file_stream.seek(0)
 
     def save_workbook(self, save_path):
         """
@@ -242,3 +231,68 @@ class OpenPyXLFileHandler:
         self.workbook.save(save_path)
         logger.info(f"Workbook saved to {save_path}")
 
+    def get_column_by_header(self, sheet_name, header_name, header_row=1):
+        """
+        Get all values in a column by its header text.
+
+        Args:
+            sheet_name (str): The name of the sheet to search in.
+            header_name (str): The header text of the column.
+            header_row (int): The row number containing the headers. Defaults to 1.
+
+        Returns:
+            list: A list of values from the specified column (excluding the header).
+
+        Raises:
+            ValueError: If the header or sheet is not found.
+        """
+        # Get the sheet
+        sheet = self.get_sheet(sheet_name)
+
+        # Get the headers
+        headers = self.get_headers(sheet, header_row)
+
+        # Find the column index of the header
+        if header_name not in headers:
+            raise ValueError(f"Header '{header_name}' not found in sheet '{sheet_name}'.")
+        column_index = headers.index(header_name) + 1  # 1-based index
+
+        # Collect values from the column, excluding the header
+        values = [
+            sheet.cell(row=row, column=column_index).value
+            for row in range(header_row + 1, sheet.max_row + 1)
+        ]
+        return values
+
+    def set_value_by_header(self, sheet_name, header_name, row, value, header_row=1):
+        """
+        Set a single value in a specific row of a column identified by its header text.
+
+        Args:
+            sheet_name (str): The name of the sheet to search in.
+            header_name (str): The header text of the column.
+            row (int): The row number (1-based) where the value should be set.
+            value: The value to set in the specified cell.
+            header_row (int): The row number containing the headers. Defaults to 1.
+
+        Raises:
+            ValueError: If the header or sheet is not found.
+            IndexError: If the specified row is outside the range of the sheet.
+        """
+        # Get the sheet
+        sheet = self.get_sheet(sheet_name)
+
+        # Get the headers
+        headers = self.get_headers(sheet, header_row)
+
+        # Find the column index of the header
+        if header_name not in headers:
+            raise ValueError(f"Header '{header_name}' not found in sheet '{sheet_name}'.")
+        column_index = headers.index(header_name) + 1  # 1-based index
+
+        # Validate the row number
+        if row < header_row + 1 or row > sheet.max_row:
+            raise IndexError(f"Row {row} is out of range for sheet '{sheet_name}'.")
+
+        # Set the value in the specified cell
+        sheet.cell(row=row, column=column_index, value=value)

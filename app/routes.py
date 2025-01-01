@@ -308,8 +308,12 @@ def generate_backorder_file():
         if spreadsheet_config_manager.update_spreadsheet_config("backorders", spreadsheet_id, spreadsheet_range):
             flash('Config updated', 'success')
 
-        g_sheets_service = GoogleSheetsService(json_file=os.path.join(os.path.dirname(__file__), 'credentials',
-                                                                      'buz-app-439103-b6ae046c4723.json'))
+        # Resolve the path to the JSON credentials file using __file__
+        credentials_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '..', 'credentials', 'buz-app-439103-b6ae046c4723.json'
+        )
+        g_sheets_service = GoogleSheetsService(json_file=credentials_path)
 
         from services.backorders import process_inventory_backorder_with_services
 
@@ -359,9 +363,17 @@ def get_buz_items_by_supplier_codes():
         # Process multi-line supplier codes input
         supplier_codes = [code.strip() for code in supplier_codes_input.splitlines() if code.strip()]
 
-        if uploaded_file.filename.endswith(('.xlsx', '.xlsm')):
+        if not uploaded_file.filename.endswith(('.xlsx', '.xlsm')):
+            logging.warning("Only .xlsx or .xlsm files are supported.")
+            flash("Only .xlsx or .xlsm files are supported.")
+        else:
             try:
-                filtered_excel = process_buz_items_by_supplier_codes(uploaded_file, supplier_codes)
+                excel = OpenPyXLFileHandler().from_file_like(uploaded_file)
+                filtered_excel = process_buz_items_by_supplier_codes(
+                    excel,
+                    supplier_codes,
+                    current_app.config["headers"]["buz_inventory_item_file"]
+                )
                 if filtered_excel:
                     return send_file(
                         filtered_excel,
@@ -378,10 +390,6 @@ def get_buz_items_by_supplier_codes():
                     raise e
                 else:
                     flash(f"Error: {e}")
-
-        else:
-            logging.warning("Only .xlsx or .xlsm files are supported.")
-            flash("Only .xlsx or .xlsm files are supported.")
 
     return render_template('get_buz_items_by_supplier_codes.html')
 

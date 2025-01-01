@@ -1,11 +1,18 @@
-from base64 import b64encode
-import pandas as pd
 import pytest
-from io import BytesIO
+from base64 import b64encode
 from services.config_service import ConfigManager
-from services.database import create_db_manager
+from services.database import create_db_manager, init_db
 from app import create_app
-from flask import g
+from services.helper import generate_unique_id
+
+
+@pytest.fixture
+def app_context(app_config):
+    """Fixture for Flask app context."""
+    app = create_app('Testing')
+    app.config.update(app_config)
+    with app.app_context():
+        yield app
 
 
 @pytest.fixture(scope="session")
@@ -20,10 +27,13 @@ def app_config(config_manager):
     return config_manager.config
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def get_db_manager(app_config):
-    """Fixture for database manager."""
-    return create_db_manager(app_config.get('database'))
+    """Fixture for database manager with per-test isolation."""
+    db_manager = create_db_manager(":memory:")  # Use an in-memory database for isolation
+    init_db(db_manager=db_manager)
+    yield db_manager
+    db_manager.close()  # Ensure database connection is closed after the test
 
 
 @pytest.fixture
@@ -35,48 +45,108 @@ def auth_headers():
     }
 
 
-def create_mock_excel(expected_headers, sheet_data):
-    """Create a mock Excel file."""
-    header_names = [header['spreadsheet_column'] for header in expected_headers]
-    mock_excel = BytesIO()
+def add_row_to_sheet(
+        sheet_data,
+        sheet_name,
+        code="",
+        description="",
+        supplier_product_code="",
+        warning=""):
+    """
+    Helper function to add a single row to the sheet data.
 
-    with pd.ExcelWriter(mock_excel, engine="openpyxl") as writer:
-        for sheet_name, mock_data in sheet_data.items():
-            rows = [[""] * len(header_names)]  # Row 1 (empty)
-            rows.append(header_names)         # Row 2 (headers)
+    Args:
+        sheet_data (dict): The sheet data dictionary.
+        sheet_name (str): The name of the sheet to which the row will be added.
+        code (str): The code for the item.
+        description (str): The description of the item.
+        supplier_product_code (str): The supplier product code.
+        warning (str): The warning message.
+    """
+    # Ensure the sheet exists
+    if sheet_name not in sheet_data:
+        sheet_data[sheet_name] = []
 
-            for row in mock_data:
-                full_row = [row.get(header, None) for header in header_names]
-                rows.append(full_row)
+    if code == "":
+        code = generate_unique_id()
 
-            df = pd.DataFrame(rows)
-            df.to_excel(writer, index=False, header=False, sheet_name=sheet_name)
-
-    mock_excel.seek(0)
-    return mock_excel
+    # Add the new row
+    sheet_data[sheet_name].append([
+        generate_unique_id(),  # PkId
+        code,
+        description,
+        supplier_product_code,
+        warning,
+        "",  # Operation
+    ])
 
 
 @pytest.fixture
-def mock_buz_inventory_items(app_config):
+def mock_buz_inventory_items_warning():
     """Fixture for mock Buz inventory items Excel file."""
-    sheet_data = {
-        "Sheet1": [
-            {"PkId": 1, "Code": "ABC123", "Description": "Item A", "Supplier Product Code": "PG1", "Operation": ""},
-            {"PkId": 2, "Code": "DEF456", "Description": "Item B", "Supplier Product Code": "ABC", "Operation": ""},
-        ],
-        "Sheet2": [
-            {"PkId": 3, "Code": "GHI789", "Description": "Item C"},
-            {"PkId": 4, "Code": "JKL012", "Description": "Item D", "Supplier Product Code": "001"},
-        ],
-        "Sheet3": [
-            {"PkId": 1, "Warning": "Fabric on backorder until 3 Jan 2050", "Supplier Product Code": "PG4"},
-            {"PkId": 2, "Warning": "Fabric on backorder until 3 Jan 2020", "Supplier Product Code": "PG5"},
-        ],
-        "EmptySheet": []  # No data rows
-    }
+    sheet_data = {}
+    add_row_to_sheet(
+        sheet_data=sheet_data,
+        sheet_name="Sheet3",
+        description="Item E",
+        supplier_product_code="SC-E",
+        warning="Fabric on backorder until 3 Jan 2010",
+    )
 
-    expected_headers = app_config["headers"]["buz_inventory_item_file"]
-    return create_mock_excel(expected_headers, sheet_data)
+    add_row_to_sheet(
+        sheet_data=sheet_data,
+        sheet_name="Sheet3",
+        description="Item E",
+        supplier_product_code="SC-E",
+        warning="Fabric on backorder until 3 Jan 2020",
+    )
+
+    sheets_header_data = {
+        "headers": ["PkId", "Code", "Description", "Supplier Product Code", "Warning", "Operation"],
+        "header_row": 2
+    }
+    return sheet_data, sheets_header_data
+
+
+@pytest.fixture
+def mock_buz_inventory_items():
+    """Fixture for mock Buz inventory items Excel file."""
+    sheet_data = {}
+    add_row_to_sheet(
+        sheet_data=sheet_data,
+        sheet_name="Sheet1",
+        description="Item A",
+        supplier_product_code="SC-A",
+    )
+
+    add_row_to_sheet(
+        sheet_data=sheet_data,
+        sheet_name="Sheet1",
+        description="Item B",
+        supplier_product_code="SC-B",
+    )
+
+    add_row_to_sheet(
+        sheet_data=sheet_data,
+        sheet_name="Sheet2",
+        description="Item C",
+        supplier_product_code="SC-C",
+    )
+
+    add_row_to_sheet(
+        sheet_data=sheet_data,
+        sheet_name="Sheet2",
+        description="Item D",
+        supplier_product_code="SC-D",
+    )
+
+    sheet_data["EmptySheet"] = []  # No data rows
+
+    sheets_header_data = {
+        "headers": ["PkId", "Code", "Description", "Supplier Product Code", "Operation"],
+        "header_row": 2
+    }
+    return sheet_data, sheets_header_data
 
 
 @pytest.fixture
@@ -88,16 +158,43 @@ def unleashed_expected_headers(app_config):
 @pytest.fixture
 def mock_supplier_codes():
     """Fixture for supplier codes."""
-    return ["PG1", "001"]
+    return ["SC-A", "SC-C"]
 
 
 @pytest.fixture
-def mock_unleashed_data(unleashed_expected_headers):
-    """Fixture for mock Unleashed data."""
-    sheet_data = {
-        "DataSheet": [
-            {"Supplier Code": "PG1", "Item Name": "Item A", "Price": 10.0},
-            {"Supplier Code": "001", "Item Name": "Item D", "Price": 20.0},
-        ]
-    }
-    return create_mock_excel(unleashed_expected_headers, sheet_data)
+def mock_fabric_data(get_db_manager):
+    """Fixture to insert mock fabric data into the database."""
+    db_manager = get_db_manager
+
+    db_manager.insert_item(
+        "fabrics", {"supplier_code": "FAB001", "description_1": "Sheer", "description_2": "White"})
+    db_manager.insert_item(
+        "fabrics", {"supplier_code": "FAB002", "description_1": "Outdoor", "description_2": "Canvas"})
+
+    yield db_manager
+
+
+@pytest.fixture
+def mock_fabric_group_mapping_data(get_db_manager):
+    """Fixture to populate the fabric_group_mappings table."""
+    db_manager = get_db_manager
+    db_manager.insert_item("fabric_group_mappings", {"fabric_id": 1, "inventory_group_code": "GRP1"})
+    db_manager.insert_item("fabric_group_mappings", {"fabric_id": 2, "inventory_group_code": "GRP2"})
+    yield db_manager
+
+
+@pytest.fixture
+def mock_inventory_group_data(get_db_manager):
+    """Fixture to populate the inventory_groups table."""
+    db_manager = get_db_manager
+    db_manager.insert_item("inventory_groups",
+                           {
+                               "group_code": "GRP1",
+                               "group_description": "Inventory Group 1"
+                           })
+    db_manager.insert_item("inventory_groups",
+                           {
+                               "group_code": "GRP2",
+                               "group_description": "Inventory Group 2"
+                           })
+    yield db_manager

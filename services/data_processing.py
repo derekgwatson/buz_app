@@ -206,7 +206,7 @@ def search_items_by_supplier_code(db_manager: DatabaseManager, code: str):
     return db_manager.execute_query(query, (code,)).fetchall()
 
 
-def get_inventory_groups(db_manager: DatabaseManager):
+def get_inventory_groups(db_manager: DatabaseManager) -> list[dict]:
     """
     Retrieve all inventory group codes from the database, sorted by their descriptions.
 
@@ -214,13 +214,13 @@ def get_inventory_groups(db_manager: DatabaseManager):
     :return: A list of inventory group codes as strings, sorted by description.
     :rtype: list[str]
     """
-    query = '''
+    cursor = db_manager.execute_query(query='''
         SELECT group_code, group_description 
         FROM inventory_groups 
         ORDER BY group_description 
         COLLATE NOCASE ASC
-    '''
-    return db_manager.execute_query(query).fetchall()
+    ''')
+    return cursor.fetchall()
 
 
 def db_delete_inventory_group(db_manager: DatabaseManager, group_code: str):
@@ -435,13 +435,6 @@ def get_groups_for_fabric(db_manager: DatabaseManager, fabric_id: int):
     return cursor.fetchall()
 
 
-def get_all_fabrics(db_manager: DatabaseManager):
-    cursor = db_manager.execute_query(
-        query="SELECT * FROM fabrics"
-    )
-    return cursor.fetchall()
-
-
 def get_all_fabric_group_mappings(db_manager: DatabaseManager):
     cursor = db_manager.execute_query(
         query="SELECT * FROM fabric_group_mappings"
@@ -522,3 +515,22 @@ def get_old_buz_items_unleashed(db_manager: DatabaseManager):
         updated_result.append(row_dict)
 
     return updated_result
+
+
+def get_all_fabrics(db_manager: DatabaseManager):
+    query = """
+        SELECT 
+            id,
+            supplier_code,
+            description_1,
+            description_2,
+            description_3,
+            TRIM(
+                COALESCE(description_1, '') || ' ' ||
+                COALESCE(description_2, '') || ' ' ||
+                COALESCE(description_3, '')
+            ) AS full_description
+        FROM fabrics;
+    """
+    return db_manager.execute_query(query).fetchall()
+

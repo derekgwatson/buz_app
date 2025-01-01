@@ -1,34 +1,36 @@
-import unittest
-from app import create_app
-from services.database import create_db_manager, init_db
-from flask import g
+from services.fabrics import get_fabric_grid_data
 
-class TestFabrics(unittest.TestCase):
-    def setUp(self):
-        """Set up a test-specific app instance."""
-        self.app = create_app('Testing')
-        self.app.config["database"] = ":memory:"  # Use in-memory SQLite database
-        self.client = self.app.test_client()  # Create a test client
 
-        with self.app.app_context():
-            g.db = create_db_manager(self.app.config['database'])
-            self.app.extensions['db_manager'] = g.db  # Store in Flask extensions for reuse
+def test_form_renders(client):
+    """Test that the fabric creation form renders correctly."""
+    response = client.get("/fabrics/create")
+    assert response.status_code == 200
+    assert b"Code" in response.data
+    assert b"Product Type" in response.data
+    assert b"Description 1" in response.data
+    assert b"Description 2" in response.data
+    assert b"Description 3" in response.data
 
-            # Initialize the database
-            init_db(g.db)
 
-    def tearDown(self):
-        """Clean up after tests."""
-        with self.app.app_context():
-            if hasattr(g, 'db') and g.db:
-                g.db.close()
+def test_get_fabric_grid_data(mock_fabric_data):
+    db_manager = mock_fabric_data
 
-    def test_form_renders(self):
-        """Test that the fabric creation form renders correctly."""
-        response = self.client.get("/fabrics/create")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Code", response.data)
-        self.assertIn(b"Product Type", response.data)
-        self.assertIn(b"Description 1", response.data)
-        self.assertIn(b"Description 2", response.data)
-        self.assertIn(b"Description 3", response.data)
+    # Run the function
+    fabric_list, group_list, mapping_set = get_fabric_grid_data(db_manager)
+
+    # Assertions
+    assert len(fabric_list) == 2  # 2 fabrics
+    assert len(group_list) == 2  # 2 inventory groups
+    assert len(mapping_set) == 2  # 2 mappings
+
+    # Check specific fabric details
+    assert fabric_list[1]["description_1"] == "Sheer"
+    assert fabric_list[2]["description_1"] == "Outdoor"
+
+    # Check inventory group descriptions
+    assert group_list["GRP1"] == "Blinds"
+    assert group_list["GRP2"] == "Awnings"
+
+    # Check mapping existence
+    assert (1, "GRP1") in mapping_set
+    assert (2, "GRP2") in mapping_set
