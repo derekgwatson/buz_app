@@ -140,10 +140,12 @@ def process_inventory_backorder_with_services(
         # Add original rows to the original workbook
         if original_rows:
             original_sheet = original_workbook.create_sheet(title=group_code)
-            original_sheet.append([]) # Write blank row
-            original_sheet.append(list(original_rows[0].keys()))  # Write header
+            filtered_headers = [key for key in original_rows[0].keys() if key not in exclude_columns]
+            original_sheet.append([])  # Write blank row
+            original_sheet.append(filtered_headers)  # Write filtered header
             for original_row in original_rows:
-                original_sheet.append(list(original_row.values()))
+                filtered_row = [value for key, value in original_row.items() if key not in exclude_columns]
+                original_sheet.append(filtered_row)
 
     # Step 4: return the workbooks (to save them, or inspect them if testing)
     return upload_workbook, original_workbook
