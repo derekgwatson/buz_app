@@ -1,7 +1,6 @@
 from flask import Blueprint, current_app
 import os
 from flask import render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
-import time
 from datetime import timezone
 from services.group_options_check import extract_codes_from_excel_flat_dedup
 from services.excel import OpenPyXLFileHandler
@@ -12,41 +11,6 @@ from services.auth import auth
 
 # Create Blueprint
 main_routes = Blueprint('main_routes', __name__)
-
-
-@main_routes.before_request
-def before_request():
-    """
-    Initialize and close database connection for each request
-    """
-    from services.database import create_db_manager
-
-    g.db = create_db_manager(current_app.config['database'])
-
-    """Track the start time of each request."""
-    g.start_time = time.time()
-
-
-@main_routes.after_request
-def after_request(response):
-    if hasattr(g, 'start_time'):
-        duration = time.time() - g.start_time
-        g.request_duration = f"{duration:.3f} seconds"
-
-        if response.content_type == "text/html; charset=utf-8":
-            response_data = response.get_data(as_text=True)
-            if "[[ request_duration ]]" in response_data:
-                response_data = response_data.replace("[[ request_duration ]]", g.request_duration)
-                response.set_data(response_data)
-
-    return response
-
-
-@main_routes.teardown_request
-def teardown_request(exception):
-    db = getattr(g, 'db', None)
-    if db is not None:
-        db.close()
 
 
 @auth.verify_password
@@ -445,4 +409,4 @@ def create_fabric():
     """
     Render the form to create a new fabric.
     """
-    return render_template('create_fabric.html')
+    return render_template('fabric_create.html')

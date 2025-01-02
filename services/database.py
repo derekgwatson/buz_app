@@ -395,7 +395,7 @@ def init_db(db_manager: DatabaseManager):
             "fabrics": '''
                 CREATE TABLE IF NOT EXISTS fabrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    supplier_code VARCHAR(50) UNIQUE NOT NULL,
+                    supplier_code VARCHAR(50) NOT NULL,
                     description_1 VARCHAR(255),
                     description_2 VARCHAR(255),
                     description_3 VARCHAR(255),

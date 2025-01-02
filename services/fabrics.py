@@ -21,3 +21,58 @@ def get_fabric_grid_data(db_manager: DatabaseManager):
     mapping_set = {(mapping["fabric_id"], mapping["inventory_group_code"]) for mapping in mappings}
 
     return fabric_list, group_list, mapping_set
+
+
+def prepare_fabric_grid_data(fabric_list, group_list, mapping_set):
+    grid = []
+    for fabric_id, fabric in fabric_list.items():
+        # Concatenate descriptions
+        concatenated_description = " ".join(
+            filter(None, [fabric["description_1"], fabric["description_2"], fabric["description_3"]])
+        )
+        grid.append({
+            "fabric_id": fabric_id,
+            "fabric_description": concatenated_description,
+            "fabric_code": fabric["supplier_code"],
+            "groups": {
+                group_code: (fabric_id, group_code) in mapping_set
+                for group_code in group_list.keys()
+            }
+        })
+
+    return {"grid": grid, "groups": group_list}
+
+
+def process_fabric_mappings(mappings, db_manager):
+    """
+    Update the database based on the submitted mappings.
+    """
+    # Example: Convert mappings into usable format and update database
+    for fabric_id, group_mappings in mappings.items():
+        for group_code, is_checked in group_mappings.items():
+            if is_checked == "on":
+                # Add mapping to the database
+                add_fabric_to_group(fabric_id, group_code, db_manager)
+            else:
+                # Remove mapping from the database
+                remove_fabric_from_group(fabric_id, group_code, db_manager)
+
+
+def add_fabric_to_group(fabric_id, group_code, db_manager):
+    """
+    Add a fabric-to-group mapping to the database.
+    """
+    db_manager.execute(
+        "INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (?, ?)",
+        (fabric_id, group_code)
+    )
+
+
+def remove_fabric_from_group(fabric_id, group_code, db_manager):
+    """
+    Remove a fabric-to-group mapping from the database.
+    """
+    db_manager.execute(
+        "DELETE FROM fabric_group_mappings WHERE fabric_id = ? AND inventory_group_code = ?",
+        (fabric_id, group_code)
+    )

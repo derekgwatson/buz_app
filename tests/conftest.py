@@ -162,28 +162,6 @@ def mock_supplier_codes():
 
 
 @pytest.fixture
-def mock_fabric_data(get_db_manager):
-    """Fixture to insert mock fabric data into the database."""
-    db_manager = get_db_manager
-
-    db_manager.insert_item(
-        "fabrics", {"supplier_code": "FAB001", "description_1": "Sheer", "description_2": "White"})
-    db_manager.insert_item(
-        "fabrics", {"supplier_code": "FAB002", "description_1": "Outdoor", "description_2": "Canvas"})
-
-    yield db_manager
-
-
-@pytest.fixture
-def mock_fabric_group_mapping_data(get_db_manager):
-    """Fixture to populate the fabric_group_mappings table."""
-    db_manager = get_db_manager
-    db_manager.insert_item("fabric_group_mappings", {"fabric_id": 1, "inventory_group_code": "GRP1"})
-    db_manager.insert_item("fabric_group_mappings", {"fabric_id": 2, "inventory_group_code": "GRP2"})
-    yield db_manager
-
-
-@pytest.fixture
 def mock_inventory_group_data(get_db_manager):
     """Fixture to populate the inventory_groups table."""
     db_manager = get_db_manager

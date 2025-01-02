@@ -1,0 +1,118 @@
+{% extends "layout.html" %}
+
+{% block title %}Fabric Grid - Buz Application{% endblock %}
+
+{% block content %}
+
+<h1>Fabric Grid</h1>
+
+<style>
+    body {
+        background-color: #121212;
+        color: #fff;
+        font-family: Arial, sans-serif;
+    }
+
+    h1 {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: auto;
+    }
+
+    .table th, .table td {
+        border: 1px solid #333;
+        padding: 10px;
+        text-align: center; /* Default center alignment for all cells */
+    }
+
+    /* Default vertical text orientation for group headers */
+    .table th.rotate {
+        writing-mode: vertical-lr;
+        transform: rotate(180deg);
+        white-space: nowrap;
+        vertical-align: bottom; /* Ensure vertical alignment to the bottom */
+        padding: 5px 10px;
+        font-weight: bold;
+        color: #fff;
+        background-color: #222;
+    }
+
+    /* Reset for the first two headers */
+    .table th.horizontal {
+        writing-mode: horizontal-tb;
+        transform: none;
+        text-orientation: initial;
+        vertical-align: middle;
+        text-align: center;
+        padding: 10px;
+    }
+
+    .table td {
+        background-color: #1a1a1a;
+        text-align: center; /* Default center alignment for cells */
+    }
+
+    .table td:first-child, .table td:nth-child(2) {
+        text-align: left; /* Left-align text for the first two columns */
+    }
+
+    .table input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+    }
+
+    .btn {
+        display: block;
+        margin: 20px auto;
+        padding: 10px 20px;
+        background-color: #007bff;
+        border: none;
+        color: white;
+        font-size: 16px;
+        cursor: pointer;
+        border-radius: 5px;
+    }
+
+    .btn:hover {
+        background-color: #0056b3;
+    }
+</style>
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th class="horizontal">Description</th> <!-- Horizontal header -->
+            <th class="horizontal">Code</th> <!-- Horizontal header -->
+            {% for group_code, group_name in groups.items() %}
+                <th class="rotate">{{ group_name }}</th> <!-- Rotated headers -->
+            {% endfor %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for fabric in grid %}
+        <tr>
+            <td>{{ fabric.fabric_description }}</td>
+            <td>{{ fabric.fabric_code }}</td>
+            {% for group_code in groups.keys() %}
+            <td>
+                <input
+                    type="checkbox"
+                    name="mappings[{{ fabric.fabric_id }}][{{ group_code }}]"
+                    {% if fabric.groups[group_code] %} checked {% endif %}
+                >
+            </td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<button type="submit" class="btn">Save Changes</button>
+
+{% endblock %}
