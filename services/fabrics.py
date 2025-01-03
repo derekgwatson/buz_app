@@ -58,21 +58,31 @@ def process_fabric_mappings(mappings, db_manager):
                 remove_fabric_from_group(fabric_id, group_code, db_manager)
 
 
-def add_fabric_to_group(fabric_id, group_code, db_manager):
+def add_fabric_to_group(db_manager: DatabaseManager, fabric_id, group_code):
     """
-    Add a fabric-to-group mapping to the database.
+    Add a fabric-to-group mapping to the database with error handling.
     """
-    db_manager.execute(
-        "INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (?, ?)",
-        (fabric_id, group_code)
-    )
+    try:
+        db_manager.execute_query(
+            "INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (?, ?)",
+            (fabric_id, group_code), True
+        )
+        print(f"Mapping added successfully: fabric_id={fabric_id}, group_code={group_code}")
+    except Exception as e:
+        print(f"Error adding mapping: fabric_id={fabric_id}, group_code={group_code}, error={e}")
+        raise
 
 
-def remove_fabric_from_group(fabric_id, group_code, db_manager):
+def remove_fabric_from_group(db_manager, fabric_id, group_code):
     """
-    Remove a fabric-to-group mapping from the database.
+    Remove a fabric-to-group mapping from the database with error handling.
     """
-    db_manager.execute(
-        "DELETE FROM fabric_group_mappings WHERE fabric_id = ? AND inventory_group_code = ?",
-        (fabric_id, group_code)
-    )
+    try:
+        db_manager.execute_query(
+            "DELETE FROM fabric_group_mappings WHERE fabric_id = ? AND inventory_group_code = ?",
+            (fabric_id, group_code), True
+        )
+        print(f"Mapping removed successfully: fabric_id={fabric_id}, group_code={group_code}")
+    except Exception as e:
+        print(f"Error removing mapping: fabric_id={fabric_id}, group_code={group_code}, error={e}")
+        raise

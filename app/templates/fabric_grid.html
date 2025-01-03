@@ -22,33 +22,54 @@
         width: 100%;
         border-collapse: collapse;
         margin: auto;
+        table-layout: fixed; /* Ensures consistent column widths */
     }
 
     .table th, .table td {
         border: 1px solid #333;
-        padding: 10px;
         text-align: center; /* Default center alignment for all cells */
     }
 
-    /* Default vertical text orientation for group headers */
-    .table th.rotate {
-        writing-mode: vertical-lr;
-        transform: rotate(180deg);
-        white-space: nowrap;
-        vertical-align: bottom; /* Ensure vertical alignment to the bottom */
-        padding: 5px 10px;
-        font-weight: bold;
-        color: #fff;
-        background-color: #222;
+    /* Wider Description Column */
+    .table td:first-child, .table th:first-child {
+        width: 30%; /* Increase the width of the Description column */
+        text-align: left; /* Left-align the text */
+        word-wrap: break-word; /* Allow wrapping if necessary */
     }
 
-    /* Reset for the first two headers */
+    /* Code Column */
+    .table td:nth-child(2), .table th:nth-child(2) {
+        width: 15%; /* Set a smaller width for the Code column */
+        text-align: left;
+    }
+
+    /* Rotated headers with positioning */
+    .table th.rotate {
+        height: 250px; /* Fixed height for the header row */
+        background-color: #222;
+        color: #fff;
+        font-weight: bold;
+        padding: 0; /* Remove default padding */
+        position: relative; /* Enable positioning */
+        writing-mode: vertical-lr; /* Rotate text vertically */
+        white-space: nowrap; /* Prevent wrapping */
+    }
+
+    .table th.rotate span {
+        display: inline-block;
+        position: absolute;
+        bottom: 5px; /* Push the text to the bottom */
+        left: 50%; /* Center horizontally */
+        transform: translateX(-50%); /* Correct centering */
+    }
+
+    /* Horizontal headers (for Description and Code) */
     .table th.horizontal {
         writing-mode: horizontal-tb;
         transform: none;
         text-orientation: initial;
-        vertical-align: middle;
-        text-align: center;
+        vertical-align: bottom;
+        text-align: left;
         padding: 10px;
     }
 
@@ -84,13 +105,37 @@
     }
 </style>
 
+<div style="margin-bottom: 20px; text-align: center;">
+    <label for="description-filter">Filter by Description:</label>
+    <input
+        type="text"
+        id="description-filter"
+        placeholder="Type to filter..."
+        style="padding: 5px; width: 300px;"
+    >
+</div>
+
 <table class="table table-bordered">
     <thead>
+        <tr>
+            <th>&nbsp;</th>
+            <th>Select all/none ====></th>
+            {% for group_code, group_name in groups.items() %}
+                <th>
+                    <input
+                        type="checkbox"
+                        class="select-toggle"
+                        data-group-code="{{ group_code }}"
+                        title="Toggle all visible"
+                    >
+                </th>
+            {% endfor %}
+        </tr>
         <tr>
             <th class="horizontal">Description</th> <!-- Horizontal header -->
             <th class="horizontal">Code</th> <!-- Horizontal header -->
             {% for group_code, group_name in groups.items() %}
-                <th class="rotate">{{ group_name }}</th> <!-- Rotated headers -->
+                <th class="rotate"><span>{{ group_name }}</span></th> <!-- Rotated headers -->
             {% endfor %}
         </tr>
     </thead>
@@ -103,7 +148,9 @@
             <td>
                 <input
                     type="checkbox"
-                    name="mappings[{{ fabric.fabric_id }}][{{ group_code }}]"
+                    class="group-checkbox"
+                    data-fabric-id="{{ fabric.fabric_id or 'MISSING_ID' }}"
+                    data-group-code="{{ group_code }}"
                     {% if fabric.groups[group_code] %} checked {% endif %}
                 >
             </td>
@@ -113,6 +160,164 @@
     </tbody>
 </table>
 
-<button type="submit" class="btn">Save Changes</button>
+<input type="button" value="Save Changes" class="btn">
+
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        const changes = [];
+        const submitButton = document.querySelector('.btn');
+        const descriptionFilterInput = document.getElementById('description-filter');
+        const tableRows = document.querySelectorAll('tbody tr');
+        const selectToggles = document.querySelectorAll('.select-toggle');
+
+        // Function to update button state
+        function updateButtonState() {
+            if (changes.length === 0) {
+                submitButton.disabled = true;
+                submitButton.style.backgroundColor = '#666'; // Gray color
+                submitButton.style.cursor = 'not-allowed'; // Optional for user feedback
+            } else {
+                submitButton.disabled = false;
+                submitButton.style.backgroundColor = '#007bff'; // Original color
+                submitButton.style.cursor = 'pointer'; // Optional
+            }
+        }
+
+        // Initially disable the button
+        updateButtonState();
+
+        // Track checkbox changes
+        document.querySelectorAll('input.group-checkbox').forEach((checkbox) => {
+            checkbox.addEventListener('change', (event) => {
+                const checkbox = event.target;
+                const fabricId = checkbox.getAttribute('data-fabric-id');
+                const groupCode = checkbox.getAttribute('data-group-code');
+                const isChecked = checkbox.checked;
+
+                const change = {
+                    fabric_id: fabricId,
+                    group_code: groupCode,
+                    is_checked: isChecked
+                };
+
+                changes.push(change);
+
+                console.log('Change added:', change); // Log each change
+
+                // Update button state
+                updateButtonState();
+            });
+        });
+
+        // Submit changes on button click
+        submitButton.addEventListener('click', () => {
+            if (changes.length === 0) {
+                alert('No changes to save.');
+                return;
+            }
+
+            document.body.style.cursor = 'wait';
+
+            console.log('Changes being sent:', JSON.stringify(changes, null, 2));
+            fetch('/fabrics/batch-update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(changes),
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to save changes.');
+                }
+                alert('Changes saved successfully!');
+                changes.length = 0;
+                updateButtonState();
+            })
+            .catch(error => {
+                alert('Failed to save changes. Please try again.');
+                console.error('Error:', error);
+            })
+            .finally(() => {
+                document.body.style.cursor = 'default';
+            });
+        });
+
+        // Filter rows by description
+        descriptionFilterInput.addEventListener('input', () => {
+            const filterText = descriptionFilterInput.value.toLowerCase();
+
+            tableRows.forEach(row => {
+                try {
+                    const descriptionCell = row.querySelector('td:first-child');
+                    if (!descriptionCell) {
+                        console.warn('Description cell not found for row:', row);
+                        row.style.display = 'none';
+                        return;
+                    }
+
+                    const descriptionText = descriptionCell.textContent ? descriptionCell.textContent.toLowerCase() : '';
+                    row.style.display = descriptionText.includes(filterText) ? '' : 'none';
+                } catch (error) {
+                    console.error('Error processing row:', row, error);
+                    row.style.display = 'none';
+                }
+            });
+
+            // Clear all "Select All/None" checkboxes
+            selectToggles.forEach(toggle => {
+                toggle.checked = false; // Uncheck the checkbox
+            });
+            console.log('Description filter changed. Cleared all "Select All/None" checkboxes.');
+
+        });
+
+        // "Select All/None" toggle functionality
+        selectToggles.forEach(toggle => {
+            toggle.addEventListener('change', () => {
+                const groupCode = toggle.getAttribute('data-group-code');
+                const isChecked = toggle.checked;
+
+                console.log(`Toggle changed: groupCode=${groupCode}, isChecked=${isChecked}`);
+
+                try {
+                    const visibleCheckboxes = Array.from(document.querySelectorAll(`.group-checkbox[data-group-code="${groupCode}"]`))
+                        .filter(checkbox => checkbox.closest('tr').style.display !== 'none');
+
+                    visibleCheckboxes.forEach(checkbox => {
+                        checkbox.checked = isChecked;
+
+                        const fabricId = checkbox.getAttribute('data-fabric-id');
+                        const change = {
+                            fabric_id: fabricId,
+                            group_code: groupCode,
+                            is_checked: isChecked
+                        };
+
+                        // Check if the change already exists
+                        const existingChangeIndex = changes.findIndex(
+                            c => c.fabric_id === change.fabric_id && c.group_code === change.group_code
+                        );
+
+                        if (existingChangeIndex !== -1) {
+                            changes[existingChangeIndex] = change; // Update existing change
+                        } else {
+                            changes.push(change); // Add new change
+                        }
+
+                        console.log(`Tracked change:`, change);
+                    });
+
+                    console.log('Current changes array:', JSON.stringify(changes, null, 2));
+                    updateButtonState();
+
+                } catch (error) {
+                    console.error('Error processing checkboxes:', error);
+                }
+            });
+        });
+    });
+</script>
+
 
 {% endblock %}
