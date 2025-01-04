@@ -81,6 +81,18 @@ class DatabaseManager:
         except Exception as e:
             raise DatabaseError(f"Commit failed: {e}")
 
+    def rollback(self):
+        """
+        Rollback the current transaction in case of errors.
+
+        :raises DatabaseError: If the rollback operation fails.
+        """
+        try:
+            self.connection.rollback()
+            logger.info("Transaction rolled back successfully.")
+        except Exception as e:
+            raise DatabaseError(f"Rollback failed: {e}")
+
     def insert_item(self, table, data):
         """
         Insert a new record into a specified table.

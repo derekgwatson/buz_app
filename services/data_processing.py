@@ -530,7 +530,11 @@ def get_all_fabrics(db_manager: DatabaseManager):
                 COALESCE(description_2, '') || ' ' ||
                 COALESCE(description_3, '')
             ) AS full_description
-        FROM fabrics;
+        FROM fabrics
+        ORDER BY 
+            description_1,
+            description_2,
+            description_3;
     """
     return db_manager.execute_query(query).fetchall()
 

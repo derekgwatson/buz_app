@@ -1,10 +1,15 @@
-from flask import Blueprint, request, render_template, redirect, url_for, g, jsonify
+from flask import Blueprint, request, render_template, redirect, url_for, g, jsonify, flash
 from services.fabrics import (
     get_fabric_grid_data,
     process_fabric_mappings,
     prepare_fabric_grid_data,
     add_fabric_to_group,
-    remove_fabric_from_group
+    remove_fabric_from_group,
+    get_fabric_by_id,
+    add_mapping,
+    add_new_fabric,
+    get_fabric_mappings,
+    update_fabric_in_db,
 )
 
 
@@ -76,3 +81,105 @@ def batch_update_mappings():
     except Exception as e:
         print(f"Error during batch update: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@fabrics_blueprint.route("/fabrics/<int:fabric_id>", methods=["DELETE"])
+def delete_fabric(fabric_id):
+    try:
+        g.db.delete_item('fabrics', {'id': fabric_id})
+        return jsonify({'message': 'Fabric deleted successfully.'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@fabrics_blueprint.route('/fabrics/<int:fabric_id>', methods=['PUT'])
+def update_fabric(fabric_id):
+    db = g.db  # Assuming you are using Flask's `g` object to manage the database connection
+
+    # Check if the fabric exists
+    existing_fabric = get_fabric_by_id(fabric_id, db)
+    if not existing_fabric:
+        return jsonify({"error": "Fabric not found."}), 404
+
+    # Parse the JSON body
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON body."}), 400
+
+    # Validate required fields
+    required_fields = ["supplier_code", "description_1", "description_2", "description_3"]
+    if not all(field in data for field in required_fields):
+        return jsonify({"error": "Missing required fields."}), 400
+
+    # Update the fabric
+    update_fabric_in_db(fabric_id, data, db)
+
+    # Respond with success
+    return jsonify({
+        "message": "Fabric updated successfully.",
+        "fabric": {
+            "id": fabric_id,
+            "supplier_code": data["supplier_code"],
+            "description_1": data["description_1"],
+            "description_2": data["description_2"],
+            "description_3": data["description_3"],
+        },
+    }), 200
+
+
+@fabrics_blueprint.route("/fabrics/clone", methods=["POST"])
+def clone_fabric():
+    db = g.db
+    try:
+        # Parse the data from the request
+        data = request.get_json()
+        fabric_id = data.get("fabric_id")
+
+        if not fabric_id:
+            return jsonify({"error": "Fabric ID is required"}), 400
+
+        # Fetch the original fabric details
+        original_fabric = get_fabric_by_id(fabric_id, db)
+
+        if not original_fabric:
+            return jsonify({"error": "Fabric not found"}), 404
+
+        # Clone the fabric and insert a new record
+        new_fabric_id = add_new_fabric({
+            "description_1": original_fabric["description_1"],
+            "description_2": original_fabric["description_2"],
+            "description_3": original_fabric["description_3"],
+            "supplier_code": original_fabric["supplier_code"],
+        }, db)
+
+        # Clone the mappings
+        original_mappings = get_fabric_mappings(fabric_id, db)
+        for mapping in original_mappings:
+            add_mapping(new_fabric_id, mapping["inventory_group_code"], db)
+
+        db.commit()
+
+        return jsonify({"new_fabric_id": new_fabric_id}), 201
+
+    except Exception as e:
+        db.rollback()
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
+
+@fabrics_blueprint.route("/fabrics/<int:fabric_id>", methods=["GET"])
+def get_fabric_details(fabric_id):
+    db = g.db
+    try:
+        # Fetch fabric details
+        fabric = get_fabric_by_id(fabric_id, db)
+        if not fabric:
+            return jsonify({"error": "Fabric not found"}), 404
+
+        # Convert the Row object to a dictionary
+        fabric_dict = dict(fabric)
+
+        return jsonify(fabric_dict), 200
+    except Exception as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500

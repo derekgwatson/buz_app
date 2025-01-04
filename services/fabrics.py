@@ -33,6 +33,9 @@ def prepare_fabric_grid_data(fabric_list, group_list, mapping_set):
         grid.append({
             "fabric_id": fabric_id,
             "fabric_description": concatenated_description,
+            "description_1": fabric["description_1"],
+            "description_2": fabric["description_2"],
+            "description_3": fabric["description_3"],
             "fabric_code": fabric["supplier_code"],
             "groups": {
                 group_code: (fabric_id, group_code) in mapping_set
@@ -86,3 +89,47 @@ def remove_fabric_from_group(db_manager, fabric_id, group_code):
     except Exception as e:
         print(f"Error removing mapping: fabric_id={fabric_id}, group_code={group_code}, error={e}")
         raise
+
+
+def get_fabric_by_id(fabric_id, db):
+    query = "SELECT * FROM fabrics WHERE id = ?"
+    return db.execute_query(query, (fabric_id,)).fetchone()
+
+
+def add_new_fabric(fabric_data, db):
+    query = """
+        INSERT INTO fabrics (description_1, description_2, description_3, supplier_code)
+        VALUES (?, ?, ?, ?)
+    """
+    cursor = db.execute_query(query, (
+        fabric_data["description_1"],
+        fabric_data["description_2"],
+        fabric_data["description_3"],
+        fabric_data["supplier_code"],
+    ))
+    return cursor.lastrowid
+
+
+def get_fabric_mappings(fabric_id, db):
+    query = "SELECT * FROM fabric_group_mappings WHERE fabric_id = ?"
+    return db.execute_query(query, (fabric_id,)).fetchall()
+
+
+def add_mapping(fabric_id, group_code, db):
+    query = "INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (?, ?)"
+    db.execute_query(query, (fabric_id, group_code))
+
+
+def update_fabric_in_db(fabric_id, fabric_data, db):
+    query = """
+        UPDATE fabrics
+        SET supplier_code = ?, description_1 = ?, description_2 = ?, description_3 = ?
+        WHERE id = ?
+    """
+    db.execute_query(query, (
+        fabric_data["supplier_code"],
+        fabric_data["description_1"],
+        fabric_data["description_2"],
+        fabric_data["description_3"],
+        fabric_id,
+    ), True)

@@ -6,6 +6,7 @@
 
 <h1>Fabric Grid</h1>
 
+
 <style>
     body {
         background-color: #121212;
@@ -43,6 +44,12 @@
         text-align: left;
     }
 
+    /* Action Column */
+    .table td:last-child, .table th:last-child {
+        width: 70px; /* Set a smaller width for the Code column */
+        padding: 5px; /* Adjust padding for consistent size */
+    }
+
     /* Rotated headers with positioning */
     .table th.rotate {
         height: 250px; /* Fixed height for the header row */
@@ -74,6 +81,7 @@
     }
 
     .table td {
+        padding: 5px 8px; /* Reduce cell padding */
         background-color: #1a1a1a;
         text-align: center; /* Default center alignment for cells */
     }
@@ -86,6 +94,27 @@
         width: 18px;
         height: 18px;
         cursor: pointer;
+    }
+
+    .action-buttons {
+        display: flex;
+        justify-content: center;
+        align-items: center; /* Center align buttons vertically */
+        gap: 5px; /* Small space between buttons */
+    }
+
+    .btn-icon {
+        background: none; /* No background */
+        border: none; /* No border */
+        color: #666; /* Subtle color */
+        padding: 0; /* No padding */
+        font-size: 18px; /* Adjust icon size */
+        cursor: pointer;
+        line-height: 1; /* Compact line height */
+    }
+
+    .btn-icon i {
+        margin: 0; /* No extra margin */
     }
 
     .btn {
@@ -103,10 +132,141 @@
     .btn:hover {
         background-color: #0056b3;
     }
+
+    .btn-delete .btn-clone {
+        background: none; /* No background */
+        border: none; /* No border */
+        color: #666; /* Subtle color */
+        padding: 0; /* No padding */
+        font-size: 14px; /* Smaller font size */
+        cursor: pointer;
+        margin: 0 5px;
+        line-height: 1; /* Compact line height */
+    }
+
+    .btn-clone:hover {
+        color: #00ff00; /* Green for hover */
+    }
+
+    .btn-delete:hover {
+        color: #dc3545; /* Bright red on hover */
+    }
+
+    .btn-delete i {
+        margin: 0; /* No margin around the delete */
+        display: inline-block;
+    }
+
+    /* Overlay Styles */
+    #edit-overlay .form-group {
+        margin-bottom: 15px;
+    }
+
+    #edit-overlay label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+    }
+
+    #edit-overlay input {
+        width: 100%;
+        padding: 8px;
+        box-sizing: border-box;
+        font-size: 16px;
+    }
+
+    #edit-overlay .btn {
+        margin-top: 10px;
+        padding: 10px 15px;
+        font-size: 16px;
+        cursor: pointer;
+    }
+
+    .btn-primary {
+        background-color: #007bff;
+        color: white;
+        border: none;
+    }
+
+    .btn-primary:hover {
+        background-color: #0056b3;
+    }
+
+    .btn-secondary {
+        background-color: #6c757d;
+        color: white;
+        border: none;
+    }
+
+    .btn-secondary:hover {
+        background-color: #5a6268;
+    }
 </style>
 
+<div id="loading-overlay" style="
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    font-size: 24px;
+    text-align: center;
+    line-height: 100vh;
+    z-index: 9999;">
+    Loading...
+</div>
+
+<div id="edit-overlay" style="
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    color: white;
+    padding: 20px;">
+    <div style="
+        max-width: 500px;
+        margin: auto;
+        background: #222;
+        padding: 20px;
+        border-radius: 8px;">
+        <h2>Edit Fabric</h2>
+        <form id="edit-form">
+            <input type="hidden" id="edit-fabric-id">
+
+            <div class="form-group">
+                <label for="edit-supplier-code">Supplier Code:</label>
+                <input type="text" id="edit-supplier-code" class="form-control" required>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-description-1">Description 1:</label>
+                <input type="text" id="edit-description-1" class="form-control">
+            </div>
+
+            <div class="form-group">
+                <label for="edit-description-2">Description 2:</label>
+                <input type="text" id="edit-description-2" class="form-control">
+            </div>
+
+            <div class="form-group">
+                <label for="edit-description-3">Description 3:</label>
+                <input type="text" id="edit-description-3" class="form-control">
+            </div>
+
+            <button type="button" id="save-edit" class="btn btn-primary">Save</button>
+            <button type="button" id="cancel-edit" class="btn btn-secondary">Cancel</button>
+        </form>
+    </div>
+</div>
+
 <div style="margin-bottom: 20px; text-align: center;">
-    <label for="description-filter">Filter by Description:</label>
+    <label for="description-filter">Filter:</label>
     <input
         type="text"
         id="description-filter"
@@ -130,19 +290,27 @@
                     >
                 </th>
             {% endfor %}
+            <th>&nbsp;</th>
         </tr>
         <tr>
-            <th class="horizontal">Description</th> <!-- Horizontal header -->
+            <th class="horizontal">Description</th>
             <th class="horizontal">Code</th> <!-- Horizontal header -->
             {% for group_code, group_name in groups.items() %}
                 <th class="rotate"><span>{{ group_name }}</span></th> <!-- Rotated headers -->
             {% endfor %}
+            <th>&nbsp;</th>
         </tr>
     </thead>
     <tbody>
         {% for fabric in grid %}
         <tr>
-            <td>{{ fabric.fabric_description }}</td>
+            <td
+                class="fabric-description"
+                data-description-1="{{ fabric.description_1 }}"
+                data-description-2="{{ fabric.description_2 }}"
+                data-description-3="{{ fabric.description_3 }}">
+                {{ fabric.fabric_description }}
+            </td>
             <td>{{ fabric.fabric_code }}</td>
             {% for group_code in groups.keys() %}
             <td>
@@ -155,17 +323,245 @@
                 >
             </td>
             {% endfor %}
+            <td class="action-buttons">
+                <!-- Clone button -->
+                <button type="button" class="btn-icon btn-clone" title="Clone" data-fabric-id="{{ fabric.fabric_id }}">
+                    <i class="fas fa-copy"></i>
+                </button>
+
+                <!-- Delete button -->
+                <button type="submit" class="btn-icon btn-delete" title="Delete" data-fabric-id="{{ fabric.fabric_id }}">
+                    <i class="fas fa-trash"></i>
+                </button>
+
+                <!-- Edit button -->
+                <button type="submit" class="btn-icon btn-edit" title="Edit" data-fabric-id="{{ fabric.fabric_id }}">
+                    <i class="fas fa-pencil"></i>
+                </button>
+            </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 
-<input type="button" value="Save Changes" class="btn">
+<input type="button" value="Save Changes" class="btn save-mappings-btn">
 
 <script>
     document.addEventListener("DOMContentLoaded", () => {
+        const tableBody = document.querySelector('tbody');
+        const editOverlay = document.getElementById('edit-overlay');
+        const editForm = document.getElementById('edit-form');
+
+        // Event delegation for Edit button
+        tableBody.addEventListener('click', (event) => {
+            // Event delegation for Edit, Clone and Delete buttons
+            const cloneButton = event.target.closest('.btn-clone');
+            const deleteButton = event.target.closest('.btn-delete');
+            const editButton = event.target.closest('.btn-edit');
+
+            if (editButton) {
+                handleEditClick(editButton);
+            } else if (cloneButton) {
+                handleCloneClick(cloneButton);
+            } else if (deleteButton) {
+                handleDeleteClick(deleteButton);
+            }
+        });
+
+        // Handle Edit button click
+        function handleEditClick(button) {
+            const fabricId = button.getAttribute('data-fabric-id');
+            const currentRow = button.closest('tr');
+
+            if (!fabricId) {
+                alert("Fabric ID not found!");
+                return;
+            }
+
+            // Get individual descriptions from data attributes
+            const description1 = currentRow.querySelector('.fabric-description').getAttribute('data-description-1');
+            const description2 = currentRow.querySelector('.fabric-description').getAttribute('data-description-2');
+            const description3 = currentRow.querySelector('.fabric-description').getAttribute('data-description-3');
+            const supplierCode = currentRow.querySelector('td:nth-child(2)').textContent.trim();
+
+            // Populate the overlay with fabric data
+            document.getElementById('edit-fabric-id').value = fabricId;
+            document.getElementById('edit-supplier-code').value = supplierCode;
+            document.getElementById('edit-description-1').value = description1 || '';
+            document.getElementById('edit-description-2').value = description2 || '';
+            document.getElementById('edit-description-3').value = description3 || '';
+
+            // Ensure Save button in the overlay is active
+            const saveEditButton = document.getElementById('save-edit');
+
+            // Show the overlay
+            editOverlay.style.display = 'block';
+        }
+
+        // Cancel Edit
+        document.getElementById('cancel-edit').addEventListener('click', () => {
+            editOverlay.style.display = 'none';
+        });
+
+        // Save Edit
+        document.getElementById('save-edit').addEventListener('click', () => {
+            const fabricId = document.getElementById('edit-fabric-id').value;
+            const supplierCode = document.getElementById('edit-supplier-code').value;
+            const description1 = document.getElementById('edit-description-1').value;
+            const description2 = document.getElementById('edit-description-2').value;
+            const description3 = document.getElementById('edit-description-3').value;
+
+            fabric_packet = JSON.stringify({
+                    supplier_code: supplierCode,
+                    description_1: description1,
+                    description_2: description2,
+                    description_3: description3,
+                });
+            console.log(`Sending ${fabric_packet} to server to update`);
+
+            // Send updated data to the server
+            fetch(`/fabrics/${fabricId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: fabric_packet,
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to update fabric.');
+                }
+                return response.json();
+            })
+            .then(data => {
+                alert("Fabric updated successfully!");
+
+                // Update the row in the table
+                const currentRow = tableBody.querySelector(`[data-fabric-id="${fabricId}"]`).closest('tr');
+
+                // Concatenate descriptions with spaces for display
+                const concatenatedDescription = [description1, description2, description3]
+                    .filter(desc => desc.trim() !== '') // Filter out empty descriptions
+                    .join(' ');
+
+                // Update the description cell
+                const descriptionCell = currentRow.querySelector('.fabric-description');
+                descriptionCell.textContent = concatenatedDescription;
+
+                // Update data attributes for individual descriptions
+                descriptionCell.setAttribute('data-description-1', description1);
+                descriptionCell.setAttribute('data-description-2', description2);
+                descriptionCell.setAttribute('data-description-3', description3);
+
+                // Update the supplier code cell
+                const supplierCodeCell = currentRow.querySelector('td:nth-child(2)');
+                supplierCodeCell.textContent = supplierCode;
+
+                // Hide the overlay
+                editOverlay.style.display = 'none';
+            })
+            .catch(error => {
+                console.error(error);
+                alert("An error occurred while updating the fabric.");
+            });
+        });
+
+        function handleCloneClick(button) {
+            const fabricId = button.getAttribute('data-fabric-id');
+
+            if (!fabricId) {
+                alert("Fabric ID not found!");
+                return;
+            }
+
+            // Confirm with the user
+            if (!confirm("Are you sure you want to clone this fabric?")) {
+                return;
+            }
+
+            // Send clone request to the server
+            fetch('/fabrics/clone', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fabric_id: fabricId })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Failed to clone fabric.");
+                }
+                return response.json();
+            })
+            .then(data => {
+                const newFabricId = data.new_fabric_id;
+
+                // Duplicate the current row
+                const currentRow = button.closest('tr');
+                const clonedRow = currentRow.cloneNode(true);
+
+                // Update the cloned row with the new fabric ID
+                clonedRow.querySelectorAll('[data-fabric-id]').forEach(element => {
+                    element.setAttribute('data-fabric-id', newFabricId);
+                });
+
+                // Insert the cloned row immediately after the original
+                currentRow.parentNode.insertBefore(clonedRow, currentRow.nextSibling);
+
+                // Open the edit overlay for the new fabric
+                document.getElementById('edit-fabric-id').value = newFabricId;
+                document.getElementById('edit-supplier-code').value = clonedRow.querySelector('td:nth-child(2)').textContent.trim();
+                document.getElementById('edit-description-1').value = clonedRow.querySelector('.fabric-description').getAttribute('data-description-1') || '';
+                document.getElementById('edit-description-2').value = clonedRow.querySelector('.fabric-description').getAttribute('data-description-2') || '';
+                document.getElementById('edit-description-3').value = clonedRow.querySelector('.fabric-description').getAttribute('data-description-3') || '';
+
+                // Show the edit overlay
+                const editOverlay = document.getElementById('edit-overlay');
+                editOverlay.style.display = 'block';
+            })
+            .catch(error => {
+                console.error(error);
+                alert("An error occurred while cloning the fabric.");
+            });
+        }
+
+
+        function handleDeleteClick(button) {
+            const fabricId = button.getAttribute('data-fabric-id'); // Get fabric ID from the data attribute
+
+            if (!fabricId) {
+                alert("Fabric ID not found!");
+                return;
+            }
+
+            if (!confirm("Are you sure you want to delete this fabric? This action cannot be undone.")) {
+                return;
+            }
+
+            // Send an AJAX request to delete the fabric
+            fetch(`/fabrics/${fabricId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to delete fabric.');
+                }
+
+                // Remove the row from the table
+                const row = button.closest('tr');
+                row.parentNode.removeChild(row);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert("An error occurred while deleting the fabric.");
+            });
+        }
+
         const changes = [];
-        const submitButton = document.querySelector('.btn');
+        const saveMappingsButton = document.querySelector('.save-mappings-btn');
         const descriptionFilterInput = document.getElementById('description-filter');
         const tableRows = document.querySelectorAll('tbody tr');
         const selectToggles = document.querySelectorAll('.select-toggle');
@@ -173,13 +569,13 @@
         // Function to update button state
         function updateButtonState() {
             if (changes.length === 0) {
-                submitButton.disabled = true;
-                submitButton.style.backgroundColor = '#666'; // Gray color
-                submitButton.style.cursor = 'not-allowed'; // Optional for user feedback
+                saveMappingsButton.disabled = true;
+                saveMappingsButton.style.backgroundColor = '#666'; // Gray color
+                saveMappingsButton.style.cursor = 'not-allowed'; // Optional for user feedback
             } else {
-                submitButton.disabled = false;
-                submitButton.style.backgroundColor = '#007bff'; // Original color
-                submitButton.style.cursor = 'pointer'; // Optional
+                saveMappingsButton.disabled = false;
+                saveMappingsButton.style.backgroundColor = '#007bff'; // Original color
+                saveMappingsButton.style.cursor = 'pointer'; // Optional
             }
         }
 
@@ -210,7 +606,7 @@
         });
 
         // Submit changes on button click
-        submitButton.addEventListener('click', () => {
+        saveMappingsButton.addEventListener('click', () => {
             if (changes.length === 0) {
                 alert('No changes to save.');
                 return;
@@ -244,32 +640,43 @@
         });
 
         // Filter rows by description
+        let filterTimeout;
         descriptionFilterInput.addEventListener('input', () => {
-            const filterText = descriptionFilterInput.value.toLowerCase();
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                const filterText = descriptionFilterInput.value.toLowerCase();
 
-            tableRows.forEach(row => {
-                try {
-                    const descriptionCell = row.querySelector('td:first-child');
-                    if (!descriptionCell) {
-                        console.warn('Description cell not found for row:', row);
+                tableRows.forEach(row => {
+                    try {
+                        // Get both the description and code cells
+                        const descriptionCell = row.querySelector('td:first-child');
+                        const codeCell = row.querySelector('td:nth-child(2)');
+
+                        if (!descriptionCell || !codeCell) {
+                            console.warn('Description or Code cell not found for row:', row);
+                            row.style.display = 'none';
+                            return;
+                        }
+
+                        // Combine the text from both cells
+                        const descriptionText = descriptionCell.textContent ? descriptionCell.textContent.toLowerCase() : '';
+                        const codeText = codeCell.textContent ? codeCell.textContent.toLowerCase() : '';
+
+                        // Check if the filter text matches either the description or code
+                        const matchesFilter = descriptionText.includes(filterText) || codeText.includes(filterText);
+                        row.style.display = matchesFilter ? '' : 'none';
+                    } catch (error) {
+                        console.error('Error processing row:', row, error);
                         row.style.display = 'none';
-                        return;
                     }
+                });
 
-                    const descriptionText = descriptionCell.textContent ? descriptionCell.textContent.toLowerCase() : '';
-                    row.style.display = descriptionText.includes(filterText) ? '' : 'none';
-                } catch (error) {
-                    console.error('Error processing row:', row, error);
-                    row.style.display = 'none';
-                }
-            });
-
-            // Clear all "Select All/None" checkboxes
-            selectToggles.forEach(toggle => {
-                toggle.checked = false; // Uncheck the checkbox
-            });
-            console.log('Description filter changed. Cleared all "Select All/None" checkboxes.');
-
+                // Clear all "Select All/None" checkboxes
+                selectToggles.forEach(toggle => {
+                    toggle.checked = false; // Uncheck the checkbox
+                });
+                console.log('Filter changed. Cleared all "Select All/None" checkboxes.');
+            }, 300);
         });
 
         // "Select All/None" toggle functionality
@@ -316,7 +723,17 @@
                 }
             });
         });
+
+        // Hide the loading overlay
+        const loadingOverlay = document.getElementById('loading-overlay');
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'none';
+        }
     });
+
+    function confirmDelete() {
+        return confirm("Are you sure you want to delete this fabric? This action cannot be undone.");
+    }
 </script>
 
 
