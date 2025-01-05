@@ -1,4 +1,5 @@
-from flask import Blueprint, request, render_template, redirect, url_for, g, jsonify, flash
+from flask import Blueprint, request, render_template, redirect, url_for, g, jsonify, current_app
+import os
 from services.fabrics import (
     get_fabric_grid_data,
     process_fabric_mappings,
@@ -10,6 +11,11 @@ from services.fabrics import (
     add_new_fabric,
     get_fabric_mappings,
     update_fabric_in_db,
+    get_fabrics_and_mappings,
+    get_inventory_items,
+    get_inventory_groups,
+    process_data,
+    create_workbook,
 )
 
 
@@ -183,3 +189,20 @@ def get_fabric_details(fabric_id):
     except Exception as e:
         print(e)
         return jsonify({"error": str(e)}), 500
+
+
+@fabrics_blueprint.route('/fabrics/generate-upload', methods=['GET'])
+def generate_workbook():
+    db_manager = g.db
+
+    fabrics = get_fabrics_and_mappings(db_manager)
+    inventory_items = get_inventory_items(db_manager)
+    inventory_groups_list = get_inventory_groups(db_manager)
+    inventory_groups_dict = {group["group_code"]: group["group_description"] for group in inventory_groups_list}
+
+    additions, deletions = process_data(fabrics, inventory_items, inventory_groups_dict)
+
+    output_path = os.path.join("uploads", "fabric_sync.xlsx")
+    create_workbook(current_app.config["headers"], additions, deletions, output_path)
+
+    return jsonify({"message": "Workbook created", "path": output_path})

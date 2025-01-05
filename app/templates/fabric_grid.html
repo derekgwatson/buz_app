@@ -19,11 +19,18 @@
         margin-bottom: 20px;
     }
 
+    .table-container {
+        overflow-x: auto; /* Enables horizontal scrolling */
+        margin: 20px 0;
+        border: 1px solid #444; /* Optional: Add a border for clarity */
+    }
+
     .table {
-        width: 100%;
+        width: max-content; /* Ensures table is as wide as needed */
+        min-width: 100%; /* Ensure it doesn't shrink below screen width */
         border-collapse: collapse;
         margin: auto;
-        table-layout: fixed; /* Ensures consistent column widths */
+        table-layout: auto; /* Columns adjust based on content */
     }
 
     .table th, .table td {
@@ -33,48 +40,56 @@
 
     /* Wider Description Column */
     .table td:first-child, .table th:first-child {
-        width: 30%; /* Increase the width of the Description column */
+        min-width: 40%; /* Increase the minimum width for the Description column */
+        max-width: 50%; /* Set a maximum width to prevent it from dominating the table */
         text-align: left; /* Left-align the text */
         word-wrap: break-word; /* Allow wrapping if necessary */
+        white-space: nowrap; /* Prevent wrapping as much as possible */
+        overflow: hidden; /* Hide overflow if it exceeds the column width */
+        text-overflow: ellipsis; /* Show ellipsis for long descriptions */
     }
 
     /* Code Column */
     .table td:nth-child(2), .table th:nth-child(2) {
-        width: 15%; /* Set a smaller width for the Code column */
+        width: 100px; /* Fixed width for the Code column */
         text-align: left;
     }
 
     /* Action Column */
     .table td:last-child, .table th:last-child {
-        width: 70px; /* Set a smaller width for the Code column */
+        width: 70px; /* Set a smaller width for the Action column */
         padding: 5px; /* Adjust padding for consistent size */
     }
 
     /* Rotated headers with positioning */
     .table th.rotate {
-        height: 250px; /* Fixed height for the header row */
+        height: 200px; /* Adjust height to fit content */
         background-color: #222;
         color: #fff;
         font-weight: bold;
         padding: 0; /* Remove default padding */
-        position: relative; /* Enable positioning */
+        position: relative;
         writing-mode: vertical-lr; /* Rotate text vertically */
+        text-align: center; /* Center text horizontally */
         white-space: nowrap; /* Prevent wrapping */
     }
 
     .table th.rotate span {
-        display: inline-block;
+        display: block;
+        transform: rotate(-45deg); /* Rotate the text at an angle */
+        transform-origin: bottom left; /* Adjust rotation origin */
         position: absolute;
-        bottom: 5px; /* Push the text to the bottom */
+        bottom: 5px; /* Adjust spacing from the bottom */
         left: 50%; /* Center horizontally */
-        transform: translateX(-50%); /* Correct centering */
+        text-align: center;
+        width: 100%;
+        font-size: 12px; /* Adjust font size for readability */
+        word-break: break-word; /* Handle long words if needed */
     }
 
     /* Horizontal headers (for Description and Code) */
     .table th.horizontal {
         writing-mode: horizontal-tb;
-        transform: none;
-        text-orientation: initial;
         vertical-align: bottom;
         text-align: left;
         padding: 10px;
@@ -201,6 +216,25 @@
     .btn-secondary:hover {
         background-color: #5a6268;
     }
+
+    @media (max-width: 768px) {
+        .table th.rotate {
+            transform: rotate(-90deg); /* Further rotate text for smaller screens */
+            height: 200px;
+        }
+
+        .table-container {
+            margin: 10px 0; /* Reduce spacing on smaller screens */
+        }
+
+        .table td:first-child, .table th:first-child {
+            width: 150px; /* Reduce description width for smaller screens */
+        }
+
+        .table td:nth-child(2), .table th:nth-child(2) {
+            width: 80px; /* Reduce code width for smaller screens */
+        }
+    }
 </style>
 
 <div id="loading-overlay" style="
@@ -275,74 +309,78 @@
     >
 </div>
 
-<table class="table table-bordered">
-    <thead>
-        <tr>
-            <th>&nbsp;</th>
-            <th>Select all/none ====></th>
-            {% for group_code, group_name in groups.items() %}
-                <th>
+<div class="table-container">
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>&nbsp;</th>
+                <th>Select all/none ====></th>
+                {% for group_code, group_name in groups.items() %}
+                    <th>
+                        <input
+                            type="checkbox"
+                            class="select-toggle"
+                            data-group-code="{{ group_code }}"
+                            title="Toggle all visible"
+                        >
+                    </th>
+                {% endfor %}
+                <th>&nbsp;</th>
+            </tr>
+            <tr>
+                <th class="horizontal">Description</th>
+                <th class="horizontal">Code</th> <!-- Horizontal header -->
+                {% for group_code, group_info in groups.items() %}
+                    <th class="rotate">
+                        <span title="{{ group_info.name }}">{{ group_info.abbrev }}</span>
+                    </th>
+                {% endfor %}
+                <th>&nbsp;</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for fabric in grid %}
+            <tr>
+                <td
+                    class="fabric-description"
+                    data-description-1="{{ fabric.description_1 }}"
+                    data-description-2="{{ fabric.description_2 }}"
+                    data-description-3="{{ fabric.description_3 }}">
+                    {{ fabric.fabric_description }}
+                </td>
+                <td>{{ fabric.fabric_code }}</td>
+                {% for group_code in groups.keys() %}
+                <td>
                     <input
                         type="checkbox"
-                        class="select-toggle"
+                        class="group-checkbox"
+                        data-fabric-id="{{ fabric.fabric_id or 'MISSING_ID' }}"
                         data-group-code="{{ group_code }}"
-                        title="Toggle all visible"
+                        {% if fabric.groups[group_code] %} checked {% endif %}
                     >
-                </th>
-            {% endfor %}
-            <th>&nbsp;</th>
-        </tr>
-        <tr>
-            <th class="horizontal">Description</th>
-            <th class="horizontal">Code</th> <!-- Horizontal header -->
-            {% for group_code, group_name in groups.items() %}
-                <th class="rotate"><span>{{ group_name }}</span></th> <!-- Rotated headers -->
-            {% endfor %}
-            <th>&nbsp;</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for fabric in grid %}
-        <tr>
-            <td
-                class="fabric-description"
-                data-description-1="{{ fabric.description_1 }}"
-                data-description-2="{{ fabric.description_2 }}"
-                data-description-3="{{ fabric.description_3 }}">
-                {{ fabric.fabric_description }}
-            </td>
-            <td>{{ fabric.fabric_code }}</td>
-            {% for group_code in groups.keys() %}
-            <td>
-                <input
-                    type="checkbox"
-                    class="group-checkbox"
-                    data-fabric-id="{{ fabric.fabric_id or 'MISSING_ID' }}"
-                    data-group-code="{{ group_code }}"
-                    {% if fabric.groups[group_code] %} checked {% endif %}
-                >
-            </td>
-            {% endfor %}
-            <td class="action-buttons">
-                <!-- Clone button -->
-                <button type="button" class="btn-icon btn-clone" title="Clone" data-fabric-id="{{ fabric.fabric_id }}">
-                    <i class="fas fa-copy"></i>
-                </button>
+                </td>
+                {% endfor %}
+                <td class="action-buttons">
+                    <!-- Clone button -->
+                    <button type="button" class="btn-icon btn-clone" title="Clone" data-fabric-id="{{ fabric.fabric_id }}">
+                        <i class="fas fa-copy"></i>
+                    </button>
 
-                <!-- Delete button -->
-                <button type="submit" class="btn-icon btn-delete" title="Delete" data-fabric-id="{{ fabric.fabric_id }}">
-                    <i class="fas fa-trash"></i>
-                </button>
+                    <!-- Delete button -->
+                    <button type="submit" class="btn-icon btn-delete" title="Delete" data-fabric-id="{{ fabric.fabric_id }}">
+                        <i class="fas fa-trash"></i>
+                    </button>
 
-                <!-- Edit button -->
-                <button type="submit" class="btn-icon btn-edit" title="Edit" data-fabric-id="{{ fabric.fabric_id }}">
-                    <i class="fas fa-pencil"></i>
-                </button>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+                    <!-- Edit button -->
+                    <button type="submit" class="btn-icon btn-edit" title="Edit" data-fabric-id="{{ fabric.fabric_id }}">
+                        <i class="fas fa-pencil"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 
 <input type="button" value="Save Changes" class="btn save-mappings-btn">
 

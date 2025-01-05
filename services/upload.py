@@ -68,14 +68,6 @@ def upload(
     return uploaded_files
 
 
-def parse_headers(config, key):
-    """Parse headers from the application configuration."""
-    headers = config["headers"].get(key, [])
-    expected_headers = [col["spreadsheet_column"] for col in headers]
-    db_fields = [col["database_field"] for col in headers]
-    return expected_headers, db_fields
-
-
 def init_last_upload_times(db_manager):
     """Initialize last upload times for each file."""
     return {

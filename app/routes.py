@@ -35,7 +35,8 @@ def homepage():
 @main_routes.route('/upload', methods=['GET', 'POST'])
 @auth.login_required
 def upload_route():
-    from services.upload import upload, parse_headers, init_last_upload_times
+    from services.upload import upload, init_last_upload_times
+    from services.helper import parse_headers
 
     # Initialize last upload times
     last_upload_times = init_last_upload_times(g.db)
@@ -48,13 +49,13 @@ def upload_route():
 
         # Parse headers
         inventory_file_expected_headers, inventory_file_db_fields = parse_headers(
-            current_app.config, "buz_inventory_item_file"
+            current_app.config["headers"], "buz_inventory_item_file"
         )
         pricing_file_expected_headers, pricing_file_db_fields = parse_headers(
-            current_app.config, "buz_pricing_file"
+            current_app.config["headers"], "buz_pricing_file"
         )
         unleashed_file_expected_headers, _ = parse_headers(
-            current_app.config, "unleashed_fields"
+            current_app.config["headers"], "unleashed_fields"
         )
 
         # Process uploaded files
