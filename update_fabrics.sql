@@ -1,3 +1,5 @@
+BEGIN TRANSACTION;
+
 DROP TABLE inventory_groups;
 CREATE TABLE inventory_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6678,3 +6680,6 @@ INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3038
 												INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3306, 'PANGV2');	INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3306, 'ROLLEMPIRE');		INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3306, 'ROLC');		INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3306, 'ROLL');	INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3306, 'ROMNLF');
 												INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3307, 'PANGV2');	INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3307, 'ROLLEMPIRE');		INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3307, 'ROLC');		INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3307, 'ROLL');	INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3307, 'ROMNLF');
 												INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3308, 'PANGV2');	INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3308, 'ROLLEMPIRE');		INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3308, 'ROLC');		INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3308, 'ROLL');	INSERT INTO fabric_group_mappings (fabric_id, inventory_group_code) VALUES (3308, 'ROMNLF');
+
+
+COMMIT;
