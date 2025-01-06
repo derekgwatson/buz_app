@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+
+{% block title %}Deactivate Obsolete/Unsellable Items{% endblock %}
+
+{% block content %}
+
+    <h1>Generate Deactivation File</h1>
+
+    {% if upload_filename %}
+        <a href="{{ url_for('main_routes.download_file', filename=upload_filename) }}" class="btn btn-primary">
+            Download Deactivation File
+        </a>
+    {% else %}
+        <form action="{{ url_for('main_routes.generate_deactivation_file') }}" method="POST">
+            <div class="alert alert-info" role="alert">
+                This will generate an upload file containing items marked as obsolete or unsellable in Unleashed.
+                The file is ready for upload to Buz but does not directly affect any data in your system.
+            </div>
+
+            <p>
+                Ensure that your Unleashed data is up to date before generating the file.
+                This feature identifies items flagged as obsolete or unsellable and prepares them for deactivation in Buz.
+            </p>
+            <hr>
+
+            <button type="submit" class="btn btn-primary">Generate Deactivation File</button>
+        </form>
+    {% endif %}
+
+{% endblock %}

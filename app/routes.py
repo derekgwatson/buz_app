@@ -184,7 +184,10 @@ def delete_inventory_group(inventory_group_code):
 @auth.login_required
 def download_file(filename):
     file_path = os.path.join(current_app.config['upload_folder'], filename)
-    return send_file(file_path, as_attachment=True)
+    if os.path.exists(file_path):
+        return send_file(file_path, as_attachment=True)
+    else:
+        flash('File not found.', 'warning')
 
 
 @main_routes.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
@@ -411,3 +414,27 @@ def create_fabric():
     Render the form to create a new fabric.
     """
     return render_template('fabric_create.html')
+
+
+@main_routes.route('/generate-deactivation-file', methods=['GET', 'POST'])
+def generate_deactivation_file():
+    """
+    Route to generate a deactivation file for obsolete/unsellable items.
+    """
+    from services.deactivated_items import generate_deactivation_upload
+
+    if request.method == 'POST':
+        # Call the function to generate the file
+        filename = generate_deactivation_upload(g.db)  # Your implementation from earlier
+
+        if filename:
+            flash('Deactivation file generated successfully!', 'success')
+            upload_filename = os.path.basename(filename)
+            return render_template(
+                'generate_deactivation_file.html',
+                upload_filename=upload_filename
+            )
+        else:
+            flash('Failed to generate deactivation file. Check logs for details.', 'danger')
+
+    return render_template('generate_deactivation_file.html', upload_filename=None)
