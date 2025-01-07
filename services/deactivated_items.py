@@ -18,19 +18,24 @@ def generate_deactivation_upload(db_manager: DatabaseManager):
 
     # Query database for obsolete/unsellable items
     query = f"""
-    SELECT {', '.join(db_fields)} FROM inventory_items
-    WHERE Supplier = 'Unleashed'
-    AND SupplierProductCode IN (
-        SELECT ProductCode FROM unleashed_products
-        WHERE IsObsoleted = 'Yes' OR IsSellable = 'No'
+    SELECT id, inventory_group_code, {', '.join(db_fields)} FROM inventory_items
+    WHERE LOWER(Supplier) = 'unleashed'
+    AND SupplierProductCode != ''
+    AND LOWER(SupplierProductCode) NOT IN (
+        SELECT LOWER(ProductCode) FROM unleashed_products
+        WHERE IsObsoleted = 'No' AND IsSellable = 'Yes'
     )
     """
-    items = db_manager.execute_query(query)
+    cursor = db_manager.execute_query(query)
+
+    # Convert cursor results to list of dictionaries
+    columns = [col[0] for col in cursor.description]  # Extract column names
+    items = [dict(zip(columns, row)) for row in cursor.fetchall()]  # Convert rows to dictionaries
 
     # Organize items by InventoryGroupCode
     grouped_items = {}
     for item in items:
-        group = item['InventoryGroupCode']
+        group = item['inventory_group_code']
         if group not in grouped_items:
             grouped_items[group] = []
         grouped_items[group].append(item)
@@ -40,11 +45,16 @@ def generate_deactivation_upload(db_manager: DatabaseManager):
     for group, items in grouped_items.items():
         sheet = workbook.create_sheet(title=group)
         # Add headers
+        sheet.append([])    # starts with a blank row
         sheet.append(expected_headers)
         for item in items:
             # Populate row with database fields
             row = [item.get(field) for field in db_fields]
-            row.append('D')  # Add 'D' for deactivation
+
+            # Insert 'D' in the second-to-last column position
+            if len(row) > 0:
+                row[-1] = 'D'  # Replace the value in the last column with 'D'
+
             sheet.append(row)
 
     # Remove default empty sheet
