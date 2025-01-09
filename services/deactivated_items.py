@@ -3,6 +3,7 @@ from datetime import datetime
 from flask import current_app
 from services.database import DatabaseManager
 from services.helper import parse_headers
+import os
 
 
 def generate_deactivation_upload(db_manager: DatabaseManager):
@@ -63,5 +64,6 @@ def generate_deactivation_upload(db_manager: DatabaseManager):
 
     # Save workbook
     filename = f"deactivate_items_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    filename = os.path.join(current_app.config['upload_folder'], filename)
     workbook.save(filename)
-    print(f"Deactivation upload file saved as {filename}")
+    return filename

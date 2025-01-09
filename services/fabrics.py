@@ -341,3 +341,38 @@ def process_data(fabrics, inventory_items, inventory_groups):
         deletions.setdefault(group, []).append(deletion)
 
     return additions, deletions
+
+
+def _find_duplicate_fabric_ids_query(db_manager: DatabaseManager):
+    query = """
+        SELECT 
+            MIN(id) AS duplicate_id
+        FROM 
+            inventory_items
+        WHERE 
+            NOT (descnpart1 = '' AND descnpart2 = '' AND descnpart3 = '')
+        GROUP BY 
+            inventory_group_code, 
+            descnpart1, 
+            descnpart2, 
+            descnpart3
+        HAVING 
+            COUNT(*) > 1;
+    """
+    return [row['duplicate_id'] for row in db_manager.execute_query(query)]
+
+
+def get_duplicate_fabric_details(db_manager: DatabaseManager):
+    duplicate_ids = _find_duplicate_fabric_ids_query(db_manager)
+
+    if not duplicate_ids:
+        return []  # Return an empty list if no duplicates are found
+
+    query = """
+        SELECT *
+        FROM inventory_items
+        WHERE id IN ({});
+    """.format(",".join(map(str, duplicate_ids)))
+
+    return db_manager.execute_query(query)
+

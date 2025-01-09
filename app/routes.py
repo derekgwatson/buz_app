@@ -438,3 +438,45 @@ def generate_deactivation_file():
             flash('Failed to generate deactivation file. Check logs for details.', 'danger')
 
     return render_template('generate_deactivation_file.html', upload_filename=None)
+
+
+@main_routes.route('/fabric-duplicates-report', methods=['GET', 'POST'])
+def generate_duplicates_report():
+    from services.fabrics import get_duplicate_fabric_details
+    from services.inventory_items import create_inventory_workbook_creator
+
+    if request.method == 'POST':
+
+        # Step 1: Fetch duplicate inventory details
+        duplicate_details = get_duplicate_fabric_details(g.db)
+
+        if not duplicate_details:
+            flash('No duplicates found.', 'information')
+            return render_template('fabric_duplicates.html')
+
+        # Step 2: Group duplicate details by inventory group code
+        grouped_data = {}
+        for item in duplicate_details:
+            item_dict = dict(item)
+            item_dict['Operation'] = 'D'
+
+            # Group by inventory group code
+            group_name = item_dict["inventory_group_code"] if item_dict["inventory_group_code"] else "Uncategorized"
+            if group_name not in grouped_data:
+                grouped_data[group_name] = []
+            grouped_data[group_name].append(item_dict)
+
+        # Step 3: Create the workbook creator instance
+        inventory_creator = create_inventory_workbook_creator(current_app)
+
+        # Step 4: Populate the workbook
+        inventory_creator.populate_workbook(grouped_data)
+        inventory_creator.auto_fit_columns()
+
+        # Step 5: Save the workbook
+        output_path = os.path.join(current_app.config["upload_folder"], "Duplicates_Report.xlsx")
+        inventory_creator.save_workbook(output_path)
+
+        return render_template('fabric_duplicates.html', output_path=output_path)
+
+    return render_template('fabric_duplicates.html')
