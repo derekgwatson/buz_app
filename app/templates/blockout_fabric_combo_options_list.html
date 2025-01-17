@@ -1,0 +1,27 @@
+{% extends "layout.html" %}
+
+{% block title %}Empire Roller Combo Group Options Fabric List{% endblock %}
+
+{% block content %}
+
+<h1>{{ title }} Roller Combo Group Options Fabric List</h1>
+
+<div style="display: flex; justify-content: space-between; gap: 20px;">
+    <!-- Fabrics List -->
+    <div style="flex: 1;">
+        <h2>Fabrics</h2>
+        {% for fabric in fabrics %}
+            {% if title == 'Empire' %}YES|{% endif %}{{ fabric }}<br>
+        {% endfor %}
+    </div>
+
+    <!-- Items List -->
+    <div style="flex: 2;">
+        <h2>Items</h2>
+        {% for item in items %}
+            {{ item.desc_part_1 }}|{{ item.desc_part_3 }}|{{ item.code }}<br>
+        {% endfor %}
+    </div>
+</div>
+
+{% endblock %}

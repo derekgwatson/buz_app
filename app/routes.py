@@ -409,6 +409,7 @@ def sync_pricing():
 
 
 @main_routes.route('/fabrics/create', methods=['GET'])
+@auth.login_required
 def create_fabric():
     """
     Render the form to create a new fabric.
@@ -417,6 +418,7 @@ def create_fabric():
 
 
 @main_routes.route('/generate-deactivation-file', methods=['GET', 'POST'])
+@auth.login_required
 def generate_deactivation_file():
     """
     Route to generate a deactivation file for obsolete/unsellable items.
@@ -441,6 +443,7 @@ def generate_deactivation_file():
 
 
 @main_routes.route('/fabric-duplicates-report', methods=['GET', 'POST'])
+@auth.login_required
 def generate_duplicates_report():
     from services.fabrics import get_duplicate_fabric_details
     from services.inventory_items import create_inventory_workbook_creator
@@ -480,3 +483,23 @@ def generate_duplicates_report():
         return render_template('fabric_duplicates.html', output_path=output_path)
 
     return render_template('fabric_duplicates.html')
+
+
+@main_routes.route('/get_combo_list/empire')
+@auth.login_required
+def get_combo_list_empire():
+    from services.combo_roller_blockout_fabrics import get_inventory_items
+
+    """Route to display inventory items."""
+    items, unique_desc_part_1 = get_inventory_items(g.db, "ROLLEMPIRE")  # Fetch data
+    return render_template('blockout_fabric_combo_options_list.html', title='Empire', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
+
+
+@main_routes.route('/get_combo_list/acmeda')
+@auth.login_required
+def get_combo_list_acmeda():
+    from services.combo_roller_blockout_fabrics import get_inventory_items
+
+    """Route to display inventory items."""
+    items, unique_desc_part_1 = get_inventory_items(g.db, "ROLL")  # Fetch data
+    return render_template('blockout_fabric_combo_options_list.html', title='Acmeda', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
