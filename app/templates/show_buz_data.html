@@ -1,0 +1,33 @@
+{% extends "layout.html" %}
+
+{% block title %}Show Buz Data - Buz Application{% endblock %}
+
+{% block content %}
+
+<h1>Show Buz Data</h1>
+
+ {% if buzdata %}
+<ul>
+    <div class="container mt-4">
+        <h1 class="mb-4">Inventory Table</h1>
+        <table class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>Group</th>
+                    <th>Inventory Item Code</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in buzdata %}
+                <tr>
+                    <td>{{ row[0] }}</td>
+                    <td>{{ row[0] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</ul>
+{% endif %}
+
+{% endblock %}

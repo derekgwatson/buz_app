@@ -485,6 +485,14 @@ def generate_duplicates_report():
     return render_template('fabric_duplicates.html')
 
 
+@main_routes.route('/buz', methods=['GET', 'POST'])
+@auth.login_required
+def get_buz_data():
+    from services.buz_data import get_buz_data
+
+    return render_template('show_buz_data.html', buzdata=get_buz_data("CBR"))
+
+
 @main_routes.route('/get_combo_list/empire')
 @auth.login_required
 def get_combo_list_empire():
