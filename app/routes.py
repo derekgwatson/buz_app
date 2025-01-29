@@ -418,6 +418,7 @@ def create_fabric():
 
 
 @main_routes.route('/generate-deactivation-file', methods=['GET', 'POST'])
+@auth.login_required
 def generate_deactivation_file():
     """
     Route to generate a deactivation file for obsolete/unsellable items.
@@ -490,3 +491,23 @@ def get_buz_data():
     from services.buz_data import get_buz_data
 
     return render_template('show_buz_data.html', buzdata=get_buz_data("CBR"))
+
+
+@main_routes.route('/get_combo_list/empire')
+@auth.login_required
+def get_combo_list_empire():
+    from services.combo_roller_blockout_fabrics import get_inventory_items
+
+    """Route to display inventory items."""
+    items, unique_desc_part_1 = get_inventory_items(g.db, "ROLLEMPIRE")  # Fetch data
+    return render_template('blockout_fabric_combo_options_list.html', title='Empire', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
+
+
+@main_routes.route('/get_combo_list/acmeda')
+@auth.login_required
+def get_combo_list_acmeda():
+    from services.combo_roller_blockout_fabrics import get_inventory_items
+
+    """Route to display inventory items."""
+    items, unique_desc_part_1 = get_inventory_items(g.db, "ROLL")  # Fetch data
+    return render_template('blockout_fabric_combo_options_list.html', title='Acmeda', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
