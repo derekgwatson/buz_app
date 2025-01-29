@@ -32,17 +32,17 @@ def extract_headers(sheet, header_row):
     return headers
 
 
-def filter_rows(sheet, supplier_codes, supplier_code_col_idx, operation_col_idx, header_row):
+def filter_rows(sheet, supplier_product_codes, supplier_product_code_col_idx, operation_col_idx, header_row):
     """Filter rows based on supplier codes and update the 'Operation' column."""
     filtered_rows = []
 
     for row_index, row in enumerate(sheet.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
-        if len(row) <= max(supplier_code_col_idx, operation_col_idx):
+        if len(row) <= max(supplier_product_code_col_idx, operation_col_idx):
             logger.warning(f"Row {row_index} skipped: insufficient columns.")
             continue
 
-        supplier_code_value = row[supplier_code_col_idx]
-        if supplier_code_value in supplier_codes:
+        supplier_product_code_value = row[supplier_product_code_col_idx]
+        if supplier_product_code_value in supplier_product_codes:
             row = list(row)
             row[operation_col_idx] = 'E'
             filtered_rows.append(row)
@@ -50,7 +50,7 @@ def filter_rows(sheet, supplier_codes, supplier_code_col_idx, operation_col_idx,
     return filtered_rows
 
 
-def process_single_sheet(sheet, supplier_codes, header_row):
+def process_single_sheet(sheet, supplier_product_codes, header_row):
     """Process a single sheet, returning filtered rows."""
     headers = extract_headers(sheet, header_row)
 
@@ -60,7 +60,7 @@ def process_single_sheet(sheet, supplier_codes, header_row):
 
     filtered_rows = filter_rows(
         sheet,
-        supplier_codes,
+        supplier_product_codes,
         headers["Supplier Product Code"],
         headers["Operation"],
         header_row
@@ -91,15 +91,15 @@ def save_filtered_sheets_to_excel(filtered_sheets):
     return output
 
 
-def process_buz_items_by_supplier_codes(
+def process_buz_items_by_supplier_product_codes(
         uploaded_file: OpenPyXLFileHandler,
-        supplier_codes: list[str],
+        supplier_product_codes: list[str],
         header_row: int = 2):
     """
     Process all sheets in the uploaded Excel file to filter rows based on supplier codes.
 
     :param uploaded_file: OpenPyXLFileHandler object for the uploaded Excel file.
-    :param supplier_codes: List of supplier codes to filter by.
+    :param supplier_product_codes: List of supplier codes to filter by.
     :param header_row: Row number containing the headers (1-based index). Defaults to 2.
     :return: BytesIO object containing the filtered Excel file, or None if no valid sheets.
     """
@@ -110,7 +110,7 @@ def process_buz_items_by_supplier_codes(
         logger.debug(f"Processing sheet: {sheet_name}")
         sheet = uploaded_file.get_sheet(sheet_name)
 
-        filtered_rows = process_single_sheet(sheet, supplier_codes, header_row)
+        filtered_rows = process_single_sheet(sheet, supplier_product_codes, header_row)
         if filtered_rows:
             filtered_sheets[sheet_name] = filtered_rows
 

@@ -156,7 +156,7 @@ def unleashed_expected_headers(app_config):
 
 
 @pytest.fixture
-def mock_supplier_codes():
+def mock_supplier_product_codes():
     """Fixture for supplier codes."""
     return ["SC-A", "SC-C"]
 

@@ -74,7 +74,7 @@ def prepare_fabric_grid_data(fabric_list, group_list, mapping_set):
             "description_1": fabric["description_1"],
             "description_2": fabric["description_2"],
             "description_3": fabric["description_3"],
-            "fabric_code": fabric["supplier_code"],
+            "fabric_code": fabric["supplier_product_code"],
             "groups": {
                 group_code: (fabric_id, group_code) in mapping_set
                 for group_code in group_list.keys()
@@ -136,14 +136,14 @@ def get_fabric_by_id(fabric_id, db):
 
 def add_new_fabric(fabric_data, db):
     query = """
-        INSERT INTO fabrics (description_1, description_2, description_3, supplier_code)
+        INSERT INTO fabrics (description_1, description_2, description_3, supplier_product_code)
         VALUES (?, ?, ?, ?)
     """
     cursor = db.execute_query(query, (
         fabric_data["description_1"],
         fabric_data["description_2"],
         fabric_data["description_3"],
-        fabric_data["supplier_code"],
+        fabric_data["supplier_product_code"],
     ))
     return cursor.lastrowid
 
@@ -161,11 +161,11 @@ def add_mapping(fabric_id, group_code, db):
 def update_fabric_in_db(fabric_id, fabric_data, db_manager):
     query = """
         UPDATE fabrics
-        SET supplier_code = ?, description_1 = ?, description_2 = ?, description_3 = ?
+        SET supplier_product_code = ?, description_1 = ?, description_2 = ?, description_3 = ?
         WHERE id = ?
     """
     db_manager.execute_query(query, (
-        fabric_data["supplier_code"],
+        fabric_data["supplier_product_code"],
         fabric_data["description_1"],
         fabric_data["description_2"],
         fabric_data["description_3"],
@@ -180,7 +180,7 @@ def get_fabrics_and_mappings(db_manager):
             f.description_1,
             f.description_2,
             f.description_3,
-            f.supplier_code,
+            f.supplier_product_code,
             fm.inventory_group_code
         FROM fabrics f
         INNER JOIN fabric_group_mappings fm ON f.id = fm.fabric_id
@@ -322,7 +322,7 @@ def process_data(fabrics, inventory_items, inventory_groups):
                 "DescnPart1": fabric["description_1"],
                 "DescnPart2": fabric["description_2"],
                 "DescnPart3": fabric["description_3"],
-                "SupplierProductCode": fabric["supplier_code"],
+                "SupplierProductCode": fabric["supplier_product_code"],
                 "Operation": "A",  # Set Operation to 'A'
             })
             # Ensure all fields are present, fill with defaults if missing

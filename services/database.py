@@ -404,15 +404,27 @@ def init_db(db_manager: DatabaseManager):
                 );
             ''',
 
+            "suppliers": '''
+                CREATE TABLE IF NOT EXISTS suppliers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    supplier_code VARCHAR(255) NOT NULL,
+                    supplier VARCHAR(255) NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ''',
+
             "fabrics": '''
                 CREATE TABLE IF NOT EXISTS fabrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    supplier_code VARCHAR(50) NOT NULL,
+                    supplier_id INTEGER NULL,
+                    supplier_product_code VARCHAR(50) NOT NULL,
                     description_1 VARCHAR(255),
                     description_2 VARCHAR(255),
                     description_3 VARCHAR(255),
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (supplier_id) REFERENCES suppliers (id) ON DELETE SET NULL
                 );
             ''',
 

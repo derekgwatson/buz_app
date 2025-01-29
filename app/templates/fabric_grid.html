@@ -274,8 +274,8 @@
             <input type="hidden" id="edit-fabric-id">
 
             <div class="form-group">
-                <label for="edit-supplier-code">Supplier Code:</label>
-                <input type="text" id="edit-supplier-code" class="form-control" required>
+                <label for="edit-supplier-product-code">Supplier Code:</label>
+                <input type="text" id="edit-supplier-product-code" class="form-control" required>
             </div>
 
             <div class="form-group">
@@ -420,11 +420,11 @@
             const description1 = currentRow.querySelector('.fabric-description').getAttribute('data-description-1');
             const description2 = currentRow.querySelector('.fabric-description').getAttribute('data-description-2');
             const description3 = currentRow.querySelector('.fabric-description').getAttribute('data-description-3');
-            const supplierCode = currentRow.querySelector('td:nth-child(2)').textContent.trim();
+            const supplierProductCode = currentRow.querySelector('td:nth-child(2)').textContent.trim();
 
             // Populate the overlay with fabric data
             document.getElementById('edit-fabric-id').value = fabricId;
-            document.getElementById('edit-supplier-code').value = supplierCode;
+            document.getElementById('edit-supplier-product-code').value = supplierProductCode;
             document.getElementById('edit-description-1').value = description1 || '';
             document.getElementById('edit-description-2').value = description2 || '';
             document.getElementById('edit-description-3').value = description3 || '';
@@ -444,13 +444,13 @@
         // Save Edit
         document.getElementById('save-edit').addEventListener('click', () => {
             const fabricId = document.getElementById('edit-fabric-id').value;
-            const supplierCode = document.getElementById('edit-supplier-code').value;
+            const supplierProductCode = document.getElementById('edit-supplier-product-code').value;
             const description1 = document.getElementById('edit-description-1').value;
             const description2 = document.getElementById('edit-description-2').value;
             const description3 = document.getElementById('edit-description-3').value;
 
             fabric_packet = JSON.stringify({
-                    supplier_code: supplierCode,
+                    supplier_product_code: supplierProductCode,
                     description_1: description1,
                     description_2: description2,
                     description_3: description3,
@@ -492,8 +492,8 @@
                 descriptionCell.setAttribute('data-description-3', description3);
 
                 // Update the supplier code cell
-                const supplierCodeCell = currentRow.querySelector('td:nth-child(2)');
-                supplierCodeCell.textContent = supplierCode;
+                const supplierProductCodeCell = currentRow.querySelector('td:nth-child(2)');
+                supplierProductCodeCell.textContent = supplierProductCode;
 
                 // Hide the overlay
                 editOverlay.style.display = 'none';
@@ -548,7 +548,7 @@
 
                 // Open the edit overlay for the new fabric
                 document.getElementById('edit-fabric-id').value = newFabricId;
-                document.getElementById('edit-supplier-code').value = clonedRow.querySelector('td:nth-child(2)').textContent.trim();
+                document.getElementById('edit-supplier-product-code').value = clonedRow.querySelector('td:nth-child(2)').textContent.trim();
                 document.getElementById('edit-description-1').value = clonedRow.querySelector('.fabric-description').getAttribute('data-description-1') || '';
                 document.getElementById('edit-description-2').value = clonedRow.querySelector('.fabric-description').getAttribute('data-description-2') || '';
                 document.getElementById('edit-description-3').value = clonedRow.querySelector('.fabric-description').getAttribute('data-description-3') || '';

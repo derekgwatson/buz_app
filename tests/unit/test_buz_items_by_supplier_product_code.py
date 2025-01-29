@@ -2,17 +2,17 @@ import pytest
 import logging
 from services.excel import OpenPyXLFileHandler
 import pandas as pd
-from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
+from services.buz_items_by_supplier_product_code import process_buz_items_by_supplier_product_codes
 
 
 class TestProcessBuzItems:
-    """Class-based tests for process_buz_items_by_supplier_codes."""
+    """Class-based tests for process_buz_items_by_supplier_product_codes."""
 
-    def test_process_buz_items_valid(self, mock_buz_inventory_items, mock_supplier_codes):
+    def test_process_buz_items_valid(self, mock_buz_inventory_items, mock_supplier_product_codes):
         """Test processing a valid Excel file with matching supplier codes."""
         sheet_data, sheets_header_data = mock_buz_inventory_items
         excel = OpenPyXLFileHandler.from_sheets_data(sheet_data, sheets_header_data)
-        result = process_buz_items_by_supplier_codes(excel, mock_supplier_codes)
+        result = process_buz_items_by_supplier_product_codes(excel, mock_supplier_product_codes)
         processed_data = pd.read_excel(result, sheet_name=None, engine="openpyxl", header=0)
 
         assert "Sheet1" in processed_data, "Sheet1 should be present in the processed output."
@@ -42,13 +42,13 @@ class TestProcessBuzItems:
         non_matching_codes = ["SUP999"]
         sheet_data, sheets_header_data = mock_buz_inventory_items
         excel = OpenPyXLFileHandler.from_sheets_data(sheet_data, sheets_header_data)
-        result = process_buz_items_by_supplier_codes(
+        result = process_buz_items_by_supplier_product_codes(
             uploaded_file=excel,
-            supplier_codes=non_matching_codes
+            supplier_product_codes=non_matching_codes
         )
         assert result is None
 
-    def test_process_buz_items_invalid_headers(self, caplog, app_config, inventory_items_sheets_data_invalid, mock_supplier_codes):
+    def test_process_buz_items_invalid_headers(self, caplog, app_config, inventory_items_sheets_data_invalid, mock_supplier_product_codes):
         """Test processing a sheet with insufficient non-blank columns."""
         logger = logging.getLogger("test_logger")
         logger.setLevel(logging.INFO)
@@ -57,14 +57,14 @@ class TestProcessBuzItems:
         mock_file = OpenPyXLFileHandler.from_sheets_data(sheet_data, sheets_header_data)
 
         with caplog.at_level(logging.INFO, logger="test_logger"):
-            process_buz_items_by_supplier_codes(mock_file, mock_supplier_codes)
+            process_buz_items_by_supplier_product_codes(mock_file, mock_supplier_product_codes)
 
         assert "Required headers missing in sheet 'Sheet1'. Skipping." in caplog.text
 
-    def test_process_buz_items_empty_file(self, mock_supplier_codes):
+    def test_process_buz_items_empty_file(self, mock_supplier_product_codes):
         """Test processing an empty Excel file."""
         with pytest.raises(ValueError, match="No file uploaded."):
-            process_buz_items_by_supplier_codes(
+            process_buz_items_by_supplier_product_codes(
                 OpenPyXLFileHandler(),
-                mock_supplier_codes
+                mock_supplier_product_codes
             )
