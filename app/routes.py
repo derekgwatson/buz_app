@@ -409,6 +409,7 @@ def sync_pricing():
 
 
 @main_routes.route('/fabrics/create', methods=['GET'])
+@auth.login_required
 def create_fabric():
     """
     Render the form to create a new fabric.
@@ -441,6 +442,7 @@ def generate_deactivation_file():
 
 
 @main_routes.route('/fabric-duplicates-report', methods=['GET', 'POST'])
+@auth.login_required
 def generate_duplicates_report():
     from services.fabrics import get_duplicate_fabric_details
     from services.inventory_items import create_inventory_workbook_creator
@@ -480,3 +482,11 @@ def generate_duplicates_report():
         return render_template('fabric_duplicates.html', output_path=output_path)
 
     return render_template('fabric_duplicates.html')
+
+
+@main_routes.route('/buz', methods=['GET', 'POST'])
+@auth.login_required
+def get_buz_data():
+    from services.buz_data import get_buz_data
+
+    return render_template('show_buz_data.html', buzdata=get_buz_data("CBR"))
