@@ -8,13 +8,11 @@ def get_buz_data(instance):
 
     # Define instance-specific filters
     filter_conditions = [
-            "OrderStatus eq 'Work in Progress'",
-            "ProductionStatus ne 'null'",
+            "pkid eq '0f0a12fe-20b6-4043-b574-04b6d492f27b'",
         ]
 
     # Fetch filtered SalesReport data
-    report_data = odata_client.get("JobsScheduleDetailed", filter_conditions)
+    report_data = odata_client.get("inventory", filter_conditions)
 
-    statuses = {item["ProductionStatus"] for item in report_data if "ProductionStatus" in item}
-    print(f"Statuses are: {statuses}")
-    return statuses
+    print(f"report_data: {report_data}")
+    return report_data
