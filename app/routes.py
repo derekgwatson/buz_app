@@ -511,3 +511,32 @@ def get_combo_list_acmeda():
     """Route to display inventory items."""
     items, unique_desc_part_1 = get_inventory_items(g.db, "ROLL")  # Fetch data
     return render_template('blockout_fabric_combo_options_list.html', title='Acmeda', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
+
+
+@main_routes.route('/check_inventory_groups', methods=['GET'])
+@auth.login_required
+def check_inventory_groups():
+    from services.check_fabric_group_mappings import check_inventory_groups_against_unleashed
+
+    # Capture logs as a string instead of sending to stdout
+    import io
+    import logging
+
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.INFO)
+
+    logger = logging.getLogger('fabric_check')
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
+    try:
+        check_inventory_groups_against_unleashed()
+    finally:
+        logger.removeHandler(handler)
+
+    # Get the logs and show them on the page
+    log_output = log_stream.getvalue()
+    log_stream.close()
+
+    return render_template("check_inventory_groups.html", log_output=log_output)
