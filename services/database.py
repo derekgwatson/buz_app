@@ -362,6 +362,7 @@ def init_db(db_manager: DatabaseManager):
                     NominalCost REAL,
                     NeverDiminishing TEXT,
                     ProductGroup TEXT,
+                    ProductSubGroup TEXT,
                     SalesAccount TEXT,
                     COGSAccount TEXT,
                     PurchaseAccount REAL,
