@@ -14,12 +14,12 @@
         of your inventory.
     </p>
 
-    <form action="{{ url_for('main_routes.get_buz_items_by_supplier_codes') }}" method="post" enctype="multipart/form-data">
+    <form action="{{ url_for('main_routes.get_buz_items_by_supplier_product_codes') }}" method="post" enctype="multipart/form-data">
         <label for="file">Excel File:</label>
         <input type="file" name="file" id="file" accept=".xlsx,.xlsm" required>
         <br><br>
-        <label for="supplier_codes">Supplier Codes (one per line):</label>
-        <textarea name="supplier_codes" id="supplier_codes" rows="10" cols="30" required></textarea>
+        <label for="supplier_product_codes">Supplier Codes (one per line):</label>
+        <textarea name="supplier_product_codes" id="supplier_product_codes" rows="10" cols="30" required></textarea>
         <br><br>
         <button type="submit">Upload and Process</button>
     </form>

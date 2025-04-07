@@ -25,9 +25,9 @@ def mock_fabric_data(get_db_manager):
     db_manager = get_db_manager
 
     db_manager.insert_item(
-        "fabrics", {"supplier_code": "FAB001", "description_1": "Sheer", "description_2": "White"})
+        "fabrics", {"supplier_product_code": "FAB001", "description_1": "Sheer", "description_2": "White"})
     db_manager.insert_item(
-        "fabrics", {"supplier_code": "FAB002", "description_1": "Outdoor", "description_2": "Canvas"})
+        "fabrics", {"supplier_product_code": "FAB002", "description_1": "Outdoor", "description_2": "Canvas"})
 
     yield db_manager
 

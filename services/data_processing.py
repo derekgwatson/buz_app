@@ -102,7 +102,7 @@ def insert_unleashed_data(
                 cleaned_row.get('Product Sub Group'),
                 cleaned_row.get('Sales Account'),
                 cleaned_row.get('COGS Account'),
-                safe_float(cleaned_row.get('Purchase Account')), 
+                safe_float(cleaned_row.get('Purchase Account')),
                 cleaned_row.get('Purchase Tax Type'), 
                 safe_float(cleaned_row.get('Purchase Tax Rate')),
                 cleaned_row.get('Sales Tax Type'), 
@@ -147,7 +147,7 @@ def insert_unleashed_data(
                     ?, ?, ?, ?, 
                     ?, ?, ?, ?, 
                     ?, ?, ?, ?, 
-                    ?, ?, ?, ?, 
+                    ?, ?, ?, ?, ?, 
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, 
                     ?, ?, ?, 
@@ -162,7 +162,7 @@ def insert_unleashed_data(
     db_manager.commit()
 
     
-def generate_supplier_code_report_list(db_manager: DatabaseManager):
+def generate_supplier_product_code_report_list(db_manager: DatabaseManager):
     # Retrieve all supplier codes from the unleashed products table
     db_manager.db.execute('SELECT DISTINCT ProductCode FROM unleashed_products')
     product_codes = {row['ProductCode'].lower() for row in db_manager.db.cursor.fetchall()}
@@ -193,7 +193,7 @@ def db_get_all_unleashed_product_codes(db_manager: DatabaseManager):
     return product_codes
 
 
-def search_items_by_supplier_code(db_manager: DatabaseManager, code: str):
+def search_items_by_supplier_product_code(db_manager: DatabaseManager, code: str):
     """
     Search for inventory items by supplier product code
 
@@ -314,14 +314,14 @@ def db_delete_items_not_in_unleashed(db_manager: DatabaseManager):
 
     # Retrieve all supplier codes from the unleashed products table
     cursor = db_manager.execute_query('SELECT DISTINCT SupplierProductCode FROM unleashed_products')
-    existing_supplier_codes = {row[0].lower() for row in cursor.fetchall()}
+    existing_supplier_product_codes = {row[0].lower() for row in cursor.fetchall()}
 
     # Delete inventory items with supplier codes not found in the unleashed products,
     # and ignore items with a blank SupplierProductCode
     db_manager.execute_query(
         'DELETE FROM inventory_items WHERE SupplierProductCode NOT IN ({}) AND SupplierProductCode <> ""'.format(
-        ', '.join(['?'] * len(existing_supplier_codes))
-    ), list(existing_supplier_codes), auto_commit=True)
+        ', '.join(['?'] * len(existing_supplier_product_codes))
+    ), list(existing_supplier_product_codes), auto_commit=True)
     
     
 def validate_data(data, required_fields):
@@ -389,22 +389,22 @@ def get_pricing_data(db_manager: DatabaseManager):
 
 def add_fabric(
         db_manager: DatabaseManager,
-        supplier_code: str,
+        supplier_product_code: str,
         description_1: str,
         description_2: str,
         description_3: str
 ):
     db_manager.execute_query(
         query="""
-            INSERT INTO fabrics (supplier_code, description_1, description_2, description_3)
+            INSERT INTO fabrics (supplier_product_code, description_1, description_2, description_3)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(supplier_code) DO UPDATE SET
+            ON CONFLICT(supplier_product_code) DO UPDATE SET
                 description_1=excluded.description_1,
                 description_2=excluded.description_2,
                 description_3=excluded.description_3,
                 updated_at=CURRENT_TIMESTAMP;
             """,
-        params=(supplier_code, description_1, description_2, description_3),
+        params=(supplier_product_code, description_1, description_2, description_3),
         auto_commit=True
     )
 
@@ -425,10 +425,10 @@ def map_fabric_to_group(
     )
 
 
-def get_fabric_by_supplier_code(db_manager: DatabaseManager, supplier_code: str):
+def get_fabric_by_supplier_product_code(db_manager: DatabaseManager, supplier_product_code: str):
     cursor = db_manager.execute_query(
-        query="SELECT * FROM fabrics WHERE supplier_code = ?",
-        params=(supplier_code,)
+        query="SELECT * FROM fabrics WHERE supplier_product_code = ?",
+        params=(supplier_product_code,)
     )
     return cursor.fetchone()
 
@@ -527,7 +527,7 @@ def get_all_fabrics(db_manager: DatabaseManager):
     query = """
         SELECT 
             id,
-            supplier_code,
+            supplier_product_code,
             description_1,
             description_2,
             description_3,

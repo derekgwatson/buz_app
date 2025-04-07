@@ -134,12 +134,12 @@ def upload_inventory_groups():
 @main_routes.route('/search', methods=['GET', 'POST'])
 @auth.login_required
 def search():
-    from services.data_processing import search_items_by_supplier_code
+    from services.data_processing import search_items_by_supplier_product_code
 
     results = []
     if request.method == 'POST':
         code = request.form['code']
-        results = search_items_by_supplier_code(db_manager=g.db, code=code)
+        results = search_items_by_supplier_product_code(db_manager=g.db, code=code)
     return render_template('search.html', results=results)
 
 
@@ -316,20 +316,20 @@ def robots_txt():
     return send_from_directory(current_app.static_folder, 'robots.txt')
 
 
-@main_routes.route('/get_buz_items_by_supplier_codes', methods=['GET', 'POST'])
+@main_routes.route('/get_buz_items_by_supplier_product_codes', methods=['GET', 'POST'])
 @auth.login_required
-def get_buz_items_by_supplier_codes():
-    from services.buz_items_by_supplier_code import process_buz_items_by_supplier_codes
+def get_buz_items_by_supplier_product_codes():
+    from services.buz_items_by_supplier_product_code import process_buz_items_by_supplier_product_codes
 
     if request.method == 'POST':
         uploaded_file = request.files.get('file')
-        supplier_codes_input = request.form.get('supplier_codes')
+        supplier_product_codes_input = request.form.get('supplier_product_codes')
 
-        if not uploaded_file or not supplier_codes_input:
+        if not uploaded_file or not supplier_product_codes_input:
             return "Error: File or supplier codes missing.", 400
 
         # Process multi-line supplier codes input
-        supplier_codes = [code.strip() for code in supplier_codes_input.splitlines() if code.strip()]
+        supplier_product_codes = [code.strip() for code in supplier_product_codes_input.splitlines() if code.strip()]
 
         if not uploaded_file.filename.endswith(('.xlsx', '.xlsm')):
             logging.warning("Only .xlsx or .xlsm files are supported.")
@@ -337,9 +337,9 @@ def get_buz_items_by_supplier_codes():
         else:
             try:
                 excel = OpenPyXLFileHandler().from_file_like(uploaded_file)
-                filtered_excel = process_buz_items_by_supplier_codes(
+                filtered_excel = process_buz_items_by_supplier_product_codes(
                     excel,
-                    supplier_codes,
+                    supplier_product_codes,
                     current_app.config["headers"]["buz_inventory_item_file"]
                 )
                 if filtered_excel:
@@ -359,7 +359,7 @@ def get_buz_items_by_supplier_codes():
                 else:
                     flash(f"Error: {e}")
 
-    return render_template('get_buz_items_by_supplier_codes.html')
+    return render_template('get_buz_items_by_supplier_product_codes.html')
 
 
 @main_routes.route("/get_matching_buz_items", methods=["GET", "POST"])
@@ -511,3 +511,32 @@ def get_combo_list_acmeda():
     """Route to display inventory items."""
     items, unique_desc_part_1 = get_inventory_items(g.db, "ROLL")  # Fetch data
     return render_template('blockout_fabric_combo_options_list.html', title='Acmeda', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
+
+
+@main_routes.route('/check_inventory_groups', methods=['GET'])
+@auth.login_required
+def check_inventory_groups():
+    from services.check_fabric_group_mappings import check_inventory_groups_against_unleashed
+
+    # Capture logs as a string instead of sending to stdout
+    import io
+    import logging
+
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.INFO)
+
+    logger = logging.getLogger('fabric_check')
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
+    try:
+        check_inventory_groups_against_unleashed()
+    finally:
+        logger.removeHandler(handler)
+
+    # Get the logs and show them on the page
+    log_output = log_stream.getvalue()
+    log_stream.close()
+
+    return render_template("check_inventory_groups.html", log_output=log_output)

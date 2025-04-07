@@ -113,7 +113,7 @@ def update_fabric(fabric_id):
         return jsonify({"error": "Invalid JSON body."}), 400
 
     # Validate required fields
-    required_fields = ["supplier_code", "description_1", "description_2", "description_3"]
+    required_fields = ["supplier_product_code", "description_1", "description_2", "description_3"]
     if not all(field in data for field in required_fields):
         return jsonify({"error": "Missing required fields."}), 400
 
@@ -125,7 +125,7 @@ def update_fabric(fabric_id):
         "message": "Fabric updated successfully.",
         "fabric": {
             "id": fabric_id,
-            "supplier_code": data["supplier_code"],
+            "supplier_product_code": data["supplier_product_code"],
             "description_1": data["description_1"],
             "description_2": data["description_2"],
             "description_3": data["description_3"],
@@ -155,7 +155,7 @@ def clone_fabric():
             "description_1": original_fabric["description_1"],
             "description_2": original_fabric["description_2"],
             "description_3": original_fabric["description_3"],
-            "supplier_code": original_fabric["supplier_code"],
+            "supplier_product_code": original_fabric["supplier_product_code"],
         }, db)
 
         # Clone the mappings
