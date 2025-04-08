@@ -1,27 +1,42 @@
 {% extends "layout.html" %}
 
-{% block title %}Check fabric inventory group mapping{% endblock %}
+{% block title %}Inventory Group Validation - Buz Application{% endblock %}
 
 {% block content %}
+    <h1>Inventory Group Validation Results</h1>
 
-<h1>Check fabric inventory group mapping</h1>
-
-<div style="display: flex; justify-content: space-between; gap: 20px;">
-    <!-- Fabrics List -->
-    <div style="flex: 1;">
-        <h2>Fabrics</h2>
-        {% for fabric in fabrics %}
-            {% if title == 'Empire' %}YES|{% endif %}{{ fabric }}<br>
-        {% endfor %}
+    <div class="alert alert-info" role="alert">
+        This check compares each fabric's product group from Unleashed with how it is used in Buz (via the inventory group code).<br>
+        If you see any warnings or errors below, they may need to be corrected before generating pricing or upload files.
     </div>
 
-    <!-- Items List -->
-    <div style="flex: 2;">
-        <h2>Items</h2>
-        {% for item in items %}
-            {{ item.desc_part_1 }}|{{ item.desc_part_3 }}|{{ item.code }}<br>
-        {% endfor %}
-    </div>
-</div>
+    {% if violations %}
+        <div class="alert alert-warning">
+            <strong>{{ violations|length }} issue{{ violations|length != 1 and 's' or '' }} found:</strong>
+        </div>
 
+        <div class="mb-3">
+            {% for v in violations %}
+                {% if "❌" in v %}
+                    <div class="alert alert-danger py-2 px-3 mb-2">
+                        <span class="me-2">❌</span>{{ v.replace("❌", "").strip() }}
+                    </div>
+                {% elif "⚠️" in v %}
+                    <div class="alert alert-warning py-2 px-3 mb-2">
+                        <span class="me-2">⚠️</span>{{ v.replace("⚠️", "").strip() }}
+                    </div>
+                {% else %}
+                    <div class="alert alert-secondary py-2 px-3 mb-2">
+                        {{ v }}
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-success" role="alert">
+            ✅ No issues found! All fabrics are used correctly according to their product group and material type rules.
+        </div>
+    {% endif %}
+
+    <a class="btn btn-primary mt-3" href="{{ url_for('main_routes.homepage') }}">Back to Home</a>
 {% endblock %}

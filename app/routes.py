@@ -530,13 +530,10 @@ def check_inventory_groups():
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
 
-    try:
-        check_inventory_groups_against_unleashed()
-    finally:
-        logger.removeHandler(handler)
-
-    # Get the logs and show them on the page
-    log_output = log_stream.getvalue()
-    log_stream.close()
-
-    return render_template("check_inventory_groups.html", log_output=log_output)
+    violations = check_inventory_groups_against_unleashed(g.db)
+    if violations:
+        flash(f"{len(violations)} issue(s) found. Check logs or see below.", "warning")
+        return render_template("check_inventory_groups.html", violations=violations)
+    else:
+        flash("✅ All fabrics are valid!", "success")
+        return render_template("check_inventory_groups.html", violations=[])

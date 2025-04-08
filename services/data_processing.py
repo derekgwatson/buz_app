@@ -34,6 +34,21 @@ def clean_value(value):
     return value
 
 
+def parse_fd_metadata(product_description: str):
+    """
+    Extracts FriendlyDescription1, 2, and 3 from the encoded |fd ... fd| section in Unleashed's ProductDescription.
+    """
+    try:
+        start = product_description.index("|fd") + 3
+        end = product_description.index("fd|")
+        parts = product_description[start:end].strip().split(",")
+        if len(parts) == 3:
+            return parts[0].strip(), parts[1].strip(), parts[2].strip()
+    except Exception:
+        pass
+    return None, None, None
+
+
 def clear_unleashed_table(db_manager: DatabaseManager):
     """Clear all data from the unleashed_products table."""
     db_manager.execute_query('DELETE FROM unleashed_products', auto_commit=True)  # Clear all rows
@@ -65,9 +80,12 @@ def insert_unleashed_data(
             cleaned_row = {clean_value(key): clean_value(value) for key, value in row.items()}
             cleaned_row = {k.replace('*', '').strip(): v for k, v in cleaned_row.items()}  # Clean keys again after values
 
+            product_description = cleaned_row.get('Product Description', '')
+            fd1, fd2, fd3 = parse_fd_metadata(product_description)
+
             # Prepare values for insertion, using safe_float for numeric fields
             values = (
-                cleaned_row.get('Product Code'), cleaned_row.get('Product Description'), cleaned_row.get('Notes'),
+                cleaned_row.get('Product Code'), product_description, fd1, fd2, fd3, cleaned_row.get('Notes'),
                 cleaned_row.get('Barcode'), cleaned_row.get('Unit of Measure'),
                 safe_float(cleaned_row.get('Min Stock Alert Level')), 
                 safe_float(cleaned_row.get('Max Stock Alert Level')), 
@@ -118,42 +136,38 @@ def insert_unleashed_data(
             )
             
             # Check if the number of values matches the number of columns in the table
-            if len(values) != len(expected_headers):
-                logger.warning(f"Warning: Expected {len(expected_headers)} values but got {len(values)}. Row: {cleaned_row}")
+            # take out the 3 friendly description fields because they're added at runtime, they're not in the csv
+            if len(values) - 3 != len(expected_headers):
+                logger.warning(f"Warning: Expected {len(expected_headers)} values but got {len(values) - 3}. Row: {cleaned_row}")
                 continue
             
             db_manager.execute_query('''
                 INSERT INTO unleashed_products (
-                    ProductCode, ProductDescription, Notes, Barcode, UnitOfMeasure,
-                    MinStockAlertLevel, MaxStockAlertLevel, LabelTemplate, SOLabelTemplate,
-                    POLabelTemplate, SOLabelQuantity, POLabelQuantity, SupplierCode,
-                    SupplierName, SupplierProductCode,
-                    DefaultPurchasePrice,
-                    MinimumOrderQuantity, MinimumSaleQuantity, DefaultSellPrice,
-                    MinimumSellPrice, SellPriceTier1, SellPriceTier2, SellPriceTier3,
-                    SellPriceTier4, SellPriceTier5, SellPriceTier6, SellPriceTier7,
-                    SellPriceTier8, SellPriceTier9, SellPriceTier10, PackSize,
-                    Weight, Width, Height, Depth, Reminder, LastCost, NominalCost,
-                    NeverDiminishing, ProductGroup, ProductSubGroup, SalesAccount, COGSAccount,
-                    PurchaseAccount, PurchaseTaxType, PurchaseTaxRate,
-                    SalesTaxType, SaleTaxRate, IsAssembledProduct, IsComponent,
-                    IsObsoleted, IsSellable, IsPurchasable, DefaultPurchasingUnitOfMeasure,
-                    IsSerialized, IsBatchTracked
+                    ProductCode, ProductDescription, FriendlyDescription1, FriendlyDescription2, FriendlyDescription3,
+                    Notes, Barcode, UnitOfMeasure, MinStockAlertLevel, MaxStockAlertLevel, 
+                    LabelTemplate, SOLabelTemplate, POLabelTemplate, SOLabelQuantity, POLabelQuantity, 
+                    SupplierCode, SupplierName, SupplierProductCode, DefaultPurchasePrice, MinimumOrderQuantity, 
+                    MinimumSaleQuantity, DefaultSellPrice, MinimumSellPrice, SellPriceTier1, SellPriceTier2, 
+                    SellPriceTier3, SellPriceTier4, SellPriceTier5, SellPriceTier6, SellPriceTier7, 
+                    SellPriceTier8, SellPriceTier9, SellPriceTier10, PackSize, Weight, 
+                    Width, Height, Depth, Reminder, LastCost, 
+                    NominalCost, NeverDiminishing, ProductGroup, ProductSubGroup, SalesAccount, 
+                    COGSAccount, PurchaseAccount, PurchaseTaxType, PurchaseTaxRate, SalesTaxType, 
+                    SaleTaxRate, IsAssembledProduct, IsComponent, IsObsoleted, IsSellable, 
+                    IsPurchasable, DefaultPurchasingUnitOfMeasure, IsSerialized, IsBatchTracked
                 ) VALUES (
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?,
-                    ?, ?, ?, ?, 
-                    ?, ?, ?, ?, 
-                    ?, ?, ?, ?, 
-                    ?, ?, ?, ?, 
-                    ?, ?, ?, ?, ?, 
                     ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, 
-                    ?, ?, ?, 
-                    ?, ?, ?, ?, 
-                    ?, ?, ?, ?, 
-                    ?, ?
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?
                 )
             ''', values)
 
@@ -164,7 +178,7 @@ def insert_unleashed_data(
     
 def generate_supplier_product_code_report_list(db_manager: DatabaseManager):
     # Retrieve all supplier codes from the unleashed products table
-    db_manager.db.execute('SELECT DISTINCT ProductCode FROM unleashed_products')
+    db_manager.execute_query('SELECT DISTINCT ProductCode FROM unleashed_products')
     product_codes = {row['ProductCode'].lower() for row in db_manager.db.cursor.fetchall()}
 
     # Retrieve all inventory items with supplier codes not in the unleashed products

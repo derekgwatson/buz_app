@@ -171,5 +171,22 @@
     "ZIPSV2": 0.20,
     "PERF": 0.20,
     "PELMDD": 0.20
+  },
+  "unleashed_group_to_inventory_groups": {
+    "DD- Curtain Fabric": [],
+    "Fabric - Awning": ["ALPHAV2", "AWNGV2", "AWNS2K", "RECOVERV2", "ZIPSEXT", "ZIPSV2", "WSALPHA", "WSAWNG", "WSRECOVER", "WSZIPS"],
+    "Fabric - Honeycomb": [],
+    "Fabric - Roller Blind": ["PANGV2", "ROLC", "ROLL", "ROLLCB", "ROLLEMPIRE", "ROLLQU", "ROLLTEST"],
+    "Fabric - Verishades": [],
+    "Fabric - Verticals": ["VERTV2"],
+    "Watson Fabric - Roller Blind": [],
+    "Watson Fabric - Veticals": []
+  },
+  "material_restrictions_by_group": {
+    "SUND": ["Acrylic"],
+    "FOLD": ["Acrylic"],
+    "ZIPSV2": ["Mesh", "PVC"],
+    "AWNS2K": ["Canvas", "Acrylic", "Mesh"],
+    "ROLLCB": ["Aluminised", "Light Filtering", "Screen", "Sheer"]
   }
 }
