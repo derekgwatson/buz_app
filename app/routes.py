@@ -70,7 +70,9 @@ def upload_route():
             unleashed_file=unleashed_file,
             unleashed_file_expected_headers=unleashed_file_expected_headers,
             upload_folder=current_app.config['upload_folder'],
-            invalid_pkid=current_app.config['invalid_pkid']
+            invalid_pkid=current_app.config['invalid_pkid'],
+            override_friendly_descriptions_id=current_app.config["spreadsheets"]["friendly_descriptions"]["id"],
+            override_friendly_descriptions_range=current_app.config["spreadsheets"]["friendly_descriptions"]["range"]
         )
 
         if uploaded_files:

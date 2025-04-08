@@ -10,6 +10,10 @@
     "unleashed_data_extract": {
       "id": "1OE7CnACQjFFGgIm_yFjN8Qhf0l5xEQkJqXwFV4plNlI",
       "range": "Data!A:AY"
+    },
+    "friendly_descriptions": {
+      "id": "1OE7CnACQjFFGgIm_yFjN8Qhf0l5xEQkJqXwFV4plNlI",
+      "range": "Friendly_Descriptions!A:D"
     }
   },
 
@@ -174,12 +178,12 @@
   },
   "unleashed_group_to_inventory_groups": {
     "DD- Curtain Fabric": [],
-    "Fabric - Awning": ["ALPHAV2", "AWNGV2", "AWNS2K", "RECOVERV2", "ZIPSEXT", "ZIPSV2", "WSALPHA", "WSAWNG", "WSRECOVER", "WSZIPS"],
+    "Fabric - Awning": ["ALPHAV2", "AWNGV2", "AWNS2K", "RECOVERV2", "ZIPSV2", "WSALPHA", "WSAWNG", "WSRECOVER", "WSZIPS"],
     "Fabric - Honeycomb": [],
-    "Fabric - Roller Blind": ["PANGV2", "ROLC", "ROLL", "ROLLCB", "ROLLEMPIRE", "ROLLQU", "ROLLTEST"],
+    "Fabric - Roller Blind": ["PANGV2", "ROLC", "ROLL", "ROLLCB", "ROLLEMPIRE"],
     "Fabric - Verishades": [],
     "Fabric - Verticals": ["VERTV2"],
-    "Watson Fabric - Roller Blind": [],
+    "Watson Fabric - Roller Blind": ["PANGV2", "ROLC", "ROLL", "ROLLCB", "ROLLEMPIRE"],
     "Watson Fabric - Veticals": []
   },
   "material_restrictions_by_group": {
@@ -188,5 +192,11 @@
     "ZIPSV2": ["Mesh", "PVC"],
     "AWNS2K": ["Canvas", "Acrylic", "Mesh"],
     "ROLLCB": ["Aluminised", "Light Filtering", "Screen", "Sheer"]
-  }
+  },
+  "ignored_inventory_groups": [
+    "ZIPSEXT", "ROLLQU", "ROLLTEST", "ROLLBO", "ROLLSBBO", "ROLLQU", "ROLLQUBO", "SHAI",
+    "SHBS","SHCE","SHCO","SHAI","SHPA","SHPP","SHPR","SHPS",
+    "DONO"
+  ]
+
 }

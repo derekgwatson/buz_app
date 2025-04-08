@@ -17,7 +17,9 @@ def upload(
         unleashed_file: FileStorage,
         unleashed_file_expected_headers: list[str],
         upload_folder: str,
-        invalid_pkid: str
+        invalid_pkid: str,
+        override_friendly_descriptions_id: str,
+        override_friendly_descriptions_range: str,
 ):
     uploaded_files = {}
 
@@ -54,12 +56,24 @@ def upload(
         uploaded_files['pricing_file'] = last_upload
 
     if unleashed_file:
+        # Load friendly descriptions from Google Sheet
+        from services.google_sheets_service import GoogleSheetsService
+        from services.fabric_helpers import load_friendly_descriptions_from_google_sheet
+
+        g_sheets_service = GoogleSheetsService("credentials/buz-app-439103-b6ae046c4723.json")
+        friendly_overrides = load_friendly_descriptions_from_google_sheet(
+            g_sheets_service,
+            spreadsheet_id=override_friendly_descriptions_id,
+            range_name=override_friendly_descriptions_range
+        )
+
         unleashed_file_path = os.path.join(upload_folder, unleashed_file.filename)
         unleashed_file.save(unleashed_file_path)
         insert_unleashed_data(
             db_manager=db_manager,
             file_path=unleashed_file_path,
-            expected_headers=unleashed_file_expected_headers
+            expected_headers=unleashed_file_expected_headers,
+            overrides=friendly_overrides
         )
         update_table_history(db_manager=db_manager, table_name='unleashed_products')
         last_upload = get_last_upload_time(db_manager, 'unleashed_products')

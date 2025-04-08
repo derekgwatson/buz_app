@@ -28,15 +28,13 @@ def parse_excel_date(cell_value):
 
 def is_group_allowed(db_manager: DatabaseManager, inventory_group_code: str) -> bool:
     """
-    Check if the inventory group code exists in the allowed list.
-
-    :param db_manager: Instance of database manager
-    :type db_manager: DatabaseManager
-    :param inventory_group_code: Inventory group code
-    :type inventory_group_code: str
-    :return: true if inventory group is allowed
-    :rtype: bool
+    Check if the inventory group code is allowed (not in ignored list and exists in the allowed table).
     """
+    ignored_groups = config.config.get("ignored_inventory_groups", [])
+
+    if inventory_group_code in ignored_groups:
+        logger.info(f"Skipping group {inventory_group_code} because it's in the ignored list.")
+        return False
 
     return db_manager.get_item("inventory_groups", {"group_code": inventory_group_code}) is not None
 

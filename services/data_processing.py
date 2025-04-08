@@ -55,9 +55,10 @@ def clear_unleashed_table(db_manager: DatabaseManager):
 
     
 def insert_unleashed_data(
-        db_manager: DatabaseManager,
-        file_path: str,
-        expected_headers: list[str]
+    db_manager: DatabaseManager,
+    file_path: str,
+    expected_headers: list[str],
+    overrides: dict[str, list[str]] = None  # Optional dict from Google Sheet
 ):
     import csv
 
@@ -81,7 +82,12 @@ def insert_unleashed_data(
             cleaned_row = {k.replace('*', '').strip(): v for k, v in cleaned_row.items()}  # Clean keys again after values
 
             product_description = cleaned_row.get('Product Description', '')
+            product_code = cleaned_row.get('Product Code', '').strip()
             fd1, fd2, fd3 = parse_fd_metadata(product_description)
+
+            # Use overrides if available
+            if overrides and product_code in overrides:
+                fd1, fd2, fd3 = overrides[product_code]
 
             # Prepare values for insertion, using safe_float for numeric fields
             values = (
