@@ -539,3 +539,30 @@ def check_inventory_groups():
     else:
         flash("✅ All fabrics are valid!", "success")
         return render_template("check_inventory_groups.html", violations=[])
+
+
+@main_routes.route('/pricing_update', methods=['GET'])
+@auth.login_required
+def pricing_update():
+    from services.update_pricing import generate_pricing_upload_from_unleashed
+    from services.google_sheets_service import GoogleSheetsService
+
+    credentials_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        '..', 'credentials', 'buz-app-439103-b6ae046c4723.json'
+    )
+
+    result = generate_pricing_upload_from_unleashed(
+        g.db,
+        GoogleSheetsService(json_file=credentials_path),
+        current_app.config["headers"]["buz_pricing_file"]
+    )
+
+    if isinstance(result, dict) and result.get("error"):
+        return render_template("pricing_result.html", updated=False, error=True, conflicts=result["conflicts"])
+    elif result:
+        output_path = "buz_pricing_upload.xlsx"
+        result.save_workbook(output_path)
+        return render_template("pricing_result.html", updated=True, file_path=output_path)
+    else:
+        return render_template("pricing_result.html", updated=False)

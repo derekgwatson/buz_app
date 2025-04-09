@@ -296,3 +296,21 @@ class OpenPyXLFileHandler:
 
         # Set the value in the specified cell
         sheet.cell(row=row, column=column_index, value=value)
+
+    @classmethod
+    def create_blank_pricing_upload_from_config(cls, config: list[dict], group_codes: list[str], header_row: int = 1):
+        """
+        Create a blank pricing upload workbook using the buz_pricing_file config and inventory group codes.
+
+        :param config: The buz_pricing_file config section (list of dicts with spreadsheet_column keys).
+        :param group_codes: List of inventory_group_codes to create sheets for.
+        :param header_row: Row number to place headers (default is 1).
+        :return: OpenPyXLFileHandler with empty sheets per group.
+        """
+        headers = [entry["spreadsheet_column"] for entry in config]
+        sheets_data = {group: [] for group in group_codes}
+        sheets_header_data = {
+            "headers": headers,
+            "header_row": header_row
+        }
+        return cls.from_sheets_data(sheets_data, sheets_header_data)
