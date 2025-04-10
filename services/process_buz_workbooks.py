@@ -46,7 +46,8 @@ def process_workbook(
     db_fields: list[str],
     header_row: int,
     db_manager: DatabaseManager,
-    invalid_pkid: str
+    invalid_pkid: str,
+    ignored_groups: list[str],
 ) -> dict[str, int]:
     """
     Process an Excel workbook and insert its data into the specified database table.
@@ -56,6 +57,7 @@ def process_workbook(
     are not in the allowed list, have invalid headers, or contain no data. Existing
     rows for the corresponding inventory group are deleted before inserting new data.
 
+    :param ignored_groups:
     :param invalid_pkid:
     :param file_handler: An instance of `OpenPyXLFileHandler` used to load and interact
                          with the Excel workbook.
@@ -71,6 +73,10 @@ def process_workbook(
              - `rows_inserted`: Total number of rows inserted into the database.
     """
     summary = {"processed_sheets": 0, "skipped_sheets": 0, "rows_inserted": 0}
+
+    # Purge ignored groups before processing any files
+    purge_result = purge_ignored_groups(db_manager, "inventory_items", ignored_groups)
+    logger.info(f"Purged ignored inventory groups: {purge_result}")
 
     for sheet_name in file_handler.workbook.sheetnames:
         if not is_group_allowed(db_manager, sheet_name):
@@ -213,3 +219,24 @@ def delete_invalid_rows(
     except Exception as e:
         logger.error(f"Failed to delete invalid rows for group {inventory_group_code}: {e}")
         raise
+
+
+def purge_ignored_groups(db_manager: DatabaseManager, table_name: str, ignored_groups: list[str]) -> dict[str, int]:
+    """
+    Delete all rows from the given table where the inventory group is in the ignored list.
+
+    :param db_manager: Instance of DatabaseManager
+    :param table_name: Name of the table to purge
+    :param ignored_groups: List of group codes to purge
+    :return: Dict summarizing how many rows were deleted per group
+    """
+    results = {}
+    for group_code in ignored_groups:
+        try:
+            rowcount = delete_existing_data(db_manager, table_name, group_code)
+            results[group_code] = rowcount
+            logger.info(f"Purged {rowcount} rows from '{table_name}' for ignored group: {group_code}")
+        except Exception as e:
+            logger.error(f"Failed to purge group {group_code} from {table_name}: {e}")
+            results[group_code] = -1
+    return results

@@ -72,7 +72,8 @@ def upload_route():
             upload_folder=current_app.config['upload_folder'],
             invalid_pkid=current_app.config['invalid_pkid'],
             override_friendly_descriptions_id=current_app.config["spreadsheets"]["friendly_descriptions"]["id"],
-            override_friendly_descriptions_range=current_app.config["spreadsheets"]["friendly_descriptions"]["range"]
+            override_friendly_descriptions_range=current_app.config["spreadsheets"]["friendly_descriptions"]["range"],
+            ignored_groups=current_app.config["ignored_inventory_groups"]
         )
 
         if uploaded_files:

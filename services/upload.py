@@ -20,6 +20,7 @@ def upload(
         invalid_pkid: str,
         override_friendly_descriptions_id: str,
         override_friendly_descriptions_range: str,
+        ignored_groups: list[str],
 ):
     uploaded_files = {}
 
@@ -33,7 +34,8 @@ def upload(
             expected_headers=inventory_file_expected_headers,
             db_fields=inventory_file_db_fields,
             header_row=2,
-            invalid_pkid=invalid_pkid
+            invalid_pkid=invalid_pkid,
+            ignored_groups=ignored_groups
         )
         update_table_history(db_manager=db_manager, table_name='inventory_items')
         last_upload = get_last_upload_time(db_manager, 'inventory_items')
@@ -49,7 +51,8 @@ def upload(
             expected_headers=pricing_file_expected_headers,
             db_fields=pricing_file_db_fields,
             header_row=1,
-            invalid_pkid=invalid_pkid
+            invalid_pkid=invalid_pkid,
+            ignored_groups=ignored_groups
         )
         update_table_history(db_manager=db_manager, table_name='pricing_data')
         last_upload = get_last_upload_time(db_manager, 'pricing_data')
