@@ -567,3 +567,23 @@ def pricing_update():
         return render_template("pricing_result.html", updated=True, file_path=output_path)
     else:
         return render_template("pricing_result.html", updated=False)
+
+
+@main_routes.route('/unleashed', methods=['GET'])
+def unleashed_demo():
+    from services.unleashed_api import UnleashedAPIClient  # Adjust based on your file name
+
+    unleashed = UnleashedAPIClient()
+    products = unleashed.get_paginated_data(
+        "Products"
+    )
+    filtered_products = []
+    for p in products:
+        group = str(p.get("ProductGroup", "")).strip()
+        subgroup = str(p.get("ProductSubGroup", "")).strip()
+        if group and subgroup and subgroup.lower() != "ignore":
+            filtered_products.append(p)
+
+    for product in filtered_products:
+        print(product["ProductCode"], product["ProductDescription"])
+

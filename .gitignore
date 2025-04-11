@@ -2,6 +2,7 @@
 .env
 credentials/buz-app-439103-b6ae046c4723.json
 credentials/dummy_service_account.json
+credentials/unleashed.json
 
 # Python prod Virtual Environment
 venv/
