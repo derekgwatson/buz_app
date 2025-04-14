@@ -178,7 +178,7 @@ def insert_unleashed_data(
             ''', values)
 
     # Now, delete records where IsObsoleted='yes' or IsSellable='no'
-    db_manager.execute_query("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes' OR IsSellable = 'No'")
+    db_manager.execute_query("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes'")
     db_manager.commit()
 
     

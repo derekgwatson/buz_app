@@ -42,7 +42,7 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
     for row in unleashed:
         subgroup = row["ProductSubGroup"]
         price = row["SellPriceTier9"]
-        if subgroup and price:
+        if subgroup and price and subgroup.strip().lower() != "ignore":
             rounded_price = round(price, 2)
             subgroup_price_map[subgroup].append((rounded_price, row["ProductCode"]))
 
