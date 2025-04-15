@@ -15,7 +15,6 @@ def tomorrow():
 
 def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_config):
     # --- 1. Load markup map from Google Sheet ---
-    wastage_map = {}
     raw_rows = sheets_service.fetch_sheet_data(MARKUP_SPREADSHEET_ID, MARKUP_RANGE)
     headers = raw_rows[0]
     group_col = headers.index("Buz inventory group code")
@@ -23,6 +22,7 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
     wastage_col = headers.index("Wastage (Fabric)")
 
     markup_map = {}
+    wastage_map = {}
     for row in raw_rows[1:]:
         if len(row) <= max(group_col, markup_col):
             continue
@@ -31,14 +31,14 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
             markup = float(row[markup_col].strip().rstrip('%'))
             wastage = float(row[wastage_col].strip().rstrip('%')) if len(row) > wastage_col and row[wastage_col].strip() else 0
             markup_factor = 1 + (markup / 100)
+            wastage_factor = 1 + (wastage / 100)
             for group in [g.strip() for g in group_cell.split(",") if g.strip()]:
                 markup_map[group] = markup_factor
-                wastage_map[group] = wastage
+                wastage_map[group] = wastage_factor
         except (ValueError, IndexError):
             continue
 
     # --- 2. Build product_sub_group → cost map ---
-    wastage_map = {}
     unleashed = db_manager.execute_query("SELECT * FROM unleashed_products").fetchall()
     subgroup_price_map = defaultdict(list)
     subgroup_cost_map = {}
@@ -47,7 +47,7 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
     for row in unleashed:
         subgroup = row["ProductSubGroup"]
         price = row["SellPriceTier9"]
-        if subgroup and price:
+        if subgroup and price and subgroup.strip().lower() != "ignore":
             rounded_price = round(price, 2)
             subgroup_price_map[subgroup].append((rounded_price, row["ProductCode"]))
 
@@ -101,9 +101,12 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
         if cost is None or markup is None:
             continue
 
-        wastage = wastage_map.get(group_code, 0)
-        cost_with_wastage = round(cost * (1 + wastage / 100), 2)
-        new_cost = cost_with_wastage
+        wastage_factor = wastage_map.get(group_code)
+        if wastage_factor is None:
+            continue
+
+        adjusted_cost = cost * wastage_factor
+        new_cost = round(adjusted_cost, 2)
         new_sell = round(new_cost * markup, 2)
 
         current_cost = round(row["CostSQM"], 2) if row["CostSQM"] is not None else None
