@@ -177,26 +177,33 @@
     "PELMDD": 0.20
   },
   "unleashed_group_to_inventory_groups": {
-    "DD- Curtain Fabric": [],
-    "Fabric - Awning": ["ALPHAV2", "AWNGV2", "AWNS2K", "RECOVERV2", "ZIPSV2", "WSALPHA", "WSAWNG", "WSRECOVER", "WSZIPS"],
-    "Fabric - Honeycomb": [],
-    "Fabric - Roller Blind": ["PANGV2", "ROLC", "ROLL", "ROLLCB", "ROLLEMPIRE"],
-    "Fabric - Verishades": [],
-    "Fabric - Verticals": ["VERTV2"],
+    "DD- Curtain Fabric": ["CRTWT", "CRTNT"],
+    "Fabric - Awning": ["ALPHAV2", "AWNGV2", "AWNS2K", "RECOVERV2", "ZIPSV2", "WSALPHA", "WSAWNG", "WSRECOVER", "WSZIPS", "FOLD", "SUND"],
+    "Fabric - Honeycomb": ["HNYCV2", "WSHNYC"],
+    "Fabric - Roller Blind": ["PANGV2", "ROLC", "ROLL", "ROLLCB", "ROLLEMPIRE", "WSROLL", "WSROLC", "WSROLLCB", "WSROLLEMPIRE","WSPANG"],
+    "Fabric - Verishades": ["WSVERI", "VERIV2"],
+    "Fabric - Verticals": ["VERTV2", "WSVERT"],
     "Watson Fabric - Roller Blind": ["PANGV2", "ROLC", "ROLL", "ROLLCB", "ROLLEMPIRE"],
-    "Watson Fabric - Veticals": []
+    "Watson Fabric - Veticals": ["VERTV2"]
   },
   "material_restrictions_by_group": {
     "SUND": ["Acrylic"],
     "FOLD": ["Acrylic"],
     "ZIPSV2": ["Mesh", "PVC"],
+    "WSZIPS": ["Mesh", "PVC"],
     "AWNS2K": ["Canvas", "Acrylic", "Mesh"],
-    "ROLLCB": ["Aluminised", "Light Filtering", "Screen", "Sheer"]
+    "ROLLCB": ["Aluminised", "Light Filtering", "Screen", "Sheer"],
+    "WSROLLCB": ["Aluminised", "Light Filtering", "Screen", "Sheer"]
   },
   "ignored_inventory_groups": [
     "ZIPSEXT", "ROLLQU", "ROLLTEST", "ROLLBO", "ROLLSBBO", "ROLLQU", "ROLLQUBO", "SHAI",
     "SHBS","SHCE","SHCO","SHAI","SHPA","SHPP","SHPR","SHPS",
     "DONO"
-  ]
-
+  ],
+  "restricted_supplier_groups": {
+    "Louvolite": [
+      "WSALPHA","WSAWNG","WSHNYC","WSPANG","WSRECOVER","WSROLL","WSROLC","WSROLLCB","WSROLLEMPIRE","WSVERI","WSVERT",
+      "WSZIPS"
+    ]
+  }
 }

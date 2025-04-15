@@ -15,10 +15,12 @@ def tomorrow():
 
 def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_config):
     # --- 1. Load markup map from Google Sheet ---
+    wastage_map = {}
     raw_rows = sheets_service.fetch_sheet_data(MARKUP_SPREADSHEET_ID, MARKUP_RANGE)
     headers = raw_rows[0]
     group_col = headers.index("Buz inventory group code")
     markup_col = headers.index("WS Markup 2025")
+    wastage_col = headers.index("Wastage (Fabric)")
 
     markup_map = {}
     for row in raw_rows[1:]:
@@ -27,13 +29,16 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
         group_cell = row[group_col].strip()
         try:
             markup = float(row[markup_col].strip().rstrip('%'))
+            wastage = float(row[wastage_col].strip().rstrip('%')) if len(row) > wastage_col and row[wastage_col].strip() else 0
             markup_factor = 1 + (markup / 100)
             for group in [g.strip() for g in group_cell.split(",") if g.strip()]:
                 markup_map[group] = markup_factor
+                wastage_map[group] = wastage
         except (ValueError, IndexError):
             continue
 
     # --- 2. Build product_sub_group → cost map ---
+    wastage_map = {}
     unleashed = db_manager.execute_query("SELECT * FROM unleashed_products").fetchall()
     subgroup_price_map = defaultdict(list)
     subgroup_cost_map = {}
@@ -96,7 +101,9 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
         if cost is None or markup is None:
             continue
 
-        new_cost = round(cost, 2)
+        wastage = wastage_map.get(group_code, 0)
+        cost_with_wastage = round(cost * (1 + wastage / 100), 2)
+        new_cost = cost_with_wastage
         new_sell = round(new_cost * markup, 2)
 
         current_cost = round(row["CostSQM"], 2) if row["CostSQM"] is not None else None
@@ -108,9 +115,7 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
             return abs(a - b) / b > 0.005
 
         if changed(current_cost, new_cost) or changed(current_sell, new_sell):
-            # Start with the base row
             updated_row = {field: row[field] for field in db_fields}
-            # Apply updates
             updated_row.update({
                 "PkId": "",
                 "Operation": "A",
@@ -118,7 +123,6 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
                 "CostSQM": new_cost,
                 "SellSQM": new_sell
             })
-            # Append as ordered list
             ordered_values = [updated_row.get(field) for field in db_fields]
             updates_by_group[group_code].append(ordered_values)
 

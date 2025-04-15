@@ -10,13 +10,14 @@ def check_inventory_groups_against_unleashed(db_manager: DatabaseManager):
 
     group_rules = current_app.config.get("unleashed_group_to_inventory_groups", {})
     material_rules = current_app.config.get("material_restrictions_by_group", {})
+    supplier_restrictions = current_app.config.get("restricted_supplier_groups", {})
 
     violations = []
 
     try:
         unleashed_rows = db_manager.execute_query(
             """
-            SELECT ProductCode, ProductGroup, ProductDescription, FriendlyDescription2
+            SELECT ProductCode, ProductGroup, ProductDescription, FriendlyDescription2, SupplierCode
             FROM unleashed_products
             WHERE ProductSubGroup IS NOT NULL
               AND TRIM(ProductSubGroup) != ''
@@ -34,12 +35,27 @@ def check_inventory_groups_against_unleashed(db_manager: DatabaseManager):
             if product_group not in group_rules:
                 continue  # skip items with no config rule
             allowed_groups = group_rules[product_group]
+
             # Filter allowed groups based on material restrictions
             filtered_allowed_groups = []
+            raw_supplier_code = row["SupplierCode"]
+            supplier_code = str(raw_supplier_code).strip()
+            normalized_supplier_code = supplier_code.title()  # Adjust casing as needed
+            restricted_groups = supplier_restrictions.get(normalized_supplier_code, [])
+
+            logger.debug(f"🧪 Supplier '{supplier_code}' normalized as '{normalized_supplier_code}'")
+            logger.debug(f"🧪 Restricted groups for supplier: {restricted_groups}")
+
             for group in allowed_groups:
+                if group in restricted_groups:
+                    continue  # skip restricted groups for this supplier
+
                 allowed_materials = material_rules.get(group)
                 if not allowed_materials or not material_type or material_type in allowed_materials:
                     filtered_allowed_groups.append(group)
+            logger.debug(
+                f"✅ Final allowed groups for {product_code} from {normalized_supplier_code}: {filtered_allowed_groups}"
+            )
 
             inventory_items = db_manager.execute_query(
                 "SELECT inventory_group_code FROM inventory_items WHERE SupplierProductCode = ?",
@@ -50,9 +66,23 @@ def check_inventory_groups_against_unleashed(db_manager: DatabaseManager):
 
             if not inventory_items:
                 msg = f"❌ Fabric {product_code} - {product_description}  (Group: {product_group}) not found in inventory_items."
-                logger.warning(msg)
+                #logger.warning(msg)
                 violations.append(msg)
                 continue
+
+            # Check for supplier-restricted group usage
+            if normalized_supplier_code:
+                disallowed_groups = restricted_groups
+                if disallowed_groups:
+                    bad_groups = [g for g in actual_groups if g in disallowed_groups]
+                    if bad_groups:
+                        msg = (
+                            f"🚫 Fabric {product_code} - {product_description} (Supplier: {supplier_code}) "
+                            f"is used in disallowed group(s): {bad_groups}."
+                        )
+                        #logger.warning(msg)
+                        violations.append(msg)
+                        continue  # skip further checks for this fabric
 
             invalid_groups = []
             for group in actual_groups:
@@ -88,7 +118,7 @@ def check_inventory_groups_against_unleashed(db_manager: DatabaseManager):
                     f"{missing_str}. "
                     f"Used in: {actual_groups}, Allowed: {allowed_groups}"
                 )
-                logger.warning(msg)
+                #logger.warning(msg)
                 violations.append(msg)
 
             for group in actual_groups:
@@ -99,7 +129,7 @@ def check_inventory_groups_against_unleashed(db_manager: DatabaseManager):
                             f"❌ Fabric {product_code} - {product_description} (Material: {material_type}) is used in group '{group}', "
                             f"which only allows {allowed_materials}."
                         )
-                        logger.warning(msg)
+                        #logger.warning(msg)
                         violations.append(msg)
 
     except DatabaseError as e:
