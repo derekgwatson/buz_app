@@ -19,17 +19,22 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
     headers = raw_rows[0]
     group_col = headers.index("Buz inventory group code")
     markup_col = headers.index("WS Markup 2025")
+    wastage_col = headers.index("Wastage (Fabric)")
 
     markup_map = {}
+    wastage_map = {}
     for row in raw_rows[1:]:
         if len(row) <= max(group_col, markup_col):
             continue
         group_cell = row[group_col].strip()
         try:
             markup = float(row[markup_col].strip().rstrip('%'))
+            wastage = float(row[wastage_col].strip().rstrip('%'))
             markup_factor = 1 + (markup / 100)
+            wastage_factor = 1 + (wastage / 100)
             for group in [g.strip() for g in group_cell.split(",") if g.strip()]:
                 markup_map[group] = markup_factor
+                wastage_map[group] = wastage_factor
         except (ValueError, IndexError):
             continue
 
@@ -96,7 +101,12 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
         if cost is None or markup is None:
             continue
 
-        new_cost = round(cost, 2)
+        wastage_factor = wastage_map.get(group_code)
+        if wastage_factor is None:
+            continue
+
+        adjusted_cost = cost * wastage_factor
+        new_cost = round(adjusted_cost, 2)
         new_sell = round(new_cost * markup, 2)
 
         current_cost = round(row["CostSQM"], 2) if row["CostSQM"] is not None else None
