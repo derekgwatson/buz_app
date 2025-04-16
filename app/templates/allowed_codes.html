@@ -1,0 +1,70 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Allowed Inventory Group Codes{% endblock %}
+
+{% block content %}
+
+    <style>
+        select {
+            width: 250px;
+            font-size: 16px;
+        }
+
+        .lists {
+            display: flex;
+            gap: 40px;
+            align-items: center;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        button {
+            font-size: 20px;
+            padding: 5px 10px;
+            margin: 10px 0;
+        }
+    </style>
+
+<h1>Edit Allowed Inventory Group Codes</h1>
+
+    <form method="POST">
+        <div class="lists">
+            <div>
+                <label>Available Codes</label><br>
+                <select id="available" multiple size="20">
+                    {% for code in available_codes %}
+                        <option value="{{ code }}">{{ code }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <button type="button" onclick="move('available', 'allowed')">➕</button><br><br>
+                <button type="button" onclick="move('allowed', 'available')">➖</button>
+            </div>
+
+            <div>
+                <label>Allowed Codes</label><br>
+                <select id="allowed" name="allowed_codes[]" multiple size="20">
+                    {% for code in allowed_codes %}
+                        <option value="{{ code }}">{{ code }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <br>
+        <button type="submit">💾 Save</button>
+    </form>
+
+    <script>
+        function move(fromId, toId) {
+            const from = document.getElementById(fromId);
+            const to = document.getElementById(toId);
+            [...from.selectedOptions].forEach(opt => to.appendChild(opt));
+        }
+    </script>
+
+{% endblock %}

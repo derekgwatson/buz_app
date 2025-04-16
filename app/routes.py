@@ -1,3 +1,4 @@
+import tempfile
 from flask import Blueprint, current_app
 import os
 from flask import render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
@@ -559,14 +560,27 @@ def pricing_update():
         current_app.config["headers"]["buz_pricing_file"]
     )
 
-    if isinstance(result, dict) and result.get("error"):
-        return render_template("pricing_result.html", updated=False, error=True, conflicts=result["conflicts"])
-    elif result:
-        output_path = "buz_pricing_upload.xlsx"
-        result.save_workbook(output_path)
-        return render_template("pricing_result.html", updated=True, file_path=output_path)
+    log = result.get("log", [])
+    if result.get("file"):
+        filename = "buz_pricing_upload.xlsx"
+        upload_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
+        os.makedirs(upload_dir, exist_ok=True)
+        output_path = os.path.join(upload_dir, filename)
+
+        try:
+            result["file"].save_workbook(output_path)
+            return render_template(
+                "pricing_result.html",
+                updated=True,
+                file_path=f"/uploads/{filename}",
+                log=log
+            )
+        except PermissionError:
+            log.insert(0, "❌ Failed to save Excel file — is it open in another program?")
+            return render_template("pricing_result.html", updated=False, spreadsheet_failed=True, log=log)
     else:
-        return render_template("pricing_result.html", updated=False)
+        spreadsheet_failed = any("Failed to load" in msg for msg in log)
+        return render_template("pricing_result.html", updated=False, spreadsheet_failed=spreadsheet_failed, log=log)
 
 
 @main_routes.route('/unleashed', methods=['GET'])
@@ -587,3 +601,55 @@ def unleashed_demo():
     for product in filtered_products:
         print(product["ProductCode"], product["ProductDescription"])
 
+
+@main_routes.route("/allowed_codes", methods=["GET", "POST"])
+def allowed_codes():
+    config_manager = ConfigManager()
+    db = g.db
+    all_codes = sorted({row["inventory_group_code"] for row in db.execute_query(
+        "SELECT DISTINCT inventory_group_code FROM inventory_items"
+    ).fetchall()})
+
+    if request.method == "POST":
+        new_list = request.form.getlist("allowed_codes[]")
+        config_manager.update_config(["allowed_inventory_group_codes"], new_list)
+        return redirect(url_for("main_routes.allowed_codes"))
+
+    allowed = set(config_manager.get("allowed_inventory_group_codes", default=[]))
+    available = sorted(set(all_codes) - allowed)
+
+    return render_template("allowed_codes.html", available_codes=available, allowed_codes=sorted(allowed))
+
+
+@main_routes.route("/clean_excel_upload", methods=["GET", "POST"])
+def clean_excel_upload():
+    config_manager = ConfigManager()
+
+    if request.method == "POST":
+        file = request.files.get("file")
+        if not file or not (file.filename.endswith(".xlsx") or file.filename.endswith(".xlsm")):
+            flash("Please upload a valid .xlsx or .xlsm file.", "error")
+            return redirect(request.url)
+
+        # Load the file without keeping macros
+        _allowed_codes = config_manager.get("allowed_inventory_group_codes", default=[])
+        handler = OpenPyXLFileHandler.from_file_like(file)  # just regular load
+
+        handler.clean_for_upload(
+            db_manager=g.db,
+            allowed_sheets=_allowed_codes,
+            show_only_valid_unleashed="show_invalid_unleashed" in request.form)
+
+        # Always save as .xlsx
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        handler.save_workbook(temp_file.name)
+        temp_file.close()
+
+        return send_file(
+            temp_file.name,
+            as_attachment=True,
+            download_name="cleaned_upload.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    return render_template("clean_excel_upload.html")

@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+
+{% block title %}Clean Excel Upload{% endblock %}
+
+{% block content %}
+    <h1>Clean Excel Upload</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+                <ul>
+                    {% for category, message in messages %}
+                        <li><strong>{{ category }}:</strong> {{ message }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <p>
+        Need to adjust the inventory groups allowed in your cleaned file?
+        <a href="{{ url_for('main_routes.allowed_codes') }}">Edit allowed codes</a>
+    </p>
+
+<form method="POST" enctype="multipart/form-data">
+    <div>
+        <label>Select Excel file:</label><br>
+        <input type="file" name="file" accept=".xlsx,.xlsm" required>
+    </div>
+
+    <br>
+
+    <div>
+        <label>
+            <input type="checkbox" name="show_invalid_unleashed">
+            Show only rows with invalid Unleashed codes (no match for column AB)
+        </label>
+    </div>
+
+    <br>
+
+    <button type="submit">Clean and Download</button>
+</form>
+{% endblock %}

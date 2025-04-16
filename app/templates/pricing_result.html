@@ -1,41 +1,28 @@
 {% extends "layout.html" %}
 
-{% block title %}Buz <-> Unleashed pricing update{% endblock %}
+{% block title %}Buz <-> Unleashed Pricing Update{% endblock %}
 
 {% block content %}
 
-<h1>Buz <-> Unleashed pricing update</h1>
+<h1>Buz <-> Unleashed Pricing Update</h1>
 
-{% if error %}
-  <h2>⚠️ Conflicting prices found in Unleashed</h2>
-  <p>The following product sub groups have multiple Tier 9 prices. Please review these entries:</p>
-  <ul>
-    {% for group, details in conflicts.items() %}
-      <li>
-        <strong>{{ group }}</strong><br>
-        Expected price: ${{ details.expected_price }}<br>
-        Example item with correct price: {{ details.example_matching_item }}<br>
-        {% if details.unexpected_prices %}
-          Other prices found: {{ details.unexpected_prices | join(', ') }}<br>
-        {% else %}
-          No other prices found (all items match the expected price)<br>
-        {% endif %}
-        Conflicting Unleashed items:
-        <ul>
-          {% for code in details.conflicting_items %}
-            <li>{{ code }}</li>
-          {% endfor %}
-        </ul>
-      </li>
-    {% endfor %}
-  </ul>
-{% elif updated %}
+{% if updated %}
   <h2>✅ Pricing update complete.</h2>
   <p>The pricing upload file has been generated:</p>
   <a href="{{ url_for('static', filename=file_path) }}" download>Download Buz Pricing Upload</a>
 {% else %}
   <h2>No updates were needed.</h2>
-  <p>All pricing in Buz already matches Unleashed.</p>
+  <p>All pricing in Buz already matches the current Google Sheet data.</p>
+{% endif %}
+
+{% if log %}
+  <hr>
+  <h3>Update Log</h3>
+  <ul>
+    {% for line in log %}
+      <li>{{ loop.index }}. {{ line }}</li>
+    {% endfor %}
+  </ul>
 {% endif %}
 
 {% endblock %}

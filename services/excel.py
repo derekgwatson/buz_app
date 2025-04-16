@@ -1,6 +1,8 @@
 import openpyxl
 from io import BytesIO
 import logging
+from openpyxl.utils import column_index_from_string, get_column_letter
+from services.database import DatabaseManager
 
 
 # Configure logging
@@ -314,3 +316,89 @@ class OpenPyXLFileHandler:
             "header_row": header_row
         }
         return cls.from_sheets_data(sheets_data, sheets_header_data)
+
+    def clean_for_upload(cls, db_manager: DatabaseManager, allowed_sheets: list[str], show_only_valid_unleashed=False):
+        """
+        Clean the workbook:
+        - Remove sheets not in allowed_sheets
+        - Strip trailing '*' from cell C2
+        - Hide all columns except A-F, AA-AC, AO
+        - Optionally filter out rows with invalid Unleashed codes (column AB)
+        """
+
+        keep_cols = (
+                list(range(column_index_from_string("A"), column_index_from_string("F") + 1)) +
+                list(range(column_index_from_string("AA"), column_index_from_string("AC") + 1)) +
+                [column_index_from_string("AO")]
+        )
+
+        # Step 1: Remove unwanted sheets
+        for sheet_name in cls.get_sheet_names()[:]:  # copy to avoid mutation issues
+            if sheet_name not in allowed_sheets:
+                del cls.workbook[sheet_name]
+
+        # Step: add UL tab with ProductCode and ProductDescription
+        ul_data = db_manager.execute_query("""
+            SELECT ProductCode, ProductDescription
+            FROM unleashed_products
+            WHERE ProductCode IS NOT NULL
+        """).fetchall()
+
+        if "UL" in cls.get_sheet_names():
+            del cls.workbook["UL"]
+
+        ul_sheet = cls.workbook.create_sheet("UL")
+        ul_sheet.cell(row=1, column=1, value="ProductCode")
+        ul_sheet.cell(row=1, column=2, value="ProductDescription")
+
+        for i, row in enumerate(ul_data, start=2):
+            ul_sheet.cell(row=i, column=1, value=row["ProductCode"])
+            ul_sheet.cell(row=i, column=2, value=row["ProductDescription"])
+
+        # Create set of valid ProductCodes
+        valid_codes = {str(row["ProductCode"]).strip() for row in ul_data}
+
+        # Step 2 & 3: Process remaining sheets
+        for sheet in cls.workbook.worksheets:
+            if sheet.title == "UL":
+                continue
+
+            # Clean C2
+            val = sheet["C2"].value
+            if isinstance(val, str) and val.endswith("*"):
+                sheet["C2"].value = val.rstrip("*")
+
+            # Hide unwanted columns
+            for col_idx in range(1, sheet.max_column + 1):
+                sheet.column_dimensions[get_column_letter(col_idx)].hidden = col_idx not in keep_cols
+
+            # Step 3: Extract data from row 3 down, optionally filtering invalid ABs
+            data_rows = []
+            for row in sheet.iter_rows(min_row=3, values_only=True):
+                if not any(row):
+                    continue  # skip empty rows
+
+                if show_only_valid_unleashed:
+                    ab_value = row[27] if len(row) > 27 else None  # AB is column 28, index 27
+                    if ab_value is None:
+                        continue
+                    if str(ab_value).strip() in valid_codes:
+                        continue  # it's valid, so skip (we only want invalids)
+
+                data_rows.append(row)
+
+            # Sort by column C (index 2)
+            data_rows.sort(key=lambda r: r[2])
+
+            # Overwrite rows
+            for i, row_data in enumerate(data_rows, start=3):
+                for j, val in enumerate(row_data, start=1):
+                    sheet.cell(row=i, column=j, value=val)
+
+            # Set row heights
+            for i in range(1, sheet.max_row + 1):
+                sheet.row_dimensions[i].height = 18.75 if i == 1 else 15
+
+            # Add formula to column AC
+            for row_idx in range(3, sheet.max_row + 1):
+                sheet.cell(row=row_idx, column=29).value = f'=VLOOKUP(AB{row_idx},UL!A:B,2,FALSE)'
