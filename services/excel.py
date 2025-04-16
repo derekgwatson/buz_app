@@ -356,7 +356,7 @@ class OpenPyXLFileHandler:
             ul_sheet.cell(row=i, column=2, value=row["ProductDescription"])
 
         # Create set of valid ProductCodes
-        valid_codes = {str(row["ProductCode"]).strip() for row in ul_data}
+        valid_codes = {str(row["ProductCode"]).strip().upper() for row in ul_data}
 
         # Step 2 & 3: Process remaining sheets
         for sheet in cls.workbook.worksheets:
@@ -380,10 +380,10 @@ class OpenPyXLFileHandler:
 
                 if show_only_valid_unleashed:
                     ab_value = row[27] if len(row) > 27 else None  # AB is column 28, index 27
-                    if ab_value is None:
-                        continue
-                    if str(ab_value).strip() in valid_codes:
-                        continue  # it's valid, so skip (we only want invalids)
+                    ab_str = str(ab_value).strip().upper() if ab_value is not None else ""
+
+                    if not ab_str or ab_str in valid_codes:
+                        continue  # remove row if blank or matched
 
                 data_rows.append(row)
 
@@ -391,9 +391,16 @@ class OpenPyXLFileHandler:
             data_rows.sort(key=lambda r: r[2])
 
             # Overwrite rows
-            for i, row_data in enumerate(data_rows, start=3):
+            start_row = 3
+            max_col = sheet.max_column
+            for i, row_data in enumerate(data_rows, start=start_row):
                 for j, val in enumerate(row_data, start=1):
                     sheet.cell(row=i, column=j, value=val)
+
+            # Clear any leftover rows
+            for i in range(len(data_rows) + start_row, sheet.max_row + 1):
+                for j in range(1, max_col + 1):
+                    sheet.cell(row=i, column=j).value = None
 
             # Set row heights
             for i in range(1, sheet.max_row + 1):
@@ -402,3 +409,15 @@ class OpenPyXLFileHandler:
             # Add formula to column AC
             for row_idx in range(3, sheet.max_row + 1):
                 sheet.cell(row=row_idx, column=29).value = f'=VLOOKUP(AB{row_idx},UL!A:B,2,FALSE)'
+
+        # Collect empty sheets based on A3
+        empty_sheets = []
+        for sheet in cls.workbook.worksheets:
+            if sheet.title == "UL":
+                continue
+            if sheet["A3"].value is None or str(sheet["A3"].value).strip() == "":
+                empty_sheets.append(sheet.title)
+
+        # Delete empty sheets
+        for sheet_name in empty_sheets:
+            del cls.workbook[sheet_name]
