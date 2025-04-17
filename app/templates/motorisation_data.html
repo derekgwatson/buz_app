@@ -1,0 +1,76 @@
+{% extends "layout.html" %}
+
+{% block title %}Motorisation Data{% endblock %}
+
+{% block content %}
+
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 1rem;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+        }
+        th, td {
+            border: 1px solid #444;
+            padding: 6px 10px;
+        }
+        th {
+            background-color: #2e2e2e;
+            color: #f8f8f8;
+            text-align: left;
+        }
+        tr:nth-child(even) {
+            background-color: #252525;
+        }
+        tr:nth-child(odd) {
+            background-color: #1f1f1f;
+        }
+    </style>
+
+    <h2>Motorisation Data Extract</h2>
+
+    <p style="margin-bottom: 1.5rem; max-width: 800px;">
+        This tool extracts <strong>motorisation-related options</strong> from the uploaded product group workbook.
+        It scans all columns in all sheets, looking for the word <em>"motor"</em> anywhere in the column. For matching columns, it parses pipe-separated data from row 17 onward, identifies the motor description and code, and groups results by code. Only entries with valid pricing (from the <code>pricing_data</code> table) are shown, and all pricing fields with non-zero values are displayed as separate columns. You can copy the table into Excel or Google Sheets for further analysis.
+    </p>
+
+    <form method="POST" enctype="multipart/form-data">
+        <label for="file">Upload Group Options file exported from Buz:</label>
+        <input type="file" id="file" name="file" accept=".xlsx,.xlsm" required>
+        <button type="submit">Upload</button>
+    </form>
+
+    {% if data %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Question(s)</th>
+                    <th>Code</th>
+                    <th>Description</th>
+                    <th>Used In Products</th>
+                    {% for field in pricing_fields %}
+                        <th>{{ field }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    <td>{{ row.questions }}</td>
+                    <td>{{ row.code }}</td>
+                    <td>{{ row.description }}</td>
+                    <td>{{ row.products }}</td>
+                    {% for field in pricing_fields %}
+                        <td>{{ row.pricing.get(field, "") }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% elif request.method == "POST" %}
+        <p><em>No motorisation data found in the uploaded workbook.</em></p>
+    {% endif %}
+
+{% endblock %}

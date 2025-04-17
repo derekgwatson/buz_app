@@ -653,3 +653,17 @@ def clean_excel_upload():
         )
 
     return render_template("clean_excel_upload.html")
+
+
+@main_routes.route("/motorisation-data", methods=["GET", "POST"])
+def motorisation_data():
+    data = []
+    pricing_fields = []
+
+    if request.method == "POST":
+        file = request.files.get("file")
+        if file:
+            handler = OpenPyXLFileHandler.from_file_like(file)
+            data, pricing_fields = handler.extract_motorisation_data(g.db)
+
+    return render_template("motorisation_data.html", data=data, pricing_fields=pricing_fields)

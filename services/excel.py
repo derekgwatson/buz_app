@@ -421,3 +421,119 @@ class OpenPyXLFileHandler:
         # Delete empty sheets
         for sheet_name in empty_sheets:
             del cls.workbook[sheet_name]
+
+    def extract_motorisation_data(self, db_manager: DatabaseManager) -> tuple[list[dict], list[str]]:
+        """
+        Extracts and groups motorisation-related data:
+        - Skips rows with no code.
+        - Groups by code.
+        - Collects unique products and question headings.
+        - Picks one description per code.
+
+        Returns:
+            list[dict]: Grouped data including code, description, products, and questions.
+        """
+        if not self.workbook:
+            raise ValueError("Workbook not loaded.")
+
+        raw_entries = []
+
+        for sheet_name in self.get_sheet_names():
+            sheet = self.get_sheet(sheet_name)
+            max_col = sheet.max_column
+            max_row = sheet.max_row
+
+            for col_idx in range(1, max_col + 1):
+                question_heading = sheet.cell(row=7, column=col_idx).value
+                has_lookback = bool(sheet.cell(row=6, column=col_idx).value)
+
+                col_has_motor = any(
+                    (cell := sheet.cell(row=r, column=col_idx)).value
+                    and isinstance(cell.value, str)
+                    and 'motor' in cell.value.lower()
+                    for r in range(1, max_row + 1)
+                )
+
+                if not col_has_motor:
+                    continue
+
+                for row_idx in range(17, max_row + 1):
+                    raw_value = sheet.cell(row=row_idx, column=col_idx).value
+                    if not raw_value or not isinstance(raw_value, str):
+                        continue
+
+                    parts = [p.strip() for p in raw_value.split('|')]
+
+                    if has_lookback:
+                        description = parts[1] if len(parts) > 1 else ''
+                        code = parts[2] if len(parts) > 2 else ''
+                    else:
+                        description = parts[0] if len(parts) > 0 else ''
+                        code = parts[1] if len(parts) > 1 else ''
+
+                    if not code:
+                        continue
+
+                    raw_entries.append({
+                        "product": sheet_name,
+                        "question": question_heading,
+                        "description": description,
+                        "code": code
+                    })
+
+        # Group by code
+        grouped = {}
+        for entry in raw_entries:
+            code = entry["code"]
+            if code not in grouped:
+                grouped[code] = {
+                    "code": code,
+                    "description": entry["description"],
+                    "products": set(),
+                    "questions": set()
+                }
+            grouped[code]["products"].add(entry["product"])
+            if entry["question"]:
+                grouped[code]["questions"].add(entry["question"])
+
+        # Fetch pricing for codes found
+        pricing_rows = db_manager.execute_query("""
+            SELECT * FROM pricing_data
+            WHERE inventorycode IN ({})
+        """.format(','.join('?' for _ in grouped)), tuple(grouped.keys())).fetchall()
+
+        # Organize pricing per code, filtering out empty/zero values
+        pricing_lookup = {}
+        for row in pricing_rows:
+            code = row["inventorycode"]
+            pricing_fields = {
+                key: row[key]
+                for key in row.keys()
+                if (key.lower().startswith("sell") or key.lower().startswith("cost"))
+                   and row[key] not in (None, 0, 0.0)
+            }
+            if pricing_fields:
+                pricing_lookup[code] = pricing_fields
+
+        # Get all pricing keys actually used (across all items)
+        all_pricing_keys = set()
+        for fields in pricing_lookup.values():
+            all_pricing_keys.update(fields.keys())
+
+        pricing_fields = sorted(all_pricing_keys)  # Sort if you want consistent order
+
+        # Final output
+        result = []
+        for code, data in grouped.items():
+            if code not in pricing_lookup:
+                continue  # Skip codes with no pricing
+
+            result.append({
+                "code": code,
+                "description": data["description"],
+                "products": ", ".join(sorted(data["products"])),
+                "questions": ", ".join(sorted(data["questions"])),
+                "pricing": pricing_lookup[code]
+            })
+
+        return result, pricing_fields
