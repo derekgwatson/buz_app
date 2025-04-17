@@ -2,6 +2,8 @@ from collections import defaultdict
 from datetime import date, timedelta
 import logging
 from services.excel import OpenPyXLFileHandler
+import re
+
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,12 @@ def tomorrow():
     return (date.today() + timedelta(days=1)).isoformat()
 
 
-def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_config):
+def extract_width_mm(description: str) -> float | None:
+    match = re.search(r'\b(89|127)mm\b', description)
+    return float(match.group(1)) if match else None
+
+
+def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_config, vertical_groups):
     # --- 1. Load markup map from Google Sheet ---
     raw_rows = sheets_service.fetch_sheet_data(MARKUP_SPREADSHEET_ID, MARKUP_RANGE)
     headers = raw_rows[0]
@@ -137,6 +144,16 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
             log_messages.append(f"⚠️ No wastage defined for inventory group '{group_code}'")
             continue
 
+        # Convert lineal to square metre for verticals
+        if group_code in vertical_groups:
+            description = unleashed_row["ProductDescription"]
+            width_mm = extract_width_mm(description)
+            if width_mm:
+                cost = cost / (width_mm / 1000)
+            else:
+                log_messages.append(
+                    f"⚠️ Couldn't extract width from vertical fabric: {inv_code} (desc: '{description}')"
+                )
         adjusted_cost = cost * wastage_factor
         new_cost = round(adjusted_cost, 2)
         new_sell = round(new_cost * markup, 2)
@@ -151,6 +168,11 @@ def generate_pricing_upload_from_unleashed(db_manager, sheets_service, pricing_c
 
         if changed(current_cost, new_cost) or changed(current_sell, new_sell):
             updated_row = {field: row[field] for field in db_fields}
+            if "IsNotCurrent" in updated_row:
+                try:
+                    updated_row["IsNotCurrent"] = "TRUE" if int(updated_row["IsNotCurrent"]) else "FALSE"
+                except (ValueError, TypeError):
+                    updated_row["IsNotCurrent"] = "FALSE"
             updated_row.update({
                 "PkId": "",
                 "Operation": "A",

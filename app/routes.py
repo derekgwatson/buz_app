@@ -557,7 +557,8 @@ def pricing_update():
     result = generate_pricing_upload_from_unleashed(
         g.db,
         GoogleSheetsService(json_file=credentials_path),
-        current_app.config["headers"]["buz_pricing_file"]
+        current_app.config["headers"]["buz_pricing_file"],
+        current_app.config["unleashed_group_to_inventory_groups"].get("Fabric - Verticals", [])
     )
 
     log = result.get("log", [])
