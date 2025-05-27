@@ -5,24 +5,84 @@
 {% block content %}
 
 <h1>Buz <-> Unleashed Pricing Update</h1>
+<p><em>This page checks if Buz pricing matches Unleashed data (via Google Sheets) and creates a new pricing upload file if needed.</em></p>
 
-{% if updated %}
-  <h2>✅ Pricing update complete.</h2>
-  <p>The pricing upload file has been generated:</p>
-  <a href="{{ url_for('static', filename=file_path) }}" download>Download Buz Pricing Upload</a>
-{% else %}
-  <h2>No updates were needed.</h2>
-  <p>All pricing in Buz already matches the current Google Sheet data.</p>
+<div class="mb-4">
+  {% if not ran_update %}
+    <form method="post" class="d-flex flex-column align-items-start gap-2">
+      <button type="submit" class="btn btn-primary btn-lg">Run Pricing Update</button>
+
+      <a href="#detailsCollapse" class="small text-decoration-none" data-toggle="collapse" role="button" aria-expanded="false" aria-controls="detailsCollapse" id="detailsLink">
+        ▶ See how the pricing update works
+      </a>
+    </form>
+  {% endif %}
+</div>
+
+<div class="collapse" id="detailsCollapse">
+  <div class="card card-body">
+    <h5>What this does:</h5>
+    <ul>
+      <li>Loads markup percentages and wastage factors from the Markup Google Sheet.</li>
+      <li>Loads base costs by product sub-group from the Pricing Google Sheet.</li>
+      <li>Loads inventory items and current pricing from the Buz database.</li>
+      <li>For each inventory item:
+        <ul>
+          <li>Finds its corresponding product in Unleashed using the supplier code.</li>
+          <li>Looks up the base cost and applies wastage and markup factors.</li>
+          <li>Special handling: if the item is a vertical fabric, adjusts cost by width (89mm or 127mm).</li>
+          <li>Calculates the new cost and sell price.</li>
+          <li>If new pricing differs by more than 0.5%, marks the row for update.</li>
+        </ul>
+      </li>
+      <li>If updates are found:
+        <ul>
+          <li>Generates a new Buz Pricing Upload Excel file for download.</li>
+        </ul>
+      </li>
+      <li>Shows a log of any missing data, errors, or updates performed.</li>
+      <li>If no updates are needed, shows a message confirming prices are up to date.</li>
+    </ul>
+    <p class="mt-2"><strong>Triggered by:</strong> visiting <code>/pricing_update</code> while logged in.</p>
+  </div>
+</div>
+
+{% if ran_update %}
+  {% if updated %}
+    <h2>✅ Pricing update complete.</h2>
+    <p>The pricing upload file has been generated:</p>
+    <a href="{{ url_for('static', filename=file_path) }}" download>Download Buz Pricing Upload</a>
+  {% else %}
+    <h2>No updates were needed.</h2>
+    <p>All pricing in Buz already matches the current Google Sheet data.</p>
+  {% endif %}
+
+  {% if log %}
+    <hr>
+    <h3>Update Log</h3>
+    <ul>
+      {% for line in log %}
+        <li>{{ loop.index }}. {{ line }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
 {% endif %}
 
-{% if log %}
-  <hr>
-  <h3>Update Log</h3>
-  <ul>
-    {% for line in log %}
-      <li>{{ loop.index }}. {{ line }}</li>
-    {% endfor %}
-  </ul>
-{% endif %}
+{% endblock %}
 
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const link = document.getElementById("detailsLink");
+  const collapse = document.getElementById("detailsCollapse");
+
+  $(collapse).on('shown.bs.collapse', function () {
+    link.innerHTML = "▼ Hide pricing update explanation";
+  });
+
+  $(collapse).on('hidden.bs.collapse', function () {
+    link.innerHTML = "▶ See how the pricing update works";
+  });
+});
+</script>
 {% endblock %}

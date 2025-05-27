@@ -543,46 +543,49 @@ def check_inventory_groups():
         return render_template("check_inventory_groups.html", violations=[])
 
 
-@main_routes.route('/pricing_update', methods=['GET'])
+@main_routes.route('/pricing_update', methods=['GET', 'POST'])
 @auth.login_required
 def pricing_update():
-    from services.update_pricing import generate_pricing_upload_from_unleashed
-    from services.google_sheets_service import GoogleSheetsService
+    if request.method == 'POST':
+        from services.update_pricing import generate_pricing_upload_from_unleashed
+        from services.google_sheets_service import GoogleSheetsService
 
-    credentials_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        '..', 'credentials', 'buz-app-439103-b6ae046c4723.json'
-    )
+        credentials_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '..', 'credentials', 'buz-app-439103-b6ae046c4723.json'
+        )
 
-    result = generate_pricing_upload_from_unleashed(
-        g.db,
-        GoogleSheetsService(json_file=credentials_path),
-        current_app.config["headers"]["buz_pricing_file"],
-        current_app.config["unleashed_group_to_inventory_groups"].get("Fabric - Verticals", [])
-    )
+        result = generate_pricing_upload_from_unleashed(
+            g.db,
+            GoogleSheetsService(json_file=credentials_path),
+            current_app.config["headers"]["buz_pricing_file"],
+            current_app.config["unleashed_group_to_inventory_groups"].get("Fabric - Verticals", [])
+        )
 
-    log = result.get("log", [])
-    if result.get("file"):
-        filename = "buz_pricing_upload.xlsx"
-        upload_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
-        os.makedirs(upload_dir, exist_ok=True)
-        output_path = os.path.join(upload_dir, filename)
+        log = result.get("log", [])
+        if result.get("file"):
+            filename = "buz_pricing_upload.xlsx"
+            upload_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
+            os.makedirs(upload_dir, exist_ok=True)
+            output_path = os.path.join(upload_dir, filename)
 
-        try:
-            result["file"].save_workbook(output_path)
-            return render_template(
-                "pricing_result.html",
-                updated=True,
-                file_path=f"/uploads/{filename}",
-                log=log
-            )
-        except PermissionError:
-            log.insert(0, "❌ Failed to save Excel file — is it open in another program?")
-            return render_template("pricing_result.html", updated=False, spreadsheet_failed=True, log=log)
-    else:
-        spreadsheet_failed = any("Failed to load" in msg for msg in log)
-        return render_template("pricing_result.html", updated=False, spreadsheet_failed=spreadsheet_failed, log=log)
+            try:
+                result["file"].save_workbook(output_path)
+                return render_template(
+                    "pricing_result.html",
+                    updated=True,
+                    file_path=f"/uploads/{filename}",
+                    log=log
+                )
+            except PermissionError:
+                log.insert(0, "❌ Failed to save Excel file — is it open in another program?")
+                return render_template("pricing_result.html", updated=False, spreadsheet_failed=True, log=log, ran_update=True)
+        else:
+            spreadsheet_failed = any("Failed to load" in msg for msg in log)
+            return render_template("pricing_result.html", updated=False, spreadsheet_failed=spreadsheet_failed, log=log, ran_update=True)
 
+    # If GET request
+    return render_template('pricing_result.html', ran_update=False)
 
 @main_routes.route('/unleashed', methods=['GET'])
 def unleashed_demo():

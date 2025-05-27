@@ -24,7 +24,7 @@ def generate_deactivation_upload(db_manager: DatabaseManager):
     AND SupplierProductCode != ''
     AND LOWER(SupplierProductCode) NOT IN (
         SELECT LOWER(ProductCode) FROM unleashed_products
-        WHERE IsObsoleted = 'No' AND IsSellable = 'Yes'
+        WHERE IsObsoleted = 'No'
     )
     """
     cursor = db_manager.execute_query(query)

@@ -618,79 +618,84 @@
                 "column_letter": "AO"
             },
             {
+                "spreadsheet_column": "Product Brand",
+                "database_field": "ProductBrand",
+                "column_letter": "AP"
+            },
+            {
                 "spreadsheet_column": "Sales Account",
                 "database_field": "SalesAccount",
-                "column_letter": "AP"
+                "column_letter": "AQ"
             },
             {
                 "spreadsheet_column": "COGS Account",
                 "database_field": "COGSAccount",
-                "column_letter": "AQ"
+                "column_letter": "AR"
             },
             {
                 "spreadsheet_column": "Purchase Account",
                 "database_field": "PurchaseAccount",
-                "column_letter": "AR"
+                "column_letter": "AS"
             },
             {
                 "spreadsheet_column": "Purchase Tax Type",
                 "database_field": "PurchaseTaxType",
-                "column_letter": "AS"
+                "column_letter": "AT"
             },
             {
                 "spreadsheet_column": "Purchase Tax Rate",
                 "database_field": "PurchaseTaxRate",
-                "column_letter": "AT"
+                "column_letter": "AU"
             },
             {
                 "spreadsheet_column": "Sales Tax Type",
                 "database_field": "SalesTaxType",
-                "column_letter": "AU"
+                "column_letter": "AV"
             },
             {
                 "spreadsheet_column": "Sale Tax Rate",
                 "database_field": "SaleTaxRate",
-                "column_letter": "AV"
+                "column_letter": "AW"
             },
             {
                 "spreadsheet_column": "IsAssembledProduct",
                 "database_field": "IsAssembledProduct",
-                "column_letter": "AW"
+                "column_letter": "AX"
             },
             {
                 "spreadsheet_column": "IsComponent",
                 "database_field": "IsComponent",
-                "column_letter": "AX"
+                "column_letter": "AY"
             },
             {
                 "spreadsheet_column": "IsObsoleted",
                 "database_field": "IsObsoleted",
-                "column_letter": "AY"
+                "column_letter": "AZ"
             },
             {
                 "spreadsheet_column": "Is Sellable",
                 "database_field": "IsSellable",
-                "column_letter": "AZ"
+                "column_letter": "BA"
             },
             {
                 "spreadsheet_column": "Is Purchasable",
                 "database_field": "IsPurchasable",
-                "column_letter": "BA"
+                "column_letter": "BB"
             },
             {
                 "spreadsheet_column": "Default Purchasing Unit of Measure",
                 "database_field": "DefaultPurchasingUnitOfMeasure",
-                "column_letter": "BB"
+                "column_letter": "BC"
             },
             {
                 "spreadsheet_column": "Is Serialized",
                 "database_field": "IsSerialized",
-                "column_letter": "BC"
+                "column_letter": "BD"
             },
             {
                 "spreadsheet_column": "Is Batch Tracked",
                 "database_field": "IsBatchTracked",
-                "column_letter": "BD"
+                "column_letter": "BE"
             }
         ]
     },
