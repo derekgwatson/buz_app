@@ -1,8 +1,9 @@
 import json
+import logging
+import os
 import gspread
 from google.oauth2.service_account import Credentials
-import logging
-
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +11,21 @@ logger = logging.getLogger(__name__)
 class GoogleSheetsService:
     """
     A class to handle Google Sheets operations.
+    Automatically uses the service account JSON from the app's main folder (NOT inside /app).
     """
+
+    @staticmethod
+    def _get_service_account_path():
+        # Adjust path to look outside the /app folder, directly in the project root
+        project_root = os.path.abspath(os.path.join(current_app.root_path, os.pardir))
+        credentials_path = os.path.join(project_root, 'credentials', 'service_account.json')
+        if os.path.isfile(credentials_path):
+            return credentials_path
+        fallback_path = os.path.join(project_root, 'service_account.json')
+        if os.path.isfile(fallback_path):
+            return fallback_path
+        raise FileNotFoundError("Could not find service_account.json in either /credentials or project root.")
+
     @staticmethod
     def _authenticate_google_sheets(json_file: str) -> Credentials:
         """
@@ -29,15 +44,18 @@ class GoogleSheetsService:
         credentials = Credentials.from_service_account_info(creds, scopes=scope)
         return credentials
 
-    def __init__(self, json_file: str = "service_account.json"):
+    def __init__(self, json_file: str = None):
         """
         Initialize the GoogleSheetsService with an authorized gspread client.
+        If no json_file is provided, uses the app's default credentials path.
 
-        :param json_file: json configuration file
+        :param json_file: Path to the JSON configuration file.
         :type json_file: str
         """
+        if json_file is None:
+            json_file = self._get_service_account_path()
         creds = self._authenticate_google_sheets(json_file)
-        self._client = gspread.authorize(creds)  # Authorize the credentials with gspread
+        self._client = gspread.authorize(creds)
 
     def fetch_sheet_data(self, spreadsheet_id: str, range_name: str) -> list[list[str]]:
         """

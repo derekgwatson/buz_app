@@ -5,7 +5,7 @@ from services.google_sheets_service import GoogleSheetsService
 class TestGoogleSheetsServiceIntegration(unittest.TestCase):
     def setUp(self):
         # Initialize GoogleSheetsService with actual credentials
-        self.json_file = "./static/buz-app-439103-b6ae046c4723.json"  # Path to your real service account credentials
+        self.json_file = "./static/service_account.json"  # Path to your real service account credentials
         self.spreadsheet_id = "1Z2hwnG9EqTvP2lW-zmR62pZEgfNl6lb-pC6zyCMoXzU"  # Replace with your test Google Sheets ID
         self.service = GoogleSheetsService(json_file=self.json_file)
 

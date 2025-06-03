@@ -283,7 +283,7 @@ def generate_backorder_file():
         # Resolve the path to the JSON credentials file using __file__
         credentials_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            '..', 'credentials', 'buz-app-439103-b6ae046c4723.json'
+            '..', 'credentials', 'service_account.json'
         )
         g_sheets_service = GoogleSheetsService(json_file=credentials_path)
 
@@ -450,7 +450,7 @@ def generate_deactivation_file():
 @auth.login_required
 def generate_duplicates_report():
     from services.fabrics import get_duplicate_fabric_details
-    from services.inventory_items import create_inventory_workbook_creator
+    from services.buz_inventory_items import create_inventory_workbook_creator
 
     if request.method == 'POST':
 
@@ -551,7 +551,7 @@ def pricing_update():
 
     credentials_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        '..', 'credentials', 'buz-app-439103-b6ae046c4723.json'
+        '..', 'credentials', 'service_account.json'
     )
 
     result = generate_pricing_upload_from_unleashed(
@@ -668,3 +668,61 @@ def motorisation_data():
             data, pricing_fields = handler.extract_motorisation_data(g.db)
 
     return render_template("motorisation_data.html", data=data, pricing_fields=pricing_fields)
+
+
+@main_routes.route('/generate_buz_fabric_uploads')
+def generate_buz_fabric_uploads():
+    import logging
+    import io
+    from services.buz_inventory_items import create_inventory_workbook_creator, get_current_buz_fabrics
+    from services.buz_inventory_pricing import create_pricing_workbook_creator, get_current_buz_pricing, \
+        prepare_pricing_changes
+    from services.google_sheets_service import GoogleSheetsService
+    from services.curtain_fabric_sync import build_sheet_dict, \
+        build_buz_dict, \
+        compare_fabrics_by_code, \
+        prepare_item_changes_dict
+
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.INFO)
+
+    logger = logging.getLogger('curtain_fabric_sync')
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+
+    sheets_service = GoogleSheetsService()
+    sheet_data = sheets_service.fetch_sheet_data(
+        current_app.config["spreadsheets"]["master_curtain_fabric_list"]["id"],
+        current_app.config["spreadsheets"]["master_curtain_fabric_list"]["range"]
+    )
+
+    sheet_dict = build_sheet_dict(sheet_data)
+    buz_items = get_current_buz_fabrics(g.db)
+    buz_dict = build_buz_dict(buz_items)
+    buz_pricing = get_current_buz_pricing(g.db)
+
+    # Item updates
+    new_items, updated_items, removed_items = compare_fabrics_by_code(sheet_dict, buz_dict)
+    item_changes = prepare_item_changes_dict(new_items, updated_items, removed_items)
+    item_creator = create_inventory_workbook_creator(current_app)
+    item_creator.populate_workbook(item_changes)
+    item_creator.auto_fit_columns()
+    item_output_file = 'items_upload.xlsx'
+    item_creator.save_workbook(item_output_file)
+
+    # Pricing updates
+    pricing_changes = prepare_pricing_changes(sheet_dict, buz_pricing, logger)
+    pricing_creator = create_pricing_workbook_creator(current_app)
+    pricing_creator.populate_workbook(pricing_changes)
+    pricing_creator.auto_fit_columns()
+    pricing_output_file = 'pricing_upload.xlsx'
+    pricing_creator.save_workbook(pricing_output_file)
+
+    logger.info('Generated item and pricing upload files.')
+
+    return {
+        'items_file': item_output_file,
+        'pricing_file': pricing_output_file,
+        'message': 'Upload files generated successfully.'
+    }

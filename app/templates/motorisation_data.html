@@ -48,6 +48,7 @@
                 <tr>
                     <th>Question(s)</th>
                     <th>Code</th>
+                    <th>Unleashed Code</th>
                     <th>Description</th>
                     <th>Used In Products</th>
                     {% for field in pricing_fields %}
@@ -60,6 +61,7 @@
                 <tr>
                     <td>{{ row.questions }}</td>
                     <td>{{ row.code }}</td>
+                    <td>{{ row.supplier_product_code }}</td>
                     <td>{{ row.description }}</td>
                     <td>{{ row.products }}</td>
                     {% for field in pricing_fields %}

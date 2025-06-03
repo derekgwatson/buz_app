@@ -63,7 +63,7 @@ def upload(
         from services.google_sheets_service import GoogleSheetsService
         from services.fabric_helpers import load_friendly_descriptions_from_google_sheet
 
-        g_sheets_service = GoogleSheetsService("credentials/buz-app-439103-b6ae046c4723.json")
+        g_sheets_service = GoogleSheetsService("credentials/service_account.json")
         friendly_overrides = load_friendly_descriptions_from_google_sheet(
             g_sheets_service,
             spreadsheet_id=override_friendly_descriptions_id,

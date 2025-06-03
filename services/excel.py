@@ -431,7 +431,8 @@ class OpenPyXLFileHandler:
         - Picks one description per code.
 
         Returns:
-            list[dict]: Grouped data including code, description, products, and questions.
+            list[dict]: Grouped data including code, description, products, questions, pricing, and
+            supplier_product_code.
         """
         if not self.workbook:
             raise ValueError("Workbook not loaded.")
@@ -502,6 +503,15 @@ class OpenPyXLFileHandler:
             WHERE inventorycode IN ({})
         """.format(','.join('?' for _ in grouped)), tuple(grouped.keys())).fetchall()
 
+        # Fetch supplier product codes for relevant inventory codes
+        supplier_codes = db_manager.execute_query("""
+            SELECT code, supplierproductcode
+            FROM inventory_items
+            WHERE code IN ({})
+        """.format(','.join('?' for _ in grouped)), tuple(grouped.keys())).fetchall()
+
+        supplier_lookup = {row["code"]: row["supplierproductcode"] for row in supplier_codes}
+
         # Organize pricing per code, filtering out empty/zero values
         pricing_lookup = {}
         for row in pricing_rows:
@@ -533,7 +543,8 @@ class OpenPyXLFileHandler:
                 "description": data["description"],
                 "products": ", ".join(sorted(data["products"])),
                 "questions": ", ".join(sorted(data["questions"])),
-                "pricing": pricing_lookup[code]
+                "pricing": pricing_lookup[code],
+                "supplier_product_code": supplier_lookup.get(code, "")
             })
 
         return result, pricing_fields

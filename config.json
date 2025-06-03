@@ -14,6 +14,10 @@
         "friendly_descriptions": {
             "id": "1OE7CnACQjFFGgIm_yFjN8Qhf0l5xEQkJqXwFV4plNlI",
             "range": "Friendly_Descriptions!A:D"
+        },
+        "master_curtain_fabric_list": {
+            "id": "18UHYVRoSV7FyqzQBR9O8iFIb-UGUvnUvdpuTKtNcHuQ",
+            "range": "ML new!A:O"
         }
     },
     "headers": {
