@@ -367,6 +367,7 @@ def init_db(db_manager: DatabaseManager):
                     ProductGroup TEXT,
                     ProductSubGroup TEXT,
                     SalesAccount TEXT,
+                    ProductBrand TEXT,
                     COGSAccount TEXT,
                     PurchaseAccount REAL,
                     PurchaseTaxType TEXT,

@@ -124,6 +124,7 @@ def insert_unleashed_data(
                 cleaned_row.get('Never Diminishing'),
                 cleaned_row.get('Product Group'),
                 cleaned_row.get('Product Sub Group'),
+                cleaned_row.get('Product Brand'),
                 cleaned_row.get('Sales Account'),
                 cleaned_row.get('COGS Account'),
                 safe_float(cleaned_row.get('Purchase Account')),
@@ -157,7 +158,7 @@ def insert_unleashed_data(
                     SellPriceTier3, SellPriceTier4, SellPriceTier5, SellPriceTier6, SellPriceTier7, 
                     SellPriceTier8, SellPriceTier9, SellPriceTier10, PackSize, Weight, 
                     Width, Height, Depth, Reminder, LastCost, 
-                    NominalCost, NeverDiminishing, ProductGroup, ProductSubGroup, SalesAccount, 
+                    NominalCost, NeverDiminishing, ProductGroup, ProductSubGroup, ProductBrand, SalesAccount, 
                     COGSAccount, PurchaseAccount, PurchaseTaxType, PurchaseTaxRate, SalesTaxType, 
                     SaleTaxRate, IsAssembledProduct, IsComponent, IsObsoleted, IsSellable, 
                     IsPurchasable, DefaultPurchasingUnitOfMeasure, IsSerialized, IsBatchTracked
@@ -173,11 +174,11 @@ def insert_unleashed_data(
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?
+                    ?, ?, ?, ?, ?
                 )
             ''', values)
 
-    # Now, delete records where IsObsoleted='yes' or IsSellable='no'
+    # Now, delete records where IsObsoleted='yes'
     db_manager.execute_query("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes'")
     db_manager.commit()
 
@@ -527,7 +528,7 @@ def get_old_buz_items_unleashed(db_manager: DatabaseManager):
         FROM inventory_items ii INNER JOIN 
             unleashed_products up ON ii.SupplierProductCode = up.ProductCode
         WHERE 
-            (up.IsObsoleted = "Yes" OR up.IsSellable = "No") AND
+            up.IsObsoleted = "Yes" AND
             ii.Supplier = "UNLEASHED"
                         
     """
