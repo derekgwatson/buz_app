@@ -17,7 +17,6 @@ __pycache__/
 .idea/
 
 # Deployment Scripts (if applicable)
-deploy.sh
 run.bat
 ownership_change.sh
 
