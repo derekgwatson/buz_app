@@ -3,6 +3,8 @@ from flask import Blueprint, current_app
 import os
 from flask import render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
 from datetime import timezone
+
+import services.curtain_fabric_sync
 from services.group_options_check import extract_codes_from_excel_flat_dedup
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
@@ -673,59 +675,19 @@ def motorisation_data():
     return render_template("motorisation_data.html", data=data, pricing_fields=pricing_fields)
 
 
-@main_routes.route('/generate_buz_fabric_uploads')
-def generate_buz_fabric_uploads():
-    import logging
-    import io
-    from services.buz_inventory_items import create_inventory_workbook_creator, get_current_buz_fabrics
-    from services.buz_inventory_pricing import create_pricing_workbook_creator, get_current_buz_pricing, \
-        prepare_pricing_changes
-    from services.google_sheets_service import GoogleSheetsService
-    from services.curtain_fabric_sync import build_sheet_dict, \
-        build_buz_dict, \
-        compare_fabrics_by_code, \
-        prepare_item_changes_dict
+@main_routes.route('/curtain-fabric-sync', methods=['GET', 'POST'])
+def curtain_fabric_sync():
+    config = current_app.config
+    column_titles = config["curtain_fabric_columns"].copy()
 
-    log_stream = io.StringIO()
-    handler = logging.StreamHandler(log_stream)
-    handler.setLevel(logging.INFO)
+    if request.method == 'POST':
+        for key in column_titles.keys():
+            new_value = request.form.get(f"columns[{key}]")
+            if new_value:
+                column_titles[key] = new_value.strip()
 
-    logger = logging.getLogger('curtain_fabric_sync')
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
+        result = services.curtain_fabric_sync.run_curtain_fabric_sync(current_app, g.db, column_titles)
+        result["column_titles"] = column_titles
+        return render_template("curtain_fabric_sync.html", **result)
 
-    sheets_service = GoogleSheetsService()
-    sheet_data = sheets_service.fetch_sheet_data(
-        current_app.config["spreadsheets"]["master_curtain_fabric_list"]["id"],
-        current_app.config["spreadsheets"]["master_curtain_fabric_list"]["range"]
-    )
-
-    sheet_dict = build_sheet_dict(sheet_data)
-    buz_items = get_current_buz_fabrics(g.db)
-    buz_dict = build_buz_dict(buz_items)
-    buz_pricing = get_current_buz_pricing(g.db)
-
-    # Item updates
-    new_items, updated_items, removed_items = compare_fabrics_by_code(sheet_dict, buz_dict)
-    item_changes = prepare_item_changes_dict(new_items, updated_items, removed_items)
-    item_creator = create_inventory_workbook_creator(current_app)
-    item_creator.populate_workbook(item_changes)
-    item_creator.auto_fit_columns()
-    item_output_file = 'items_upload.xlsx'
-    item_creator.save_workbook(item_output_file)
-
-    # Pricing updates
-    pricing_changes = prepare_pricing_changes(sheet_dict, buz_pricing, logger)
-    pricing_creator = create_pricing_workbook_creator(current_app)
-    pricing_creator.populate_workbook(pricing_changes)
-    pricing_creator.auto_fit_columns()
-    pricing_output_file = 'pricing_upload.xlsx'
-    pricing_creator.save_workbook(pricing_output_file)
-
-    logger.info('Generated item and pricing upload files.')
-
-    return {
-        'items_file': item_output_file,
-        'pricing_file': pricing_output_file,
-        'message': 'Upload files generated successfully.'
-    }
+    return render_template("curtain_fabric_sync.html", column_titles=column_titles)

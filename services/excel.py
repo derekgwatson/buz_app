@@ -230,6 +230,10 @@ class OpenPyXLFileHandler:
         if self.workbook is None:
             raise ValueError("No workbook is loaded or created to save.")
 
+        if not self.workbook.sheets:
+            logger.info("No pricing updates found. No workbook created.")
+            return None  # Optional: return None to indicate no file was saved
+
         self.workbook.save(save_path)
         logger.info(f"Workbook saved to {save_path}")
 

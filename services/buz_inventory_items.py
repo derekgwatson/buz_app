@@ -1,5 +1,9 @@
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_current_buz_fabrics(db_manager):
@@ -67,6 +71,9 @@ class InventoryWorkbookCreator:
             self._add_items_to_sheet(group, items)
 
     def save_workbook(self, output_path):
+        if not self.sheets:
+            logger.info("No pricing updates found. No workbook created.")
+            return None  # Optional: return None to indicate no file was saved
         self.workbook.save(output_path)
         return self.workbook
 

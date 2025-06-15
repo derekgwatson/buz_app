@@ -866,5 +866,18 @@
         "ALPHAV2",
         "HNYCV2",
         "GLDSHF"
-    ]
+    ],
+
+    "curtain_fabric_columns": {
+        "code": "Code",
+        "brand": "Brand Name",
+        "fabric_name": "Fabric Name",
+        "colour": "Colour",
+        "width": "Width (cm)",
+        "direction": "Direction",
+        "pattern_repeat": "Vertical Pattern Repeat Size (cm)",
+        "cost_sqm": "Cost to DD per metre CUT (ex GST)",
+        "sell_sqm": "Buzz Sell Price (ex GST)"
+    }
+
 }

@@ -3,6 +3,10 @@ from openpyxl.utils import get_column_letter
 from datetime import datetime, timedelta
 
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 def get_current_buz_pricing(db):
     """
     Fetch current pricing records from the pricing_data table.
@@ -22,7 +26,7 @@ def get_current_buz_pricing(db):
     return pricing
 
 
-def prepare_pricing_changes(sheet_dict, buz_pricing, logger):
+def prepare_pricing_changes(sheet_dict, buz_pricing):
     """
     Prepare pricing changes by comparing Google Sheet data to Buz pricing data.
 
@@ -101,6 +105,9 @@ class PricingWorkbookCreator:
             self._add_items_to_sheet(group, items)
 
     def save_workbook(self, output_path):
+        if not self.sheets:
+            logger.info("No pricing updates found. No workbook created.")
+            return None  # Optional: return None to indicate no file was saved
         self.workbook.save(output_path)
         return self.workbook
 

@@ -1,5 +1,5 @@
 import logging
-from flask import current_app, send_file
+from datetime import datetime, timedelta
 
 
 logger = logging.getLogger(__name__)
@@ -10,24 +10,38 @@ logger = logging.getLogger(__name__)
 # This ensures the output Excel file has separate tabs per group.
 
 
-def build_sheet_dict(sheet_data, num_header_rows=1):
+def build_sheet_dict(sheet_data, num_header_rows=1, column_titles=None):
     sheet_dict = {}
+    headers = {}
+
     for idx, row in enumerate(sheet_data):
-        if idx < num_header_rows:
-            continue  # Skip header rows
-        if len(row) < 8:
+        if idx == num_header_rows - 1 and column_titles:
+            # Build map of sheet column name → index
+            headers = {col.strip(): i for i, col in enumerate(row)}
             continue
-        code = row[0].strip()
-        brand = row[2].strip()
-        fabric_name = row[3].strip()
-        colour = row[4].strip()
+        if idx < num_header_rows or not headers:
+            continue
+
+        row_data = {}
+        try:
+            for key, sheet_col_name in column_titles.items():
+                col_index = headers.get(sheet_col_name)
+                if col_index is not None and col_index < len(row):
+                    row_data[key] = row[col_index].strip()
+                else:
+                    row_data[key] = ''
+        except Exception:
+            continue  # If anything goes wrong, skip this row
+
+        code = row_data.get("code")
+        if not code:
+            continue
+
         sheet_dict[code] = {
-            'code': code,
-            'brand': brand,
-            'fabric_name': fabric_name,
-            'colour': colour,
+            **row_data,
             'raw_row': row
         }
+
     return sheet_dict
 
 
@@ -108,19 +122,86 @@ def prepare_pricing_changes(sheet_dict, buz_pricing):
     changes = {}
 
     for code, sheet_item in sheet_dict.items():
-        sheet_price = float(sheet_item['raw_row'][8]) if sheet_item['raw_row'][8] else 0
+        raw_row = sheet_item['raw_row']
+        cost_value = raw_row[10]  # Column K: Cost to DD per metre CUT (ex GST)
+        sell_value = raw_row[12]  # Column M: Buzz Sell Price (ex GST)
+
+        if not cost_value.replace('.', '', 1).isdigit() or not sell_value.replace('.', '', 1).isdigit():
+            logger.warning(f"Skipping non-numeric cost/sell for code {code}: cost='{cost_value}', sell='{sell_value}'")
+            continue
+
+        sheet_cost = float(cost_value)
+        sheet_sell = float(sell_value)
         buz_item = buz_pricing.get(code)
-        if not buz_item or abs(sheet_price - buz_item['SellSQM']) > 0.01:
-            group = buz_item.get('inventory_group_code', 'CRTWT') if buz_item else 'CRTWT'
+
+        needs_update = False
+        if not buz_item:
+            needs_update = True
+        else:
+            buz_cost = float(buz_item.get('CostSQM', 0))
+            buz_sell = float(buz_item.get('SellSQM', 0))
+            if buz_cost == 0 or abs(sheet_cost - buz_cost) / buz_cost > 0.005 or buz_sell == 0 or abs(sheet_sell - buz_sell) / buz_sell > 0.005:
+                needs_update = True
+
+        if needs_update:
+            group = buz_item['inventory_group_code'] if buz_item else 'CRTWT'
             row_data = {
                 'Operation': 'A',
                 'InventoryCode': code,
-                'SellSQM': sheet_price,
-                'SupplierCode': sheet_item['code'],
-                'SupplierDescn': sheet_item['fabric_name']
+                'CostSQM': sheet_cost,
+                'SellSQM': sheet_sell,
+                'DateFrom': (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             }
             if group not in changes:
                 changes[group] = []
             changes[group].append(row_data)
 
     return changes
+
+
+def run_curtain_fabric_sync(app, db, column_titles):
+    from services.buz_inventory_items import create_inventory_workbook_creator, get_current_buz_fabrics
+    from services.buz_inventory_pricing import create_pricing_workbook_creator, get_current_buz_pricing, \
+        prepare_pricing_changes
+    from services.google_sheets_service import GoogleSheetsService
+
+    sheets_service = GoogleSheetsService()
+    sheet_data = sheets_service.fetch_sheet_data(
+        app.config["spreadsheets"]["master_curtain_fabric_list"]["id"],
+        app.config["spreadsheets"]["master_curtain_fabric_list"]["range"]
+    )
+
+    sheet_dict = build_sheet_dict(sheet_data, column_titles=column_titles)
+    buz_items = get_current_buz_fabrics(db)
+    buz_dict = build_buz_dict(buz_items)
+    buz_pricing = get_current_buz_pricing(db)
+
+    # Item updates
+    new_items, updated_items, removed_items = compare_fabrics_by_code(sheet_dict, buz_dict)
+    item_changes = prepare_item_changes_dict(new_items, updated_items, removed_items)
+    item_creator = create_inventory_workbook_creator(app)
+    item_creator.populate_workbook(item_changes)
+    item_creator.auto_fit_columns()
+    item_output_file = 'items_upload.xlsx'
+    item_creator.save_workbook(item_output_file)
+
+    # Pricing updates
+    pricing_changes = prepare_pricing_changes(sheet_dict, buz_pricing)
+    pricing_creator = create_pricing_workbook_creator(app)
+    pricing_creator.populate_workbook(pricing_changes)
+    pricing_creator.auto_fit_columns()
+    pricing_output_file = 'pricing_upload.xlsx'
+    pricing_creator.save_workbook(pricing_output_file)
+
+    logger.info('Generated item and pricing upload files.')
+
+    return {
+            'items_file': item_output_file,
+            'pricing_file': pricing_output_file,
+            'summary': {
+                'new_items': len(new_items),
+                'updated_items': len(updated_items),
+                'removed_items': len(removed_items),
+                'pricing_changes': {k: len(v) for k, v in pricing_changes.items()}
+            }
+    }
