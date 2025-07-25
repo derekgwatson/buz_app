@@ -418,291 +418,91 @@
         "unleashed_fields": [
             {
                 "spreadsheet_column": "*Product Code",
-                "database_field": "ProductCode",
-                "column_letter": "A"
+                "database_field": "ProductCode"
             },
             {
                 "spreadsheet_column": "*Product Description",
-                "database_field": "ProductDescription",
-                "column_letter": "B"
+                "database_field": "ProductDescription"
             },
             {
                 "spreadsheet_column": "Notes",
-                "database_field": "Notes",
-                "column_letter": "C"
-            },
-            {
-                "spreadsheet_column": "Barcode",
-                "database_field": "Barcode",
-                "column_letter": "D"
+                "database_field": "Notes"
             },
             {
                 "spreadsheet_column": "Unit of Measure",
-                "database_field": "UnitOfMeasure",
-                "column_letter": "E"
-            },
-            {
-                "spreadsheet_column": "Min Stock Alert Level",
-                "database_field": "MinStockAlertLevel",
-                "column_letter": "F"
-            },
-            {
-                "spreadsheet_column": "Max Stock Alert Level",
-                "database_field": "MaxStockAlertLevel",
-                "column_letter": "G"
-            },
-            {
-                "spreadsheet_column": "Label Template",
-                "database_field": "LabelTemplate",
-                "column_letter": "H"
-            },
-            {
-                "spreadsheet_column": "SO Label Template",
-                "database_field": "SOLabelTemplate",
-                "column_letter": "I"
-            },
-            {
-                "spreadsheet_column": "PO Label Template",
-                "database_field": "POLabelTemplate",
-                "column_letter": "J"
-            },
-            {
-                "spreadsheet_column": "SO Label Quantity",
-                "database_field": "SOLabelQuantity",
-                "column_letter": "K"
-            },
-            {
-                "spreadsheet_column": "PO Label Quantity",
-                "database_field": "POLabelQuantity",
-                "column_letter": "L"
+                "database_field": "UnitOfMeasure"
             },
             {
                 "spreadsheet_column": "Supplier Code",
-                "database_field": "SupplierCode",
-                "column_letter": "M"
+                "database_field": "SupplierCode"
             },
             {
                 "spreadsheet_column": "Supplier Name",
-                "database_field": "SupplierName",
-                "column_letter": "N"
+                "database_field": "SupplierName"
             },
             {
                 "spreadsheet_column": "Supplier Product Code",
-                "database_field": "SupplierProductCode",
-                "column_letter": "O"
+                "database_field": "SupplierProductCode"
             },
             {
                 "spreadsheet_column": "Default Purchase Price",
-                "database_field": "DefaultPurchasePrice",
-                "column_letter": "P"
+                "database_field": "DefaultPurchasePrice"
             },
             {
                 "spreadsheet_column": "Minimum Order Quantity",
-                "database_field": "MinimumOrderQuantity",
-                "column_letter": "Q"
+                "database_field": "MinimumOrderQuantity"
             },
             {
                 "spreadsheet_column": "Minimum Sale Quantity",
-                "database_field": "MinimumSaleQuantity",
-                "column_letter": "R"
+                "database_field": "MinimumSaleQuantity"
             },
             {
                 "spreadsheet_column": "Default Sell Price",
-                "database_field": "DefaultSellPrice",
-                "column_letter": "S"
+                "database_field": "DefaultSellPrice"
             },
             {
                 "spreadsheet_column": "Minimum Sell Price",
-                "database_field": "MinimumSellPrice",
-                "column_letter": "T"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 1",
-                "database_field": "SellPriceTier1",
-                "column_letter": "U"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 2",
-                "database_field": "SellPriceTier2",
-                "column_letter": "V"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 3",
-                "database_field": "SellPriceTier3",
-                "column_letter": "W"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 4",
-                "database_field": "SellPriceTier4",
-                "column_letter": "X"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 5",
-                "database_field": "SellPriceTier5",
-                "column_letter": "Y"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 6",
-                "database_field": "SellPriceTier6",
-                "column_letter": "Z"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 7",
-                "database_field": "SellPriceTier7",
-                "column_letter": "AA"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 8",
-                "database_field": "SellPriceTier8",
-                "column_letter": "AB"
+                "database_field": "MinimumSellPrice"
             },
             {
                 "spreadsheet_column": "Sell Price Tier 9",
-                "database_field": "SellPriceTier9",
-                "column_letter": "AC"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 10",
-                "database_field": "SellPriceTier10",
-                "column_letter": "AD"
+                "database_field": "SellPriceTier9"
             },
             {
                 "spreadsheet_column": "Pack Size",
-                "database_field": "PackSize",
-                "column_letter": "AE"
-            },
-            {
-                "spreadsheet_column": "Weight",
-                "database_field": "Weight",
-                "column_letter": "AF"
+                "database_field": "PackSize"
             },
             {
                 "spreadsheet_column": "Width",
-                "database_field": "Width",
-                "column_letter": "AG"
+                "database_field": "Width"
             },
             {
                 "spreadsheet_column": "Height",
-                "database_field": "Height",
-                "column_letter": "AH"
+                "database_field": "Height"
             },
             {
                 "spreadsheet_column": "Depth",
-                "database_field": "Depth",
-                "column_letter": "AI"
-            },
-            {
-                "spreadsheet_column": "Reminder",
-                "database_field": "Reminder",
-                "column_letter": "AJ"
-            },
-            {
-                "spreadsheet_column": "Last Cost",
-                "database_field": "LastCost",
-                "column_letter": "AK"
-            },
-            {
-                "spreadsheet_column": "Nominal Cost",
-                "database_field": "NominalCost",
-                "column_letter": "AL"
-            },
-            {
-                "spreadsheet_column": "Never Diminishing",
-                "database_field": "NeverDiminishing",
-                "column_letter": "AM"
+                "database_field": "Depth"
             },
             {
                 "spreadsheet_column": "Product Group",
-                "database_field": "ProductGroup",
-                "column_letter": "AN"
+                "database_field": "ProductGroup"
             },
             {
                 "spreadsheet_column": "Product Sub Group",
-                "database_field": "ProductSubGroup",
-                "column_letter": "AO"
-            },
-            {
-                "spreadsheet_column": "Product Brand",
-                "database_field": "ProductBrand",
-                "column_letter": "AP"
-            },
-            {
-                "spreadsheet_column": "Sales Account",
-                "database_field": "SalesAccount",
-                "column_letter": "AQ"
-            },
-            {
-                "spreadsheet_column": "COGS Account",
-                "database_field": "COGSAccount",
-                "column_letter": "AR"
-            },
-            {
-                "spreadsheet_column": "Purchase Account",
-                "database_field": "PurchaseAccount",
-                "column_letter": "AS"
-            },
-            {
-                "spreadsheet_column": "Purchase Tax Type",
-                "database_field": "PurchaseTaxType",
-                "column_letter": "AT"
-            },
-            {
-                "spreadsheet_column": "Purchase Tax Rate",
-                "database_field": "PurchaseTaxRate",
-                "column_letter": "AU"
-            },
-            {
-                "spreadsheet_column": "Sales Tax Type",
-                "database_field": "SalesTaxType",
-                "column_letter": "AV"
-            },
-            {
-                "spreadsheet_column": "Sale Tax Rate",
-                "database_field": "SaleTaxRate",
-                "column_letter": "AW"
-            },
-            {
-                "spreadsheet_column": "IsAssembledProduct",
-                "database_field": "IsAssembledProduct",
-                "column_letter": "AX"
-            },
-            {
-                "spreadsheet_column": "IsComponent",
-                "database_field": "IsComponent",
-                "column_letter": "AY"
+                "database_field": "ProductSubGroup"
             },
             {
                 "spreadsheet_column": "IsObsoleted",
-                "database_field": "IsObsoleted",
-                "column_letter": "AZ"
+                "database_field": "IsObsoleted"
             },
             {
                 "spreadsheet_column": "Is Sellable",
-                "database_field": "IsSellable",
-                "column_letter": "BA"
-            },
-            {
-                "spreadsheet_column": "Is Purchasable",
-                "database_field": "IsPurchasable",
-                "column_letter": "BB"
-            },
-            {
-                "spreadsheet_column": "Default Purchasing Unit of Measure",
-                "database_field": "DefaultPurchasingUnitOfMeasure",
-                "column_letter": "BC"
-            },
-            {
-                "spreadsheet_column": "Is Serialized",
-                "database_field": "IsSerialized",
-                "column_letter": "BD"
-            },
-            {
-                "spreadsheet_column": "Is Batch Tracked",
-                "database_field": "IsBatchTracked",
-                "column_letter": "BE"
+                "database_field": "IsSellable"
             }
         ]
     },
+
     "wastage_percentages": {
         "ROLL": 0.25,
         "ROLC": 0.25,

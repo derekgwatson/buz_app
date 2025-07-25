@@ -15,7 +15,7 @@ def upload(
         pricing_file_expected_headers: list[str],
         pricing_file_db_fields: list[str],
         unleashed_file: FileStorage,
-        unleashed_file_expected_headers: list[str],
+        unleashed_file_expected_headers: list[dict[str, str]],
         upload_folder: str,
         invalid_pkid: str,
         override_friendly_descriptions_id: str,
@@ -75,7 +75,7 @@ def upload(
         insert_unleashed_data(
             db_manager=db_manager,
             file_path=unleashed_file_path,
-            expected_headers=unleashed_file_expected_headers,
+            field_config=unleashed_file_expected_headers,
             overrides=friendly_overrides
         )
         update_table_history(db_manager=db_manager, table_name='unleashed_products')

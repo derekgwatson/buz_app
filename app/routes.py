@@ -57,9 +57,6 @@ def upload_route():
         pricing_file_expected_headers, pricing_file_db_fields = parse_headers(
             current_app.config["headers"], "buz_pricing_file"
         )
-        unleashed_file_expected_headers, _ = parse_headers(
-            current_app.config["headers"], "unleashed_fields"
-        )
 
         # Process uploaded files
         uploaded_files = upload(
@@ -71,7 +68,7 @@ def upload_route():
             pricing_file_expected_headers=pricing_file_expected_headers,
             pricing_file_db_fields=pricing_file_db_fields,
             unleashed_file=unleashed_file,
-            unleashed_file_expected_headers=unleashed_file_expected_headers,
+            unleashed_file_expected_headers=current_app.config["headers"]["unleashed_fields"],
             upload_folder=current_app.config['upload_folder'],
             invalid_pkid=current_app.config['invalid_pkid'],
             override_friendly_descriptions_id=current_app.config["spreadsheets"]["friendly_descriptions"]["id"],
