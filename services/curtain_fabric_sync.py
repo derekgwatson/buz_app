@@ -120,18 +120,18 @@ def prepare_item_changes_dict(new_items, updated_items, removed_items):
 
 def prepare_pricing_changes(sheet_dict, buz_pricing):
     changes = {}
+    tolerance = 0.005  # 0.5%
 
     for code, sheet_item in sheet_dict.items():
-        raw_row = sheet_item['raw_row']
-        cost_value = raw_row[10]  # Column K: Cost to DD per metre CUT (ex GST)
-        sell_value = raw_row[12]  # Column M: Buzz Sell Price (ex GST)
+        cost_str = sheet_item.get("CostSQM", "")
+        sell_str = sheet_item.get("SellSQM", "")
 
-        if not cost_value.replace('.', '', 1).isdigit() or not sell_value.replace('.', '', 1).isdigit():
-            logger.warning(f"Skipping non-numeric cost/sell for code {code}: cost='{cost_value}', sell='{sell_value}'")
+        if not cost_str.replace('.', '', 1).isdigit() or not sell_str.replace('.', '', 1).isdigit():
+            logger.warning(f"Skipping non-numeric cost/sell for code {code}: cost='{cost_str}', sell='{sell_str}'")
             continue
 
-        sheet_cost = float(cost_value)
-        sheet_sell = float(sell_value)
+        sheet_cost = float(cost_str)
+        sheet_sell = float(sell_str)
         buz_item = buz_pricing.get(code)
 
         needs_update = False
@@ -140,21 +140,25 @@ def prepare_pricing_changes(sheet_dict, buz_pricing):
         else:
             buz_cost = float(buz_item.get('CostSQM', 0))
             buz_sell = float(buz_item.get('SellSQM', 0))
-            if buz_cost == 0 or abs(sheet_cost - buz_cost) / buz_cost > 0.005 or buz_sell == 0 or abs(sheet_sell - buz_sell) / buz_sell > 0.005:
+            if (
+                buz_cost == 0 or abs(sheet_cost - buz_cost) / buz_cost > tolerance or
+                buz_sell == 0 or abs(sheet_sell - buz_sell) / buz_sell > tolerance
+            ):
                 needs_update = True
 
         if needs_update:
-            group = buz_item['inventory_group_code'] if buz_item else 'CRTWT'
             row_data = {
+                'PkId': '',
                 'Operation': 'A',
                 'InventoryCode': code,
                 'CostSQM': sheet_cost,
                 'SellSQM': sheet_sell,
-                'DateFrom': (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                'SupplierCode': sheet_item['code'],
+                'SupplierDescn': sheet_item['fabric_name'],
+                'DateFrom': (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
             }
-            if group not in changes:
-                changes[group] = []
-            changes[group].append(row_data)
+            group = sheet_item.get('inventory_group_code', 'CRT')
+            changes.setdefault(group, []).append(row_data)
 
     return changes
 

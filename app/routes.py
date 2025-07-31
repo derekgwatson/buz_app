@@ -40,6 +40,7 @@ def homepage():
 def upload_route():
     from services.upload import upload, init_last_upload_times
     from services.helper import parse_headers
+    from markupsafe import Markup
 
     # Initialize last upload times
     last_upload_times = init_last_upload_times(g.db)
@@ -79,7 +80,9 @@ def upload_route():
             ignored_groups=current_app.config["ignored_inventory_groups"]
         )
 
-        if uploaded_files:
+        if 'error' in uploaded_files:
+            flash(Markup(uploaded_files['error']), 'danger')
+        elif uploaded_files:
             last_upload_times.update(uploaded_files)
             flash('Files successfully uploaded and data stored in the database')
         else:

@@ -4,6 +4,7 @@ from services.excel import OpenPyXLFileHandler
 from werkzeug.datastructures import FileStorage
 from services.database import DatabaseManager
 import os
+from services.exceptions import UploadValidationError
 
 
 def upload(
@@ -72,12 +73,16 @@ def upload(
 
         unleashed_file_path = os.path.join(upload_folder, unleashed_file.filename)
         unleashed_file.save(unleashed_file_path)
-        insert_unleashed_data(
-            db_manager=db_manager,
-            file_path=unleashed_file_path,
-            expected_headers=unleashed_file_expected_headers,
-            overrides=friendly_overrides
-        )
+        try:
+            insert_unleashed_data(
+                db_manager=db_manager,
+                file_path=unleashed_file_path,
+                expected_headers=unleashed_file_expected_headers,
+                overrides=friendly_overrides
+            )
+        except UploadValidationError as e:
+            return {'error': f"Unleashed file upload failed: {e.message}"}
+
         update_table_history(db_manager=db_manager, table_name='unleashed_products')
         last_upload = get_last_upload_time(db_manager, 'unleashed_products')
         uploaded_files['unleashed_file'] = last_upload

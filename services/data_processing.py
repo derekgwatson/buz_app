@@ -53,7 +53,34 @@ def clear_unleashed_table(db_manager: DatabaseManager):
     """Clear all data from the unleashed_products table."""
     db_manager.execute_query('DELETE FROM unleashed_products', auto_commit=True)  # Clear all rows
 
-    
+
+def compare_headers(required_headers: list[str], actual_headers: list[str]) -> None:
+    """
+    Validates that all required headers are present in the actual CSV headers.
+    Extra headers are ignored.
+
+    Args:
+        required_headers: Headers that must be present.
+        actual_headers: Headers from the uploaded CSV.
+
+    Raises:
+        UploadValidationError: If any required headers are missing.
+    """
+    from services.exceptions import UploadValidationError
+
+    required_set = set(required_headers)
+    actual_set = set(actual_headers)
+
+    missing = required_set - actual_set
+
+    if missing:
+        missing_html = "".join(f"<li>{h}</li>" for h in sorted(missing))
+        raise UploadValidationError(
+            "CSV headers do not match expected format.<br><br>"
+            f"<b>Missing headers:</b><ul>{missing_html}</ul>"
+        )
+
+
 def insert_unleashed_data(
     db_manager: DatabaseManager,
     file_path: str,
@@ -61,18 +88,20 @@ def insert_unleashed_data(
     overrides: dict[str, list[str]] = None  # Optional dict from Google Sheet
 ):
     import csv
+    from services.exceptions import UploadValidationError
 
     clear_unleashed_table(db_manager)  # Clear the table before inserting new data
-
     logger.debug("insert_unleashed_data: Starting")
+
+    # First pass: check headers
     with open(file_path, 'r', encoding='utf-8-sig', newline='') as csvfile:
         reader = csv.DictReader(csvfile)
+        _ = next(reader, None)  # Force header read
+        compare_headers(expected_headers, reader.fieldnames or [])
 
-        if reader.fieldnames != expected_headers:
-            logger.debug("insert_unleashed_data: file is NOT valid")
-            logger.debug(f"insert_unleashed_data: expected headers {expected_headers}")
-            logger.debug(f"insert_unleashed_data: actual headers {reader.fieldnames}")
-            return None
+    # Second pass: process rows
+    with open(file_path, 'r', encoding='utf-8-sig', newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
 
         logger.debug("insert_unleashed_data: file is valid")
         # Iterate through each row in the CSV
@@ -91,19 +120,13 @@ def insert_unleashed_data(
 
             # Prepare values for insertion, using safe_float for numeric fields
             values = (
-                cleaned_row.get('Product Code'), product_description, fd1, fd2, fd3, cleaned_row.get('Notes'),
-                cleaned_row.get('Barcode'), cleaned_row.get('Unit of Measure'),
-                safe_float(cleaned_row.get('Min Stock Alert Level')), 
-                safe_float(cleaned_row.get('Max Stock Alert Level')), 
-                cleaned_row.get('Label Template'), cleaned_row.get('SO Label Template'),
-                cleaned_row.get('PO Label Template'), cleaned_row.get('SO Label Quantity'), cleaned_row.get('PO Label Quantity'),
-                cleaned_row.get('Supplier Code'), cleaned_row.get('Supplier Name'), cleaned_row.get('Supplier Product Code'),
-                safe_float(cleaned_row.get('Default Purchase Price')), 
-                safe_float(cleaned_row.get('Minimum Order Quantity')), 
-                safe_float(cleaned_row.get('Minimum Sale Quantity')), 
-                safe_float(cleaned_row.get('Default Sell Price')), 
-                safe_float(cleaned_row.get('Minimum Sell Price')), 
-                safe_float(cleaned_row.get('Sell Price Tier 1')), 
+                cleaned_row.get('Product Code'),
+                product_description,
+                fd1, fd2, fd3,
+                cleaned_row.get('Unit of Measure'),
+                cleaned_row.get('Supplier Code'),
+                safe_float(cleaned_row.get('Default Purchase Price')),
+                safe_float(cleaned_row.get('Sell Price Tier 1')),
                 safe_float(cleaned_row.get('Sell Price Tier 2')), 
                 safe_float(cleaned_row.get('Sell Price Tier 3')), 
                 safe_float(cleaned_row.get('Sell Price Tier 4')), 
@@ -113,68 +136,45 @@ def insert_unleashed_data(
                 safe_float(cleaned_row.get('Sell Price Tier 8')), 
                 safe_float(cleaned_row.get('Sell Price Tier 9')), 
                 safe_float(cleaned_row.get('Sell Price Tier 10')), 
-                safe_float(cleaned_row.get('Pack Size')), 
-                safe_float(cleaned_row.get('Weight')), 
-                safe_float(cleaned_row.get('Width')), 
-                safe_float(cleaned_row.get('Height')), 
-                safe_float(cleaned_row.get('Depth')), 
-                safe_float(cleaned_row.get('Reminder')), 
-                safe_float(cleaned_row.get('Last Cost')), 
-                safe_float(cleaned_row.get('Nominal Cost')), 
-                cleaned_row.get('Never Diminishing'),
+                safe_float(cleaned_row.get('Width')),
                 cleaned_row.get('Product Group'),
                 cleaned_row.get('Product Sub Group'),
-                cleaned_row.get('Product Brand'),
-                cleaned_row.get('Sales Account'),
-                cleaned_row.get('COGS Account'),
-                safe_float(cleaned_row.get('Purchase Account')),
-                cleaned_row.get('Purchase Tax Type'), 
-                safe_float(cleaned_row.get('Purchase Tax Rate')),
-                cleaned_row.get('Sales Tax Type'), 
-                safe_float(cleaned_row.get('Sales Tax Rate')),
-                cleaned_row.get('IsAssembledProduct'),
-                cleaned_row.get('IsComponent'),
-                cleaned_row.get('IsObsoleted'), 
-                cleaned_row.get('Is Sellable'),
-                cleaned_row.get('Is Purchasable'),
-                cleaned_row.get('Default Purchasing Unit of Measure'),
-                cleaned_row.get('Is Serialized'),
-                cleaned_row.get('Is Batch Tracked'),
+                cleaned_row.get('IsObsoleted'),
             )
             
             # Check if the number of values matches the number of columns in the table
             # take out the 3 friendly description fields because they're added at runtime, they're not in the csv
             if len(values) - 3 != len(expected_headers):
-                logger.warning(f"Warning: Expected {len(expected_headers)} values but got {len(values) - 3}. Row: {cleaned_row}")
-                continue
-            
+                raise UploadValidationError(
+                    f"Row has incorrect number of values. Expected {len(expected_headers)}, "
+                    f"got {len(values) - 3}. Product Code: {cleaned_row.get('Product Code')}"
+                )
+
             db_manager.execute_query('''
                 INSERT INTO unleashed_products (
-                    ProductCode, ProductDescription, FriendlyDescription1, FriendlyDescription2, FriendlyDescription3,
-                    Notes, Barcode, UnitOfMeasure, MinStockAlertLevel, MaxStockAlertLevel, 
-                    LabelTemplate, SOLabelTemplate, POLabelTemplate, SOLabelQuantity, POLabelQuantity, 
-                    SupplierCode, SupplierName, SupplierProductCode, DefaultPurchasePrice, MinimumOrderQuantity, 
-                    MinimumSaleQuantity, DefaultSellPrice, MinimumSellPrice, SellPriceTier1, SellPriceTier2, 
-                    SellPriceTier3, SellPriceTier4, SellPriceTier5, SellPriceTier6, SellPriceTier7, 
-                    SellPriceTier8, SellPriceTier9, SellPriceTier10, PackSize, Weight, 
-                    Width, Height, Depth, Reminder, LastCost, 
-                    NominalCost, NeverDiminishing, ProductGroup, ProductSubGroup, ProductBrand, SalesAccount, 
-                    COGSAccount, PurchaseAccount, PurchaseTaxType, PurchaseTaxRate, SalesTaxType, 
-                    SaleTaxRate, IsAssembledProduct, IsComponent, IsObsoleted, IsSellable, 
-                    IsPurchasable, DefaultPurchasingUnitOfMeasure, IsSerialized, IsBatchTracked
+                    ProductCode, 
+                    ProductDescription, 
+                    FriendlyDescription1, FriendlyDescription2, FriendlyDescription3,
+                    UnitOfMeasure,  
+                    SupplierCode,
+                    DefaultPurchasePrice,
+                    SellPriceTier1, SellPriceTier2, SellPriceTier3, SellPriceTier4, SellPriceTier5, 
+                    SellPriceTier6, SellPriceTier7, SellPriceTier8, SellPriceTier9, SellPriceTier10,  
+                    Width,  
+                    ProductGroup, ProductSubGroup,  
+                    IsObsoleted
                 ) VALUES (
+                    ?, 
+                    ?, 
+                    ?, ?, ?,
+                    ?, 
+                    ?,
+                    ?,
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?
+                    ?, 
+                    ?, ?, 
+                    ? 
                 )
             ''', values)
 
