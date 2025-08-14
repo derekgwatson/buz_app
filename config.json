@@ -26,7 +26,6 @@
                 "spreadsheet_column": "PkId",
                 "database_field": "PkId",
                 "column_letter": "A"
-                "column_letter": "A"
             },
             {
                 "spreadsheet_column": "Code",
@@ -426,6 +425,10 @@
                 "database_field": "ProductDescription"
             },
             {
+                "spreadsheet_column": "Notes",
+                "database_field": "Notes"
+            },
+            {
                 "spreadsheet_column": "Unit of Measure",
                 "database_field": "UnitOfMeasure"
             },
@@ -434,48 +437,24 @@
                 "database_field": "SupplierCode"
             },
             {
+                "spreadsheet_column": "Supplier Name",
+                "database_field": "SupplierName"
+            },
+            {
+                "spreadsheet_column": "Supplier Product Code",
+                "database_field": "SupplierProductCode"
+            },
+            {
                 "spreadsheet_column": "Default Purchase Price",
                 "database_field": "DefaultPurchasePrice"
             },
             {
-                "spreadsheet_column": "Sell Price Tier 1",
-                "database_field": "SellPriceTier1"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 2",
-                "database_field": "SellPriceTier2"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 3",
-                "database_field": "SellPriceTier3"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 4",
-                "database_field": "SellPriceTier4"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 5",
-                "database_field": "SellPriceTier5"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 6",
-                "database_field": "SellPriceTier6"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 7",
-                "database_field": "SellPriceTier7"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 8",
-                "database_field": "SellPriceTier8"
+                "spreadsheet_column": "Default Sell Price",
+                "database_field": "DefaultSellPrice"
             },
             {
                 "spreadsheet_column": "Sell Price Tier 9",
                 "database_field": "SellPriceTier9"
-            },
-            {
-                "spreadsheet_column": "Sell Price Tier 10",
-                "database_field": "SellPriceTier10"
             },
             {
                 "spreadsheet_column": "Width",
@@ -684,5 +663,4 @@
         "cost_sqm": "Cost to DD per metre CUT (ex GST)",
         "sell_sqm": "Current Buz Sell Price (ex GST)"
     }
-
 }

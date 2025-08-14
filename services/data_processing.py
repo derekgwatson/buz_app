@@ -54,135 +54,93 @@ def clear_unleashed_table(db_manager: DatabaseManager):
     db_manager.execute_query('DELETE FROM unleashed_products', auto_commit=True)  # Clear all rows
 
 
-def compare_headers(required_headers: list[str], actual_headers: list[str]) -> None:
-    """
-    Validates that all required headers are present in the actual CSV headers.
-    Extra headers are ignored.
-
-    Args:
-        required_headers: Headers that must be present.
-        actual_headers: Headers from the uploaded CSV.
-
-    Raises:
-        UploadValidationError: If any required headers are missing.
-    """
-    from services.exceptions import UploadValidationError
-
-    required_set = set(required_headers)
-    actual_set = set(actual_headers)
-
-    missing = required_set - actual_set
-
-    if missing:
-        missing_html = "".join(f"<li>{h}</li>" for h in sorted(missing))
-        raise UploadValidationError(
-            "CSV headers do not match expected format.<br><br>"
-            f"<b>Missing headers:</b><ul>{missing_html}</ul>"
-        )
+def is_float_field(field_name: str) -> bool:
+    FLOAT_FIELDS = {
+        "DefaultPurchasePrice", "MinimumOrderQuantity", "MinimumSaleQuantity",
+        "DefaultSellPrice", "MinimumSellPrice", "SellPriceTier9", "PackSize", "Weight",
+        "Width", "Height", "Depth", "Reminder", "LastCost", "NominalCost",
+        "MinStockAlertLevel", "MaxStockAlertLevel", "PurchaseAccount",
+        "PurchaseTaxRate", "SalesTaxRate"
+    }
+    return field_name in FLOAT_FIELDS
 
 
 def insert_unleashed_data(
     db_manager: DatabaseManager,
     file_path: str,
-    expected_headers: list[str],
-    overrides: dict[str, list[str]] = None  # Optional dict from Google Sheet
+    field_config: list[dict[str, str]],
+    overrides: dict[str, list[str]] = None
 ):
     import csv
     from services.exceptions import UploadValidationError
 
-    clear_unleashed_table(db_manager)  # Clear the table before inserting new data
+    clear_unleashed_table(db_manager)
     logger.debug("insert_unleashed_data: Starting")
 
-    # First pass: check headers
-    with open(file_path, 'r', encoding='utf-8-sig', newline='') as csvfile:
-        reader = csv.DictReader(csvfile)
-        _ = next(reader, None)  # Force header read
-        compare_headers(expected_headers, reader.fieldnames or [])
+    # Build spreadsheet→db field mapping
+    spreadsheet_to_db = {
+        f["spreadsheet_column"].strip(): f["database_field"]
+        for f in field_config
+    }
+    required_fields = list(spreadsheet_to_db.keys())
+    db_fields = list(spreadsheet_to_db.values())
 
     # Second pass: process rows
     with open(file_path, 'r', encoding='utf-8-sig', newline='') as csvfile:
         reader = csv.DictReader(csvfile)
 
-        logger.debug("insert_unleashed_data: file is valid")
-        # Iterate through each row in the CSV
+        # Check all required fields exist
+        missing = [field for field in required_fields if field not in reader.fieldnames]
+        if missing:
+            logger.warning(f"Missing required fields in CSV: {missing}")
+            return None
+
         for row in reader:
-            # Clean the row keys and values
-            cleaned_row = {clean_value(key): clean_value(value) for key, value in row.items()}
-            cleaned_row = {k.replace('*', '').strip(): v for k, v in cleaned_row.items()}  # Clean keys again after values
+            cleaned_row = {
+                key.replace("*", "").strip(): clean_value(value)
+                for key, value in row.items()
+            }
 
             product_description = cleaned_row.get('Product Description', '')
             product_code = cleaned_row.get('Product Code', '').strip()
             fd1, fd2, fd3 = parse_fd_metadata(product_description)
 
-            # Use overrides if available
             if overrides and product_code in overrides:
                 fd1, fd2, fd3 = overrides[product_code]
 
-            # Prepare values for insertion, using safe_float for numeric fields
-            values = (
-                cleaned_row.get('Product Code'),
+            # Construct row values
+            values = [
+                product_code,
                 product_description,
-                fd1, fd2, fd3,
-                cleaned_row.get('Unit of Measure'),
-                cleaned_row.get('Supplier Code'),
-                safe_float(cleaned_row.get('Default Purchase Price')),
-                safe_float(cleaned_row.get('Sell Price Tier 1')),
-                safe_float(cleaned_row.get('Sell Price Tier 2')), 
-                safe_float(cleaned_row.get('Sell Price Tier 3')), 
-                safe_float(cleaned_row.get('Sell Price Tier 4')), 
-                safe_float(cleaned_row.get('Sell Price Tier 5')), 
-                safe_float(cleaned_row.get('Sell Price Tier 6')), 
-                safe_float(cleaned_row.get('Sell Price Tier 7')), 
-                safe_float(cleaned_row.get('Sell Price Tier 8')), 
-                safe_float(cleaned_row.get('Sell Price Tier 9')), 
-                safe_float(cleaned_row.get('Sell Price Tier 10')), 
-                safe_float(cleaned_row.get('Width')),
-                cleaned_row.get('Product Group'),
-                cleaned_row.get('Product Sub Group'),
-                cleaned_row.get('IsObsoleted'),
-            )
-            
-            # Check if the number of values matches the number of columns in the table
-            # take out the 3 friendly description fields because they're added at runtime, they're not in the csv
-            if len(values) - 3 != len(expected_headers):
-                raise UploadValidationError(
-                    f"Row has incorrect number of values. Expected {len(expected_headers)}, "
-                    f"got {len(values) - 3}. Product Code: {cleaned_row.get('Product Code')}"
-                )
+                fd1, fd2, fd3
+            ]
 
-            db_manager.execute_query('''
+            for sheet_col in required_fields:
+                val = cleaned_row.get(sheet_col)
+                db_col = spreadsheet_to_db[sheet_col]
+                if is_float_field(db_col):
+                    values.append(safe_float(val))
+                else:
+                    values.append(val)
+
+            placeholders = ", ".join(["?"] * len(values))
+            all_db_fields = ["ProductCode", "ProductDescription", "FriendlyDescription1", "FriendlyDescription2",
+                             "FriendlyDescription3"] + db_fields
+
+            sql = f'''
                 INSERT INTO unleashed_products (
-                    ProductCode, 
-                    ProductDescription, 
-                    FriendlyDescription1, FriendlyDescription2, FriendlyDescription3,
-                    UnitOfMeasure,  
-                    SupplierCode,
-                    DefaultPurchasePrice,
-                    SellPriceTier1, SellPriceTier2, SellPriceTier3, SellPriceTier4, SellPriceTier5, 
-                    SellPriceTier6, SellPriceTier7, SellPriceTier8, SellPriceTier9, SellPriceTier10,  
-                    Width,  
-                    ProductGroup, ProductSubGroup,  
-                    IsObsoleted
+                    {", ".join(all_db_fields)}
                 ) VALUES (
-                    ?, 
-                    ?, 
-                    ?, ?, ?,
-                    ?, 
-                    ?,
-                    ?,
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?,
-                    ?, 
-                    ?, ?, 
-                    ? 
+                    {placeholders}
                 )
-            ''', values)
+            '''
+            db_manager.execute_query(sql, values)
 
-    # Now, delete records where IsObsoleted='yes'
     db_manager.execute_query("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes'")
     db_manager.commit()
+    logger.debug("insert_unleashed_data: Complete")
 
-    
+
 def generate_supplier_product_code_report_list(db_manager: DatabaseManager):
     # Retrieve all supplier codes from the unleashed products table
     db_manager.execute_query('SELECT DISTINCT ProductCode FROM unleashed_products')

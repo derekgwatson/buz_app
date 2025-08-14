@@ -16,7 +16,7 @@ def upload(
         pricing_file_expected_headers: list[str],
         pricing_file_db_fields: list[str],
         unleashed_file: FileStorage,
-        unleashed_file_expected_headers: list[str],
+        unleashed_file_expected_headers: list[dict[str, str]],
         upload_folder: str,
         invalid_pkid: str,
         override_friendly_descriptions_id: str,
