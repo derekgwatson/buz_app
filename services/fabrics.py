@@ -1,6 +1,13 @@
 from services.data_processing import (get_all_fabrics, get_all_fabric_group_mappings, get_inventory_groups)
 from services.database import DatabaseManager
 from openpyxl import Workbook
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+UNLEASHED_SUPPLIER_CODE = "UNLEASHED"
+UNLEASHED_SUPPLIER_NAME = "Unleashed ERP"
 
 
 def get_fabric_grid_data(db_manager: DatabaseManager):
@@ -376,3 +383,43 @@ def get_duplicate_fabric_details(db_manager: DatabaseManager):
 
     return db_manager.execute_query(query)
 
+
+def get_or_create_supplier(db, supplier_code=UNLEASHED_SUPPLIER_CODE, supplier_name=UNLEASHED_SUPPLIER_NAME):
+    row = db.execute_query(
+        "SELECT id FROM suppliers WHERE supplier_code = ?",
+        (supplier_code,)
+    ).fetchone()
+    if row:
+        return row["id"]
+
+    now = datetime.utcnow()
+    db.insert_item("suppliers", {
+        "supplier_code": supplier_code,
+        "supplier": supplier_name,
+        "is_active": 1,
+        "created_at": now,
+        "updated_at": now,
+    })
+    new_row = db.execute_query(
+        "SELECT id FROM suppliers WHERE supplier_code = ?",
+        (supplier_code,)
+    ).fetchone()
+    logger.info(f"Created supplier '{supplier_name}' ({supplier_code}) with id={new_row['id']}")
+    return new_row["id"]
+
+
+def mark_unleashed_fabrics(db, unleashed_supplier_id: int):
+    # Set supplier_id for any fabric whose code matches Unleashed ProductCode after stripping leading '*'
+    db.execute_query(
+        """
+        UPDATE fabrics
+        SET supplier_id = ?
+        WHERE (supplier_id IS NULL OR supplier_id <> ?)
+          AND UPPER(supplier_product_code) IN (
+                SELECT UPPER(ltrim(ProductCode, '*'))
+                FROM unleashed_products
+                WHERE ProductCode IS NOT NULL AND TRIM(ProductCode) != ''
+          )
+        """,
+        (unleashed_supplier_id, unleashed_supplier_id)
+    )

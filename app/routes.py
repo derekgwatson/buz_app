@@ -1,7 +1,9 @@
 import tempfile
-from flask import Blueprint, current_app
-import os
+from flask import Blueprint, current_app, Response
 from flask import render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
+import os
+import io
+import zipfile
 from datetime import timezone
 
 import services.curtain_fabric_sync
@@ -10,6 +12,8 @@ from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 import logging
 from services.auth import auth
+from services.fabric_mapping_sync import sync_fabric_mappings
+from services.unleashed_sync import sync_unleashed_fabrics, build_sequential_code_provider
 
 
 # Create Blueprint
@@ -688,3 +692,107 @@ def curtain_fabric_sync():
         return render_template("curtain_fabric_sync.html", **result)
 
     return render_template("curtain_fabric_sync.html", column_titles=column_titles)
+
+
+@main_routes.route("/sync-fabric-mappings", methods=["GET"])
+def run_fabric_mapping_sync():
+    """
+    Run fabric mapping sync and return generated Buz upload file.
+    """
+    try:
+        output_dir = os.path.join(os.path.dirname(current_app.root_path), "uploads")
+        output_file = sync_fabric_mappings(
+            db_manager=g.db,
+            config_path=current_app.config.get("CONFIG_JSON_PATH", "config.json"),
+            output_dir=current_app.config.get("UPLOAD_OUTPUT_DIR", "uploads")
+        )
+
+        if not output_file:
+            return "No fabric mapping changes found.", 204  # or render a small HTML message
+
+        return send_file(
+            output_file,
+            as_attachment=True,
+            download_name=os.path.basename(output_file),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    finally:
+        g.db.close()
+
+
+def _read_config_paths():
+    # Fallbacks if you haven't set these in config.py
+    cfg_path = current_app.config.get("CONFIG_JSON_PATH", "config.json")
+    out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR", "uploads")
+    return cfg_path, out_dir
+
+
+@main_routes.route("/sync-unleashed", methods=["GET"])
+@auth.login_required
+def run_unleashed_sync():
+    """
+    Run Unleashed → Buz fabric sync.
+
+    Returns:
+      - Single Excel file (items or pricing) when only one exists
+      - ZIP containing both files when both exist
+      - 200 HTML with message when no changes
+    """
+    cfg_path, out_dir = _read_config_paths()
+
+    try:
+        # Build the code generator using config already loaded into the app
+        minimal_cfg = {
+            "unleashed_group_to_inventory_groups": current_app.config.get(
+                "unleashed_group_to_inventory_groups", {}
+            )
+        }
+        code_provider = build_sequential_code_provider(g.db, minimal_cfg, default_start=10000)
+
+        result = sync_unleashed_fabrics(
+            db=g.db,
+            config_path=cfg_path,          # sync reads headers etc. from this JSON file
+            output_dir=out_dir,
+            code_provider=code_provider,   # generates ROLL10000-style codes
+            price_provider=None,           # plug in later
+            pricing_tolerance=0.005
+        )
+
+        items_fp = result.get("items_file")
+        pricing_fp = result.get("pricing_file")
+
+        if not items_fp and not pricing_fp:
+            msg = (
+                "<h3>Unleashed Sync</h3>"
+                "<p>No inventory or pricing changes detected.</p>"
+                f"<p>Adds: {len(result.get('adds', []))}, "
+                f"Deletes: {len(result.get('deletes', []))}, "
+                f"Pricing rows: {result.get('pricing_count', 0)}</p>"
+            )
+            return Response(msg, mimetype="text/html", status=200)
+
+        if items_fp and not pricing_fp:
+            return send_file(
+                items_fp,
+                as_attachment=True,
+                download_name=os.path.basename(items_fp),
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        if pricing_fp and not items_fp:
+            return send_file(
+                pricing_fp,
+                as_attachment=True,
+                download_name=os.path.basename(pricing_fp),
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+        mem = io.BytesIO()
+        with zipfile.ZipFile(mem, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.write(items_fp, arcname=os.path.basename(items_fp))
+            zf.write(pricing_fp, arcname=os.path.basename(pricing_fp))
+        mem.seek(0)
+        return send_file(mem, as_attachment=True, download_name="buz_unleashed_sync.zip", mimetype="application/zip")
+
+    finally:
+        g.db.close()
