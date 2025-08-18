@@ -1,0 +1,78 @@
+{# templates/unleashed_sync.html #}
+{% extends "layout.html" %}
+
+{% block title %}Unleashed Sync{% endblock %}
+
+{% block head %}
+<style>
+  .ok { color:#0a7f36; }
+  .warn { color:#b54708; }
+  .err { color:#b42318; }
+  code { background:#f6f8fa; padding:2px 6px; border-radius:4px; }
+  details { margin-top:.5rem; }
+  form .btn { padding:.6rem 1rem; border:0; border-radius:.5rem; cursor:pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+  <h2>Unleashed Sync</h2>
+
+  {% if not ran %}
+    <p>This will compare Unleashed products to Buz and create upload files (adds/deletes, pricing if configured).</p>
+    <form method="post" action="{{ url_for('main_routes.sync_unleashed') }}">
+      <button class="btn" type="submit">▶ Run sync now</button>
+    </form>
+    <p class="warn" style="margin-top:8px;">Make sure no previous upload file is open in Excel.</p>
+  {% else %}
+    {% if error %}
+      <p class="err"><strong>Failed:</strong> {{ error }}</p>
+    {% else %}
+      <p class="ok"><strong>Success.</strong></p>
+    {% endif %}
+
+    <p>
+      Adds: <strong>{{ adds|length }}</strong>,
+      Deletes: <strong>{{ deletes|length }}</strong>,
+      Pricing rows: <strong>{{ pricing_count }}</strong>
+    </p>
+
+    {% if adds %}
+      <details>
+        <summary>Show first 50 add candidates</summary>
+        <ul>
+          {% for a in adds[:50] %}
+            <li><code>{{ a }}</code></li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+
+    {% if deletes %}
+      <details>
+        <summary>Show first 50 delete candidates</summary>
+        <ul>
+          {% for d in deletes[:50] %}
+            <li><code>{{ d }}</code></li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+
+    {% if files %}
+      <h3>Downloads</h3>
+      <ul>
+        {% for f in files %}
+          <li>
+            {{ f.label }}:
+            <a href="{{ url_for('main_routes.download_file', filename=f.filename) }}">{{ f.filename }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>No files were generated.</p>
+    {% endif %}
+
+    <p><a href="{{ url_for('main_routes.sync_unleashed') }}">Run again</a> •
+       <a href="{{ url_for('main_routes.homepage') }}">Back to home</a></p>
+  {% endif %}
+{% endblock %}

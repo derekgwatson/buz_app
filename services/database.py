@@ -199,14 +199,12 @@ def create_db_manager(db_file: str):
     """
     Creates a DatabaseManager instance with a static SQLite connection.
     """
-    db_connector = sqlite3.connect
-    db_params = {
-        "database": db_file,
-        "detect_types": sqlite3.PARSE_DECLTYPES
-    }
-
-    connection = db_connector(**db_params)
-    connection.row_factory = sqlite3.Row  # Enable dict-like row access
+    connection = sqlite3.connect(
+        db_file,
+        detect_types=sqlite3.PARSE_DECLTYPES,
+        check_same_thread=False
+    )
+    connection.row_factory = sqlite3.Row
     return DatabaseManager(connection)
 
 
@@ -376,6 +374,7 @@ def init_db(db_manager: DatabaseManager):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     supplier_code VARCHAR(255) NOT NULL,
                     supplier VARCHAR(255) NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1;
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -404,7 +403,16 @@ def init_db(db_manager: DatabaseManager):
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (fabric_id) REFERENCES fabrics (id) ON DELETE CASCADE
                 );
-            '''
+            ''',
+
+            "active_fabrics_view": '''
+                CREATE VIEW IF NOT EXISTS unleashed_products_fabric AS
+                    SELECT *
+                    FROM unleashed_products
+                    WHERE ProductSubGroup IS NOT NULL
+                      AND TRIM(ProductSubGroup) != ''
+                      AND LOWER(TRIM(ProductSubGroup)) != 'ignore';
+            ''',
         }
 
         for name, schema in tables.items():

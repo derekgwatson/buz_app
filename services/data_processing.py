@@ -77,65 +77,78 @@ def insert_unleashed_data(
     clear_unleashed_table(db_manager)
     logger.debug("insert_unleashed_data: Starting")
 
-    # Build spreadsheet→db field mapping
-    spreadsheet_to_db = {
-        f["spreadsheet_column"].strip(): f["database_field"]
-        for f in field_config
-    }
-    required_fields = list(spreadsheet_to_db.keys())
-    db_fields = list(spreadsheet_to_db.values())
+    # Build ordered mapping + required flags from field_config
+    # field_config items must look like:
+    #   {"spreadsheet_column": "Width", "database_field": "Width", "required": False}
+    mapping = []
+    for f in field_config:
+        sheet_col = f["spreadsheet_column"].strip()
+        db_col = f["database_field"]
+        required = bool(f.get("required", False))
+        mapping.append((sheet_col, db_col, required))
 
-    # Second pass: process rows
-    with open(file_path, 'r', encoding='utf-8-sig', newline='') as csvfile:
+    # For column order consistency
+    db_cols_ordered = [db for _, db, _ in mapping]
+    required_sheet_cols = [sc for sc, _, req in mapping if req]
+
+    with open(file_path, "r", encoding="utf-8-sig", newline="") as csvfile:
         reader = csv.DictReader(csvfile)
 
-        # Check all required fields exist
-        missing = [field for field in required_fields if field not in reader.fieldnames]
-        if missing:
-            logger.warning(f"Missing required fields in CSV: {missing}")
-            return None
+        # Validate required headers only
+        missing_headers = [col for col in required_sheet_cols if col not in reader.fieldnames]
+        if missing_headers:
+            msg = f"Missing required columns in CSV: {missing_headers}"
+            logger.error(msg)
+            raise UploadValidationError(msg)
 
         for row in reader:
+            # Clean header names (strip asterisks) + clean values
             cleaned_row = {
                 key.replace("*", "").strip(): clean_value(value)
                 for key, value in row.items()
             }
 
-            product_description = cleaned_row.get('Product Description', '')
-            product_code = cleaned_row.get('Product Code', '').strip()
-            fd1, fd2, fd3 = parse_fd_metadata(product_description)
+            product_description = cleaned_row.get("Product Description", "") or ""
+            product_code = (cleaned_row.get("Product Code", "") or "").strip()
 
+            fd1, fd2, fd3 = parse_fd_metadata(product_description)
             if overrides and product_code in overrides:
                 fd1, fd2, fd3 = overrides[product_code]
 
-            # Construct row values
+            # Build value list in the SAME order as columns
             values = [
                 product_code,
                 product_description,
-                fd1, fd2, fd3
+                fd1, fd2, fd3,
             ]
 
-            for sheet_col in required_fields:
-                val = cleaned_row.get(sheet_col)
-                db_col = spreadsheet_to_db[sheet_col]
+            for sheet_col, db_col, _required in mapping:
+                val = cleaned_row.get(sheet_col, None)
+                # If optional and missing, keep None to preserve alignment
                 if is_float_field(db_col):
-                    values.append(safe_float(val))
+                    values.append(safe_float(val) if val not in (None, "") else None)
                 else:
-                    values.append(val)
+                    values.append(val if val not in (None, "") else None)
+
+            all_db_fields = [
+                "ProductCode",
+                "ProductDescription",
+                "FriendlyDescription1",
+                "FriendlyDescription2",
+                "FriendlyDescription3",
+            ] + db_cols_ordered
 
             placeholders = ", ".join(["?"] * len(values))
-            all_db_fields = ["ProductCode", "ProductDescription", "FriendlyDescription1", "FriendlyDescription2",
-                             "FriendlyDescription3"] + db_fields
-
-            sql = f'''
+            sql = f"""
                 INSERT INTO unleashed_products (
                     {", ".join(all_db_fields)}
                 ) VALUES (
                     {placeholders}
                 )
-            '''
+            """
             db_manager.execute_query(sql, values)
 
+    # Remove obsoleted rows
     db_manager.execute_query("DELETE FROM unleashed_products WHERE IsObsoleted = 'Yes'")
     db_manager.commit()
     logger.debug("insert_unleashed_data: Complete")

@@ -1,0 +1,97 @@
+<!-- templates/unleashed_sync_progress.html -->
+{% extends "layout.html" %}
+{% block title %}Unleashed Sync Progress{% endblock %}
+{% block content %}
+<h1>Unleashed sync</h1>
+
+<div class="progress" style="height: 24px; margin: 12px 0;">
+  <div id="bar" class="progress-bar" role="progressbar" style="width:0%">0%</div>
+</div>
+
+<div id="status" class="alert alert-info" style="display:none;"></div>
+<pre id="log" style="background:#111;color:#eee;padding:12px;height:260px;overflow:auto;white-space:pre-wrap;margin-top:8px;"></pre>
+
+<div id="result" style="display:none; margin-top:16px;"></div>
+
+<script>
+(() => {
+  const jobId = "{{ job_id }}";
+  const bar = document.getElementById("bar");
+  const logEl = document.getElementById("log");
+  const statusEl = document.getElementById("status");
+  const resultEl = document.getElementById("result");
+
+  let seen = 0;   // how many log lines we've already rendered
+  let stopped = false;
+
+  const renderPct = (pct) => {
+    bar.style.width = pct + "%";
+    bar.textContent = pct + "%";
+  };
+
+  const appendLogs = (lines) => {
+    if (!Array.isArray(lines)) return;
+    for (let i = seen; i < lines.length; i++) {
+      logEl.textContent += (logEl.textContent ? "\n" : "") + lines[i];
+    }
+    seen = lines.length;
+    // keep scroll pinned to bottom
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  const showResult = (result) => {
+    if (!result) return;
+    // Expecting keys like items_file, pricing_file, adds, deletes, pricing_count...
+    let html = "<h3>Finished</h3>";
+    if (result.items_file) {
+      const fn = result.items_file.split("/").pop();
+      html += `<p><a class="btn btn-primary" href="/download/${fn}">Download items upload</a></p>`;
+    }
+    if (result.pricing_file) {
+      const fn = result.pricing_file.split("/").pop();
+      html += `<p><a class="btn btn-secondary" href="/download/${fn}">Download pricing upload</a></p>`;
+    }
+    resultEl.innerHTML = html || "<p>No files produced.</p>";
+    resultEl.style.display = "block";
+  };
+
+  async function poll() {
+    if (stopped) return;
+    try {
+      const res = await fetch(`/sync-unleashed/status/${jobId}`, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json(); // { pct, log, done, error, result }
+
+      renderPct(data.pct ?? 0);
+      appendLogs(data.log ?? []);
+
+      if (data.done) {
+        stopped = true;
+        if (data.error) {
+          statusEl.className = "alert alert-danger";
+          statusEl.textContent = "❌ " + data.error;
+          statusEl.style.display = "block";
+        } else {
+          renderPct(100);
+          statusEl.className = "alert alert-success";
+          statusEl.textContent = "✅ Completed.";
+          statusEl.style.display = "block";
+          showResult(data.result);
+        }
+        return;
+      }
+    } catch (e) {
+      // transient error; surface once and stop to avoid spinner-of-doom
+      statusEl.className = "alert alert-warning";
+      statusEl.textContent = "Lost connection while polling. Refresh to resume.";
+      statusEl.style.display = "block";
+      stopped = true;
+      return;
+    }
+    setTimeout(poll, 1200); // steady poll cadence
+  }
+
+  poll();
+})();
+</script>
+{% endblock %}

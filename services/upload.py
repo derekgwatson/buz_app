@@ -77,7 +77,6 @@ def upload(
             insert_unleashed_data(
                 db_manager=db_manager,
                 file_path=unleashed_file_path,
-                expected_headers=unleashed_file_expected_headers,
                 overrides=friendly_overrides
             )
         except UploadValidationError as e:

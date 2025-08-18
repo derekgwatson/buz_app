@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+{% block title %}Unleashed Sync{% endblock %}
+{% block content %}
+  <h2>Unleashed Sync</h2>
+  <p>Click GO to start a fresh sync.</p>
+  <form method="post" action="{{ url_for('main_routes.unleashed_sync_start') }}">
+    <button class="btn btn-primary">GO</button>
+  </form>
+
+
+<progress id="progressBar" max="100" value="0"></progress>
+<div id="progressPct">0%</div>
+<pre id="progressLog"></pre>
+
+<script>
+const jobId = "{{ job_id }}";
+const bar = document.getElementById("progressBar");
+const pctText = document.getElementById("progressPct");
+const logBox = document.getElementById("progressLog");
+
+function render(d) {
+  const pct = d.pct ?? 0;                 // <-- matches server key
+  if (bar) bar.value = pct;
+  if (pctText) pctText.textContent = pct + "%";
+  if (logBox) {
+    logBox.textContent = (d.log || []).join("\n");
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+  if (d.done) clearInterval(poller);
+}
+
+const poller = setInterval(async () => {
+  try {
+    const res = await fetch(`/sync-unleashed/status/${jobId}?t=${Date.now()}`, { cache: "no-store" });
+    render(await res.json());
+  } catch (e) { /* ignore and try again */ }
+}, 500);
+</script>
+
+
+{% endblock %}

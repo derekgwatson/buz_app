@@ -1,19 +1,57 @@
 import tempfile
-from flask import Blueprint, current_app
-import os
+from flask import Blueprint, current_app, abort
 from flask import render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
-from datetime import timezone
-
+import os
+from werkzeug.utils import safe_join
+from services.database import create_db_manager
 import services.curtain_fabric_sync
 from services.group_options_check import extract_codes_from_excel_flat_dedup
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
 import logging
 from services.auth import auth
+from services.fabric_mapping_sync import sync_fabric_mappings
+from services.unleashed_sync import sync_unleashed_fabrics, build_sequential_code_provider
+import threading
+import uuid
+from flask import jsonify
+from datetime import timezone
 
 
 # Create Blueprint
 main_routes = Blueprint('main_routes', __name__)
+
+
+# ---- Job store (single copy only) ----
+_JOBS = {}   # job_id -> {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+_JOBS_LOCK = threading.Lock()
+
+
+def _init_job(job_id: str):
+    with _JOBS_LOCK:
+        _JOBS[job_id] = {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+
+
+def _make_progress(job_id: str):
+    def progress(msg: str, pct: int | None = None):
+        MAX_LOG = 1000
+        with _JOBS_LOCK:
+            j = _JOBS.get(job_id)
+            if not j:
+                return
+            if msg:
+                j["log"].append(msg)
+                if len(j["log"]) > MAX_LOG:
+                    j["log"] = j["log"][-MAX_LOG:]
+            if pct is not None:
+                try:
+                    pct = max(0, min(100, int(pct)))
+                except Exception:
+                    pct = j["pct"]
+                if pct < j["pct"]:
+                    pct = j["pct"]  # don’t go backwards
+                j["pct"] = pct
+    return progress
 
 
 @auth.verify_password
@@ -77,13 +115,13 @@ def upload_route():
             ignored_groups=current_app.config["ignored_inventory_groups"]
         )
 
-        if 'error' in uploaded_files:
+        if uploaded_files is None:
+            flash('No files to upload')
+        elif isinstance(uploaded_files, dict) and 'error' in uploaded_files:
             flash(Markup(uploaded_files['error']), 'danger')
-        elif uploaded_files:
+        else:
             last_upload_times.update(uploaded_files)
             flash('Files successfully uploaded and data stored in the database')
-        else:
-            flash('No files to upload')
 
     # Render the upload page
     from services.data_processing import (
@@ -103,10 +141,12 @@ def upload_route():
 
 @main_routes.app_template_filter('datetimeformat')
 def datetimeformat(value):
-    if value:
-        # Convert to UTC and format as ISO 8601
-        return value.astimezone(timezone.utc).isoformat() + "Z"
-    return "N/A"
+    if not value:
+        return "N/A"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
 
 
 @main_routes.route('/upload_inventory_groups', methods=['POST'])
@@ -186,14 +226,28 @@ def delete_inventory_group(inventory_group_code):
     return redirect(url_for('main_routes.manage_inventory_groups'))
 
 
-@main_routes.route('/download/<filename>')
+@main_routes.route('/download/<path:filename>')
 @auth.login_required
 def download_file(filename):
-    file_path = os.path.join(current_app.config['upload_folder'], filename)
-    if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True)
-    else:
+    # Prefer UPLOAD_OUTPUT_DIR, fall back to upload_folder for backward compatibility
+    base_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config.get("upload_folder")
+    if not base_dir:
+        abort(500, description="No upload directory configured")
+
+    # Prevent path traversal
+    try:
+        file_path = safe_join(base_dir, filename)
+    except Exception:
+        abort(400, description="Invalid filename")
+
+    if not os.path.exists(file_path):
         flash('File not found.', 'warning')
+        # Either redirect somewhere sensible:
+        return redirect(url_for('main_routes.homepage'))
+        # Or: abort(404)
+
+    # Let Flask pick the mimetype; force download
+    return send_from_directory(base_dir, filename, as_attachment=True)
 
 
 @main_routes.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
@@ -258,8 +312,8 @@ def generate_codes():
                 raise ValueError("Count must be greater than 0.")
             ids = generate_multiple_unique_ids(count)
         except ValueError as e:
-            flash('Error {e}')
-            return
+            flash(f'Error: {e}', 'danger')
+            return render_template('show_generated_ids.html')
 
         return render_template('show_generated_ids.html', ids=ids)
 
@@ -589,7 +643,9 @@ def pricing_update():
     # If GET request
     return render_template('pricing_result.html', ran_update=False)
 
+
 @main_routes.route('/unleashed', methods=['GET'])
+@auth.login_required
 def unleashed_demo():
     from services.unleashed_api import UnleashedAPIClient  # Adjust based on your file name
 
@@ -691,3 +747,193 @@ def curtain_fabric_sync():
         return render_template("curtain_fabric_sync.html", **result)
 
     return render_template("curtain_fabric_sync.html", column_titles=column_titles)
+
+
+@main_routes.route("/sync-fabric-mappings", methods=["GET"])
+def run_fabric_mapping_sync():
+    """
+    Run fabric mapping sync and return generated Buz upload file.
+    """
+    try:
+        output_dir = os.path.join(os.path.dirname(current_app.root_path), "uploads")
+        output_file = sync_fabric_mappings(
+            db_manager=g.db,
+            config_path=current_app.config.get("CONFIG_JSON_PATH", "config.json"),
+            output_dir=current_app.config.get("UPLOAD_OUTPUT_DIR", "uploads")
+        )
+
+        if not output_file:
+            return "No fabric mapping changes found.", 204  # or render a small HTML message
+
+        return send_file(
+            output_file,
+            as_attachment=True,
+            download_name=os.path.basename(output_file),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    finally:
+        g.db.close()
+
+
+def _read_config_paths():
+    # Fallbacks if you haven't set these in config.py
+    cfg_path = current_app.config.get("CONFIG_JSON_PATH", "config.json")
+    out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR", "uploads")
+    return cfg_path, out_dir
+
+
+# /app/routes.py
+@main_routes.route("/sync-unleashed-old", methods=["GET", "POST"])
+@auth.login_required
+def sync_unleashed():
+    """
+    GET: show a landing page with a 'Run Sync' button.
+    POST: run the sync and render results + download links.
+    """
+    cfg_path = current_app.config.get("CONFIG_JSON_PATH", "config.json")
+    out_dir  = current_app.config.get("UPLOAD_OUTPUT_DIR", "uploads")
+
+    if request.method == "GET":
+        # Just render the landing page; nothing runs yet
+        return render_template("unleashed_sync.html", ran=False, files=[], adds=[], deletes=[], pricing_count=0)
+
+    # POST → run the sync
+    minimal_cfg = {
+        "unleashed_group_to_inventory_groups": current_app.config.get(
+            "unleashed_group_to_inventory_groups", {}
+        )
+    }
+
+    try:
+        code_provider = build_sequential_code_provider(g.db, minimal_cfg, default_start=10000)
+
+        result = sync_unleashed_fabrics(
+            db=g.db,
+            config_path=cfg_path,
+            output_dir=out_dir,
+            code_provider=code_provider,
+            price_provider=None,           # plug in later
+            pricing_tolerance=0.005
+        )
+
+        items_fp   = result.get("items_file")
+        pricing_fp = result.get("pricing_file")
+
+        files = []
+        if items_fp and os.path.exists(items_fp):
+            files.append({
+                "label": "Items upload",
+                "filename": os.path.basename(items_fp),
+            })
+        if pricing_fp and os.path.exists(pricing_fp):
+            files.append({
+                "label": "Pricing upload",
+                "filename": os.path.basename(pricing_fp),
+            })
+
+        return render_template(
+            "unleashed_sync.html",
+            ran=True,
+            error=None,
+            adds=result.get("adds", []),
+            deletes=result.get("deletes", []),
+            pricing_count=result.get("pricing_count", 0),
+            files=files,
+        )
+    except Exception as e:
+        logging.exception("Unleashed sync failed")
+        return render_template(
+            "unleashed_sync.html",
+            ran=True,
+            error=str(e),
+            adds=[],
+            deletes=[],
+            pricing_count=0,
+            files=[],
+        ), 500
+    finally:
+        try:
+            g.db.close()
+        except Exception:
+            pass
+
+
+@main_routes.route("/sync-unleashed", methods=["GET"])
+@auth.login_required
+def unleashed_sync_landing():
+    # just render the landing with a GO button
+    return render_template("unleashed_sync_run.html")
+
+
+@main_routes.route("/sync-unleashed/start", methods=["POST"])
+@auth.login_required
+def unleashed_sync_start():
+    job_id = str(uuid.uuid4())
+    _init_job(job_id)
+
+    db_path  = current_app.config["database"]
+    cfg_path = current_app.config.get("CONFIG_JSON_PATH", "config.json")
+    out_dir  = current_app.config.get("UPLOAD_OUTPUT_DIR", current_app.config.get("upload_folder"))
+    minimal_cfg = {
+        "unleashed_group_to_inventory_groups": current_app.config.get("unleashed_group_to_inventory_groups", {})
+    }
+    progress = _make_progress(job_id)
+
+    def _runner(db_path=db_path, cfg_path=cfg_path, out_dir=out_dir, minimal_cfg=minimal_cfg):
+        db = create_db_manager(db_path)
+        try:
+            progress("Starting…", 1)
+            code_provider = build_sequential_code_provider(db, minimal_cfg, default_start=10000)
+            result = sync_unleashed_fabrics(
+                db=db,
+                config_path=cfg_path,
+                output_dir=out_dir,
+                code_provider=code_provider,
+                price_provider=None,
+                pricing_tolerance=0.005,
+                progress=progress,
+            )
+            with _JOBS_LOCK:
+                j = _JOBS.get(job_id)
+                if j is not None:
+                    j["result"] = result
+        except Exception as e:
+            logging.exception("Unleashed sync failed")
+            with _JOBS_LOCK:
+                j = _JOBS.get(job_id)
+                if j is not None:
+                    j["error"] = str(e)
+        finally:
+            with _JOBS_LOCK:
+                j = _JOBS.get(job_id)
+                if j is not None:
+                    j["done"] = True
+                    # ensure progress finishes at 100 on completion
+                    if j["pct"] < 100 and j["error"] is None:
+                        j["pct"] = 100
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    threading.Thread(target=_runner, daemon=True).start()
+    return redirect(url_for("main_routes.unleashed_sync_progress", job_id=job_id))
+
+
+@main_routes.route("/sync-unleashed/progress/<job_id>", methods=["GET"])
+@auth.login_required
+def unleashed_sync_progress(job_id):
+    if job_id not in _JOBS:
+        flash("Unknown job id.", "warning")
+        return redirect(url_for("main_routes.unleashed_sync_landing"))
+    return render_template("unleashed_sync_progress.html", job_id=job_id)
+
+
+@main_routes.route("/sync-unleashed/status/<job_id>", methods=["GET"])
+@auth.login_required
+def unleashed_sync_status(job_id):
+    with _JOBS_LOCK:
+        data = _JOBS.get(job_id) or {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+    resp = jsonify(data)  # keys: pct, log, done, error, result
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
