@@ -374,7 +374,7 @@ def init_db(db_manager: DatabaseManager):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     supplier_code VARCHAR(255) NOT NULL,
                     supplier VARCHAR(255) NOT NULL,
-                    is_active INTEGER NOT NULL DEFAULT 1;
+                    is_active INTEGER NOT NULL DEFAULT 1,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );

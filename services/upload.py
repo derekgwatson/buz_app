@@ -5,6 +5,22 @@ from werkzeug.datastructures import FileStorage
 from services.database import DatabaseManager
 import os
 from services.exceptions import UploadValidationError
+from openpyxl.utils import get_column_letter
+
+
+def auto_size_columns(ws):
+    """Resize columns in a worksheet to fit contents."""
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column  # 1-based index
+        for cell in col:
+            try:
+                if cell.value:
+                    max_length = max(max_length, len(str(cell.value)))
+            except Exception:
+                pass
+        adjusted_width = (max_length + 2)  # padding
+        ws.column_dimensions[get_column_letter(column)].width = adjusted_width
 
 
 def upload(
@@ -16,7 +32,7 @@ def upload(
         pricing_file_expected_headers: list[str],
         pricing_file_db_fields: list[str],
         unleashed_file: FileStorage,
-        unleashed_file_expected_headers: list[dict[str, str]],
+        unleashed_field_config: list[dict[str, str]],
         upload_folder: str,
         invalid_pkid: str,
         override_friendly_descriptions_id: str,
@@ -77,7 +93,8 @@ def upload(
             insert_unleashed_data(
                 db_manager=db_manager,
                 file_path=unleashed_file_path,
-                overrides=friendly_overrides
+                field_config=unleashed_field_config,
+                overrides=friendly_overrides,
             )
         except UploadValidationError as e:
             return {'error': f"Unleashed file upload failed: {e.message}"}

@@ -1,8 +1,6 @@
 import tempfile
-from flask import Blueprint, current_app, abort
-from flask import render_template, request, url_for, flash, redirect, send_file, g, send_from_directory
-import os
-from werkzeug.utils import safe_join
+from flask import Blueprint
+from flask import render_template, request, g, send_from_directory
 from services.database import create_db_manager
 import services.curtain_fabric_sync
 from services.group_options_check import extract_codes_from_excel_flat_dedup
@@ -16,6 +14,9 @@ import threading
 import uuid
 from flask import jsonify
 from datetime import timezone
+from flask import current_app, abort, flash, redirect, url_for, send_file
+from werkzeug.utils import safe_join
+import os
 
 
 # Create Blueprint
@@ -107,7 +108,7 @@ def upload_route():
             pricing_file_expected_headers=pricing_file_expected_headers,
             pricing_file_db_fields=pricing_file_db_fields,
             unleashed_file=unleashed_file,
-            unleashed_file_expected_headers=current_app.config["headers"]["unleashed_fields"],
+            unleashed_field_config=current_app.config["headers"]["unleashed_fields"],
             upload_folder=current_app.config['upload_folder'],
             invalid_pkid=current_app.config['invalid_pkid'],
             override_friendly_descriptions_id=current_app.config["spreadsheets"]["friendly_descriptions"]["id"],
@@ -230,24 +231,35 @@ def delete_inventory_group(inventory_group_code):
 @auth.login_required
 def download_file(filename):
     # Prefer UPLOAD_OUTPUT_DIR, fall back to upload_folder for backward compatibility
-    base_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config.get("upload_folder")
+    base_dir = (
+        current_app.config.get("UPLOAD_OUTPUT_DIR")
+        or current_app.config.get("upload_folder")
+    )
     if not base_dir:
         abort(500, description="No upload directory configured")
 
-    # Prevent path traversal
+    base_dir = os.path.abspath(base_dir)
+    if not os.path.isdir(base_dir):
+        abort(500, description="Configured upload directory does not exist")
+
+    # Build a safe absolute path
+    file_path = ""
     try:
         file_path = safe_join(base_dir, filename)
     except Exception:
+        # Newer Werkzeug raises on bad paths
         abort(400, description="Invalid filename")
 
-    if not os.path.exists(file_path):
-        flash('File not found.', 'warning')
-        # Either redirect somewhere sensible:
-        return redirect(url_for('main_routes.homepage'))
-        # Or: abort(404)
+    # Older Werkzeug may return None on bad paths
+    if not file_path:
+        abort(400, description="Invalid filename")
 
-    # Let Flask pick the mimetype; force download
-    return send_from_directory(base_dir, filename, as_attachment=True)
+    if not os.path.isfile(file_path):
+        flash('File not found.', 'warning')
+        return redirect(url_for('main_routes.homepage'))  # or abort(404)
+
+    # Send the exact file path; let Flask infer mimetype and force download
+    return send_file(file_path, as_attachment=True)
 
 
 @main_routes.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])

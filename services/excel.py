@@ -230,7 +230,7 @@ class OpenPyXLFileHandler:
         if self.workbook is None:
             raise ValueError("No workbook is loaded or created to save.")
 
-        if not self.workbook.sheets:
+        if not self.workbook.worksheets:
             logger.info("No pricing updates found. No workbook created.")
             return None  # Optional: return None to indicate no file was saved
 
@@ -321,7 +321,7 @@ class OpenPyXLFileHandler:
         }
         return cls.from_sheets_data(sheets_data, sheets_header_data)
 
-    def clean_for_upload(cls, db_manager: DatabaseManager, allowed_sheets: list[str], show_only_valid_unleashed=False):
+    def clean_for_upload(self, db_manager: DatabaseManager, allowed_sheets: list[str], show_only_valid_unleashed=False):
         """
         Clean the workbook:
         - Remove sheets not in allowed_sheets
@@ -337,9 +337,9 @@ class OpenPyXLFileHandler:
         )
 
         # Step 1: Remove unwanted sheets
-        for sheet_name in cls.get_sheet_names()[:]:  # copy to avoid mutation issues
+        for sheet_name in self.get_sheet_names()[:]:  # copy to avoid mutation issues
             if sheet_name not in allowed_sheets:
-                del cls.workbook[sheet_name]
+                del self.workbook[sheet_name]
 
         # Step: add UL tab with ProductCode and ProductDescription
         ul_data = db_manager.execute_query("""
@@ -348,10 +348,10 @@ class OpenPyXLFileHandler:
             WHERE ProductCode IS NOT NULL
         """).fetchall()
 
-        if "UL" in cls.get_sheet_names():
-            del cls.workbook["UL"]
+        if "UL" in self.get_sheet_names():
+            del self.workbook["UL"]
 
-        ul_sheet = cls.workbook.create_sheet("UL")
+        ul_sheet = self.workbook.create_sheet("UL")
         ul_sheet.cell(row=1, column=1, value="ProductCode")
         ul_sheet.cell(row=1, column=2, value="ProductDescription")
 
@@ -363,7 +363,7 @@ class OpenPyXLFileHandler:
         valid_codes = {str(row["ProductCode"]).strip().upper() for row in ul_data}
 
         # Step 2 & 3: Process remaining sheets
-        for sheet in cls.workbook.worksheets:
+        for sheet in self.workbook.worksheets:
             if sheet.title == "UL":
                 continue
 
@@ -416,7 +416,7 @@ class OpenPyXLFileHandler:
 
         # Collect empty sheets based on A3
         empty_sheets = []
-        for sheet in cls.workbook.worksheets:
+        for sheet in self.workbook.worksheets:
             if sheet.title == "UL":
                 continue
             if sheet["A3"].value is None or str(sheet["A3"].value).strip() == "":
@@ -424,7 +424,7 @@ class OpenPyXLFileHandler:
 
         # Delete empty sheets
         for sheet_name in empty_sheets:
-            del cls.workbook[sheet_name]
+            del self.workbook[sheet_name]
 
     def extract_motorisation_data(self, db_manager: DatabaseManager) -> tuple[list[dict], list[str]]:
         """
@@ -552,3 +552,68 @@ class OpenPyXLFileHandler:
             })
 
         return result, pricing_fields
+
+    def _autosize_worksheet(self, ws, header_row: int = 1, min_width: int = 8, max_width: int = 60) -> None:
+        """Resize columns based on max content length (best-effort)."""
+        for col_cells in ws.columns:
+            letter = get_column_letter(col_cells[0].column)
+            # Skip if already hidden
+            if ws.column_dimensions[letter].hidden:
+                continue
+
+            max_len = 0
+            for cell in col_cells:
+                v = cell.value
+                if v is None:
+                    continue
+                l = len(str(v))
+                if l > max_len:
+                    max_len = l
+
+            width = min(max(max_len + 2, min_width), max_width)
+            ws.column_dimensions[letter].width = width
+
+    def _hide_columns_by_header(self, ws, headers_to_hide: set[str], header_row: int = 1) -> None:
+        """Hide columns by matching header text in the given header row."""
+        header_map = {}
+        for col_idx in range(1, ws.max_column + 1):
+            raw = ws.cell(row=header_row, column=col_idx).value
+            name = (str(raw).strip().rstrip('*')) if raw is not None else ""
+            header_map[name] = get_column_letter(col_idx)
+
+        for name in headers_to_hide:
+            letter = header_map.get(name)
+            if letter:
+                ws.column_dimensions[letter].hidden = True
+
+    def _hide_columns_by_letter(self, ws, letters: set[str]) -> None:
+        """Hide columns by Excel letters (e.g., {'A', 'AK'})."""
+        for letter in letters:
+            ws.column_dimensions[letter].hidden = True
+
+    def apply_post_formatting(
+            self,
+            *,
+            autosize: bool = True,
+            header_row: int = 1,
+            hide_by_header: set[str] | None = None,
+            hide_by_letter: set[str] | None = None
+    ) -> None:
+        """
+        Apply formatting to all sheets in the current workbook.
+        - Optionally hide columns by header or letter
+        - Optionally autosize all visible columns
+        """
+        if not self.workbook:
+            raise ValueError("Workbook not loaded.")
+
+        hide_by_header = hide_by_header or set()
+        hide_by_letter = hide_by_letter or set()
+
+        for ws in self.workbook.worksheets:
+            if hide_by_header:
+                self._hide_columns_by_header(ws, hide_by_header, header_row=header_row)
+            if hide_by_letter:
+                self._hide_columns_by_letter(ws, hide_by_letter)
+            if autosize:
+                self._autosize_worksheet(ws, header_row=header_row)
