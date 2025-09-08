@@ -425,10 +425,6 @@
                 "database_field": "ProductDescription"
             },
             {
-                "spreadsheet_column": "Notes",
-                "database_field": "Notes"
-            },
-            {
                 "spreadsheet_column": "Unit of Measure",
                 "database_field": "UnitOfMeasure"
             },
