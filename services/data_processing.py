@@ -1,7 +1,7 @@
 import re
 from services.database import DatabaseManager
-from datetime import datetime
 import logging
+from datetime import datetime
 
 
 # Configure logging
@@ -536,3 +536,22 @@ def get_all_fabrics(db_manager: DatabaseManager):
     """
     return db_manager.execute_query(query).fetchall()
 
+
+def get_last_upload_time(db, table_name: str):
+    row = db.execute_query(
+        "SELECT last_upload FROM upload_history WHERE table_name = ?",
+        (table_name,)
+    ).fetchone()
+    return row["last_upload"] if row else None
+
+
+def mark_last_upload_time(db, table_name: str):
+    db.execute_query(
+        """
+        INSERT INTO upload_history (table_name, last_upload)
+        VALUES (?, CURRENT_TIMESTAMP)
+        ON CONFLICT(table_name) DO UPDATE SET last_upload = excluded.last_upload
+        """,
+        (table_name,),
+        auto_commit=True
+    )

@@ -98,7 +98,4 @@ def create_app(config_name: str = ""):
     # CLI
     app.cli.add_command(init_db_command)  # type: ignore
 
-    #for r in app.url_map.iter_rules():
-    #    print(r.rule, '->', r.endpoint, r.methods)
-
     return app

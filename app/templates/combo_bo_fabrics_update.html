@@ -6,6 +6,24 @@
 
 <h2>Combo Blockout Fabrics Group Options Updater</h2>
 
+{% if last_inventory_upload %}
+  <p class="small">
+    <span class="label label-info">inventory_items updated:</span>
+    <strong>{{ last_inventory_upload|datetimeformat }}</strong>
+    {% if stale_inventory %}
+      <span class="label label-warning">stale</span>
+      <a href="{{ url_for('main_routes.upload_route') }}" class="btn btn-xs btn-warning" style="margin-left:8px;">
+        Go to Upload
+      </a>
+    {% endif %}
+  </p>
+{% else %}
+  <div class="alert alert-warning">
+    We don’t have a recorded <code>inventory_items</code> upload time. Please upload items first.
+    <a href="{{ url_for('main_routes.upload_route') }}" class="btn btn-xs btn-warning" style="margin-left:8px;">Upload</a>
+  </div>
+{% endif %}
+
 <form method="post" enctype="multipart/form-data" class="mb-4">
   <div class="mb-3">
     <label for="group_options_file" class="form-label">Upload Group Options File</label>

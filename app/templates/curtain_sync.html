@@ -1,0 +1,134 @@
+{% extends "layout.html" %}
+{% block title %}Curtain Sync{% endblock %}
+{% block content %}
+<div class="container">
+  <h3>Curtain Sync</h3>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat,msg in messages %}
+        <div class="alert alert-{{cat}}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if last_inventory_upload %}
+    <p>
+      <strong>Last inventory upload:</strong>
+      {{ last_inventory_upload|datetimeformat }}
+      (warn if older than {{ stale_threshold_hours }}h)
+    </p>
+  {% else %}
+    <p><em>No inventory upload timestamp found.</em></p>
+  {% endif %}
+
+  {% if job_id %}
+    {# --- Progress mode --- #}
+    <div class="card">
+      <div class="card-body">
+        <h4 class="card-title">Curtain Sync is running…</h4>
+        <div class="progress my-3" style="height: 20px;">
+          <div id="bar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+        </div>
+        <pre id="log" class="bg-dark text-light p-2"
+             style="height: 250px; overflow:auto; white-space: pre-wrap;"></pre>
+      </div>
+    </div>
+
+  <script>
+    const bar = document.getElementById('bar');
+    const logBox = document.getElementById('log');
+
+    async function poll() {
+      try {
+        const res = await fetch(
+          '{{ url_for("main_routes.curtain_sync_status", job_id=job_id) }}',
+          { cache: 'no-store', credentials: 'same-origin' }
+        );
+        if (!res.ok) throw new Error('Status ' + res.status);
+        const j = await res.json();
+
+        bar.style.width = (j.pct || 0) + '%';
+        bar.textContent = (j.pct || 0) + '%';
+        logBox.textContent = (j.log || []).join('\n');
+
+        if (j.done) {
+          if (j.error) {
+            logBox.textContent += '\n\n❌ ' + j.error;
+          } else {
+            location.reload();
+          }
+          return;
+        }
+      } catch (e) {
+        console.error(e);
+        logBox.textContent += '\n[poll error] ' + e.message;
+      }
+      setTimeout(poll, 1000);
+    }
+    poll();
+  </script>
+
+  {% elif not ran %}
+    {# --- Initial GET: show Run button --- #}
+    <form action="{{ url_for('main_routes.curtain_sync_start') }}" method="post">
+      <button class="btn btn-success">Run Curtain Sync</button>
+    </form>
+
+  {% else %}
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% else %}
+      <p>
+        <strong>Elapsed:</strong> {{ '%.1f'|format(elapsed_sec or 0) }}s
+        {% if summary %}
+          | <strong>Summary:</strong>
+          A {{ summary.A or 0 }}, E {{ summary.E or 0 }}, D {{ summary.D or 0 }}
+        {% endif %}
+      </p>
+      {% if files %}
+        <p>
+          {% for f in files %}
+            <a class="btn btn-primary" href="{{ url_for('main_routes.download_file', filename=f.filename) }}">{{ f.label }}</a>
+          {% endfor %}
+        </p>
+      {% endif %}
+
+      {% if change_log and change_log|length > 0 %}
+        <h4>Changes</h4>
+        <div style="max-height: 420px; overflow:auto;">
+          <table class="table table-condensed table-bordered">
+            <thead>
+              <tr>
+                <th>Tab</th>
+                <th>Operation</th>
+                <th>Code</th>
+                <th>Description</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in change_log %}
+              <tr>
+                <td>{{ row.Tab }}</td>
+                <td>{{ row.Operation }}</td>
+                <td>{{ row.Code }}</td>
+                <td>{{ row.Description }}</td>
+                <td>{{ row.Reason }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p>No changes this run.</p>
+      {% endif %}
+    {% endif %}
+
+    <hr>
+    <form method="post" action="/curtain-sync/start">
+      <button class="btn btn-default">Run Again</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,211 +1,737 @@
-import logging
+# services/curtain_sync.py
+# DB-driven Curtain sync: reads inventory & pricing from DB, Google from XLSX (for now)
+# Writes: items_upload.xlsx, pricing_upload.xlsx, change_log.csv
+
+import sys
+import re
+import os
+import time
+import pandas as pd
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from collections import Counter
+from openpyxl import Workbook
+from typing import Any, Mapping
+
+# =========================
+# Config: fixed curtain tabs + product names
+# =========================
+CURTAIN_TABS = ["CRTWT", "CRTNT"]
+PRODUCT_NAME_BY_TAB = {
+    "CRTWT": "Curtain and Track",
+    "CRTNT": "Curtain Only",
+}
+
+# Google sheet settings
+GS_TAB = "ML new"
+COL_BRAND   = "Brand Name"
+COL_FABRIC  = "Fabric Name"
+COL_COLOUR  = "Colour"
+COL_WIDTH   = "Width (cm)"
+COL_DIR     = "Direction"
+COL_REPEAT  = "Vertical Pattern Repeat Size (cm)"
+COL_COST    = "Cost to DD per metre ROLL (ex GST)"
+COL_SELL    = "Proposed NEW Price"
+COL_EFF     = "Effective from"  # validated but not used for pricing date anymore
+
+# Inventory (items) headers (Excel-style names we output)
+INV_COL_PKID = "PkId"
+INV_COL_CODE    = "Code*"
+INV_COL_TAXRATE = "Tax Rate"
+INV_COL_DESCN1  = "DescnPart1 (Material)"
+INV_COL_DESCN2  = "DescnPart2 (Material Types)"
+INV_COL_DESCN3  = "DescnPart3 (Colour)"
+INV_COL_DESC    = "Description*"
+INV_COL_OP      = "Operation"
+INV_COL_ACTIVE  = "Active"
+INV_COL_PACKSZ  = "Custom Var 1 (PackSize)"    # repeat (mm)
+INV_COL_PACKOPT = "Custom Var 2 (PackOpt)"     # width (mm)
+INV_COL_PACKTYPE= "Custom Var 3 (PackType)"    # direction (C/B/D)
+
+# Pricing headers (logical)
+PRICE_COL_CODE   = "Inventory Code"
+PRICE_COL_DESC   = "Description"
+PRICE_COL_EFF    = "Date From"
+PRICE_COL_OP     = "Operation"
+PRICE_COL_SELL_W = "SellLMWide"
+PRICE_COL_SELL_H = "SellLMHeight"
+PRICE_COL_COST_W = "CostLMWide"
+PRICE_COL_COST_H = "CostLMHeight"
+PKID_COL         = "PkId"   # present in pricing template (must be blank)
 
 
-logger = logging.getLogger(__name__)
+NEW_FABRIC_EFF_DATE_STR = "01/01/2020"
 
 
-# Explanation:
-# We group rows under keys in the 'changes' dictionary, one per inventory group code (e.g., CRTWT, CRTNT).
-# This ensures the output Excel file has separate tabs per group.
+# Progress logging
+VERBOSE = True
+PROG_EVERY = 250
+t0 = time.perf_counter()
 
 
-def build_sheet_dict(sheet_data, num_header_rows=1, column_titles=None):
-    sheet_dict = {}
-    headers = {}
-
-    for idx, row in enumerate(sheet_data):
-        if idx == num_header_rows - 1 and column_titles:
-            # Build map of sheet column name → index
-            headers = {col.strip(): i for i, col in enumerate(row)}
-            continue
-        if idx < num_header_rows or not headers:
-            continue
-
-        row_data = {}
-        try:
-            for key, sheet_col_name in column_titles.items():
-                col_index = headers.get(sheet_col_name)
-                if col_index is not None and col_index < len(row):
-                    row_data[key] = row[col_index].strip()
-                else:
-                    row_data[key] = ''
-        except Exception:
-            continue  # If anything goes wrong, skip this row
-
-        code = row_data.get("code")
-        if not code:
-            continue
-
-        sheet_dict[code] = {
-            **row_data,
-            'raw_row': row
-        }
-
-    return sheet_dict
+def log(msg="", end="\n"):
+    if VERBOSE:
+        print(msg, end=end); sys.stdout.flush()
 
 
-def build_buz_dict(db_rows):
-    buz_dict = {}
-    for row in db_rows:
-        group_code = row['inventory_group_code'].strip()
-        if group_code not in ('CRTWT', 'CRTNT'):
-            continue
-        code = row['SupplierProductCode'].strip()
-        buz_dict[code] = dict(row)
-    return buz_dict
+# ---------- Helpers ----------
+def _headers_from_config(headers_cfg: dict, key: str) -> list[str]:
+    """Return the ordered 'spreadsheet_column' list for a given config block."""
+    return [h["spreadsheet_column"] for h in headers_cfg[key]]
 
 
-def compare_fabrics_by_code(sheet_dict, buz_dict):
-    new, updated, removed = [], [], []
-
-    for code, sheet_item in sheet_dict.items():
-        if code not in buz_dict:
-            new.append(sheet_item)
-        else:
-            buz_item = buz_dict[code]
-            if (
-                sheet_item['brand'] != buz_item['DescnPart1'] or
-                sheet_item['fabric_name'] != buz_item['DescnPart2'] or
-                sheet_item['colour'] != buz_item['DescnPart3']
-            ):
-                updated.append(sheet_item)
-
-    for code, buz_item in buz_dict.items():
-        if code not in sheet_dict:
-            removed.append(buz_item)
-
-    return new, updated, removed
+def _normalize_items_columns_for_config(df, items_headers: list[str]):
+    """
+    Our in-memory items DF uses 'Code*' and 'Description*'.
+    Config uses 'Code' and 'Description'. Rename to match config headers.
+    """
+    rename_map = {}
+    if "Code*" in df.columns and "Code" in items_headers:
+        rename_map["Code*"] = "Code"
+    if "Description*" in df.columns and "Description" in items_headers:
+        rename_map["Description*"] = "Description"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    return df
 
 
-def prepare_item_changes_dict(new_items, updated_items, removed_items):
-    changes = {}
+def to_mm_from_cm(val):
+    s = str(val).strip() if not pd.isna(val) else ""
+    if not s: return ""
+    try:
+        cm = float(s)
+        return str(int(round(cm * 10)))  # cm → mm
+    except Exception:
+        return ""
 
-    for item in new_items:
-        group = 'CRTWT' if item.get('inventory_group_code') == 'CRTWT' else 'CRTNT'
-        row_data = {
-            'PkId': '',
-            'Operation': 'A',
-            'SupplierProductCode': item['code'],
-            'Supplier': item['brand'],
-            'DescnPart1': item['brand'],
-            'DescnPart2': item['fabric_name'],
-            'DescnPart3': item['colour'],
-            'CustomVar1': float(item['raw_row'][7]) * 10 if item['raw_row'][7] else '',
-            'CustomVar2': float(item['raw_row'][5]) * 10 if item['raw_row'][5] else '',
-            'CustomVar3': item['raw_row'][6]
-        }
-        if group not in changes:
-            changes[group] = []
-        changes[group].append(row_data)
+def norm_dir_first_letter(val):
+    s = str(val or "").strip()
+    if not s:
+        return ""
+    return s[0].upper()  # B / C / D
 
-    for item in updated_items:
-        group = str(item.get('inventory_group_code', 'UNKNOWN'))
-        row_data = dict(item)
-        row_data['Operation'] = 'E'
-        if group not in changes:
-            changes[group] = []
-        changes[group].append(row_data)
+def parse_eff_date_ddmmyyyy_or_blank(s):
+    try:
+        dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
+        if pd.isna(dt): return ""
+        return dt.strftime("%d/%m/%Y")
+    except Exception:
+        return ""
 
-    for item in removed_items:
-        group = str(item.get('inventory_group_code', 'UNKNOWN'))
-        row_data = dict(item)
-        row_data['Operation'] = 'D'
-        if group not in changes:
-            changes[group] = []
-        changes[group].append(row_data)
+def build_key(p1, p2, p3):
+    return f"{str(p1).strip().lower()}||{str(p2).strip().lower()}||{str(p3).strip().lower()}"
 
-    return changes
+def next_code_for_group(existing_codes, group_prefix, start=10000):
+    pat = re.compile(rf"^{re.escape(group_prefix)}(\d+)$")
+    max_seen = start - 1
+    for c in existing_codes:
+        m = pat.match(str(c).strip())
+        if m:
+            try:
+                n = int(m.group(1))
+                if n > max_seen:
+                    max_seen = n
+            except:
+                pass
+    return f"{group_prefix}{max_seen+1}"[:20]
 
+def to_title_case(s: str) -> str:
+    s = str(s).strip()
+    return s.title() if s else ""
 
-def prepare_pricing_changes(sheet_dict, buz_pricing):
-    changes = {}
-    tolerance = 0.005  # 0.5%
+def colour_for_parts(p3: str) -> str:
+    raw = str(p3).strip()
+    if not raw:
+        return ""
+    if raw.lower() == "to be confirmed":
+        return "Colour To Be Confirmed"
+    return to_title_case(raw)
 
-    for code, sheet_item in sheet_dict.items():
-        cost_str = sheet_item.get("CostSQM", "")
-        sell_str = sheet_item.get("SellSQM", "")
+def colour_for_description(p3: str) -> str:
+    raw = str(p3).strip()
+    if raw.lower() == "specified below":
+        return ""
+    return colour_for_parts(raw)
 
-        if not cost_str.replace('.', '', 1).isdigit() or not sell_str.replace('.', '', 1).isdigit():
-            logger.warning(f"Skipping non-numeric cost/sell for code {code}: cost='{cost_str}', sell='{sell_str}'")
-            continue
+def rebuild_description(product_name, p1, p2, p3):
+    brand  = to_title_case(p1)
+    fabric = to_title_case(p2)
+    colour = colour_for_description(p3)
+    parts = [product_name.strip(), brand, fabric, colour]
+    return " ".join([p for p in parts if p])
 
-        sheet_cost = float(cost_str)
-        sheet_sell = float(sell_str)
-        buz_item = buz_pricing.get(code)
+def _q2(x: str) -> Decimal:
+    s = str(x).strip()
+    if s == "": return Decimal("0.00")
+    try:
+        return Decimal(s).quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return Decimal("0.00")
 
-        needs_update = False
-        if not buz_item:
-            needs_update = True
-        else:
-            buz_cost = float(buz_item.get('CostSQM', 0))
-            buz_sell = float(buz_item.get('SellSQM', 0))
-            if (
-                buz_cost == 0 or abs(sheet_cost - buz_cost) / buz_cost > tolerance or
-                buz_sell == 0 or abs(sheet_sell - buz_sell) / buz_sell > tolerance
-            ):
-                needs_update = True
-
-        if needs_update:
-            row_data = {
-                'PkId': '',
-                'Operation': 'A',
-                'InventoryCode': code,
-                'CostSQM': sheet_cost,
-                'SellSQM': sheet_sell,
-                'SupplierCode': sheet_item['code'],
-                'SupplierDescn': sheet_item['fabric_name'],
-                'DateFrom': (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"),
-            }
-            group = sheet_item.get('inventory_group_code', 'CRT')
-            changes.setdefault(group, []).append(row_data)
-
-    return changes
+def tomorrow_ddmmyyyy():
+    return (datetime.today() + timedelta(days=1)).strftime("%d/%m/%Y")
 
 
-def run_curtain_fabric_sync(app, db, column_titles):
-    from services.buz_inventory_items import create_inventory_workbook_creator, get_current_buz_fabrics
-    from services.buz_inventory_pricing import create_pricing_workbook_creator, get_current_buz_pricing, \
-        prepare_pricing_changes
-    from services.google_sheets_service import GoogleSheetsService
+def _df(db: "DatabaseManager", sql: str, params: tuple | list | None = None) -> pd.DataFrame:
+    """
+    Run SQL via your DatabaseManager and return a pandas DataFrame.
+    No fallback to raw sqlite.
+    """
+    if not hasattr(db, "execute_query"):
+        raise TypeError("generate_uploads_from_db expects a DatabaseManager")
 
-    sheets_service = GoogleSheetsService()
-    sheet_data = sheets_service.fetch_sheet_data(
-        app.config["spreadsheets"]["master_curtain_fabric_list"]["id"],
-        app.config["spreadsheets"]["master_curtain_fabric_list"]["range"]
+    params = params or []
+    cur = db.execute_query(sql, params)
+    rows = cur.fetchall()
+    # When row_factory=sqlite3.Row this yields Row objects; turn into dicts.
+    if rows and hasattr(rows[0], "keys"):
+        rows = [dict(r) for r in rows]
+    return pd.DataFrame(rows)
+
+
+def _df_from_gsheets(svc, spreadsheet_id: str, worksheet: str) -> pd.DataFrame:
+    """
+    Use GoogleSheetsService to fetch a worksheet and make a pandas DF with row0 as headers.
+    """
+    # we don't actually need a range if your helper returns get_all_values()
+    rows = svc.fetch_sheet_data(spreadsheet_id, f"{worksheet}!A:ZZZ")  # range is ignored by your helper
+    if not rows or not rows[0]:
+        raise RuntimeError(f"Google sheet '{worksheet}' is empty or unreadable.")
+
+    header = [h.strip() for h in rows[0]]
+    body   = rows[1:]
+
+    # Pad rows to header length so pandas doesn't drop trailing blanks
+    width = len(header)
+    fixed = [r + [""] * (width - len(r)) if len(r) < width else r[:width] for r in body]
+
+    return pd.DataFrame(fixed, columns=header, dtype=str)
+
+
+# ---------- DB loaders ----------
+# Adapt these mappings if your column names differ.
+INV_DB_TO_EXPORT = {
+    "pkid": INV_COL_PKID,
+    "code": INV_COL_CODE,
+    "description": INV_COL_DESC,
+    "tax_rate": INV_COL_TAXRATE,
+    "descnpart1": INV_COL_DESCN1,
+    "descnpart2": INV_COL_DESCN2,
+    "descnpart3": INV_COL_DESCN3,
+    "active": INV_COL_ACTIVE,
+    "custom_var_1": INV_COL_PACKSZ,   # repeat (mm)
+    "custom_var_2": INV_COL_PACKOPT,  # width (mm)
+    "custom_var_3": INV_COL_PACKTYPE, # direction (C/B/D)
+    # computed later:
+    # "Operation": INV_COL_OP,
+    # "_group", "_key"
+}
+
+PR_DB_COLS = {
+    "inventory_code": PRICE_COL_CODE,
+    "description": PRICE_COL_DESC,
+    "date_from": PRICE_COL_EFF,
+    "sellsqmw": PRICE_COL_SELL_W,
+    "sellsqmh": PRICE_COL_SELL_H,
+    "costsqmw": PRICE_COL_COST_W,
+    "costsqmh": PRICE_COL_COST_H,
+    "operation": PRICE_COL_OP,
+    # "PkId" blanked on output
+}
+
+
+def _safe_boolish(s):
+    return str(s).strip().upper() in ("TRUE","YES","1","Y","T")
+
+
+def load_inventory_by_group(db):
+    """
+    Returns dict[group_code] -> DataFrame mapped to export column names.
+    Uses DatabaseManager exclusively.
+    """
+    q = """
+      SELECT
+        Pkid            AS pkid,
+        Code            AS code,
+        Description     AS description,
+        TaxRate         AS tax_rate,
+        DescnPart1      AS descnpart1,
+        DescnPart2      AS descnpart2,
+        DescnPart3      AS descnpart3,
+        Active          AS active,
+        CustomVar1      AS custom_var_1,   -- repeat (mm)
+        CustomVar2      AS custom_var_2,   -- width  (mm)
+        CustomVar3      AS custom_var_3,   -- direction
+        inventory_group_code
+      FROM inventory_items
+      WHERE inventory_group_code IN ('CRTWT','CRTNT');
+    """
+    df = _df(db, q).fillna("")
+    if df.empty:
+        return {g: pd.DataFrame(columns=list(INV_DB_TO_EXPORT.values()) + ["_group","_key", INV_COL_OP]) for g in CURTAIN_TABS}
+
+    df_ren = df.rename(columns=INV_DB_TO_EXPORT)
+    df_ren["_group"] = df["inventory_group_code"].astype(str).str.strip()
+    df_ren["_key"] = df.apply(
+        lambda r: build_key(r.get("descnpart1",""), r.get("descnpart2",""), r.get("descnpart3","")),
+        axis=1
     )
 
-    sheet_dict = build_sheet_dict(sheet_data, column_titles=column_titles)
-    buz_items = get_current_buz_fabrics(db)
-    buz_dict = build_buz_dict(buz_items)
-    buz_pricing = get_current_buz_pricing(db)
+    for c in [INV_COL_OP, INV_COL_ACTIVE, INV_COL_PACKSZ, INV_COL_PACKOPT, INV_COL_PACKTYPE,
+              INV_COL_TAXRATE, INV_COL_CODE, INV_COL_DESC, INV_COL_DESCN1, INV_COL_DESCN2, INV_COL_DESCN3,
+              INV_COL_PKID]:
+        if c not in df_ren.columns:
+            df_ren[c] = ""
 
-    # Item updates
-    new_items, updated_items, removed_items = compare_fabrics_by_code(sheet_dict, buz_dict)
-    item_changes = prepare_item_changes_dict(new_items, updated_items, removed_items)
-    item_creator = create_inventory_workbook_creator(app)
-    item_creator.populate_workbook(item_changes)
-    item_creator.auto_fit_columns()
-    item_output_file = 'items_upload.xlsx'
-    item_creator.save_workbook(item_output_file)
+    out = {}
+    for g in CURTAIN_TABS:
+        out[g] = df_ren[df_ren["_group"] == g].copy().reset_index(drop=True)
+    return out
 
-    # Pricing updates
-    pricing_changes = prepare_pricing_changes(sheet_dict, buz_pricing)
-    pricing_creator = create_pricing_workbook_creator(app)
-    pricing_creator.populate_workbook(pricing_changes)
-    pricing_creator.auto_fit_columns()
-    pricing_output_file = 'pricing_upload.xlsx'
-    pricing_creator.save_workbook(pricing_output_file)
 
-    logger.info('Generated item and pricing upload files.')
+def load_latest_pricing_by_code(db):
+    """
+    Return pricing rows with friendly column names + parsed Date From.
+    Uses DatabaseManager exclusively.
+    """
+    q = """
+      SELECT
+        InventoryCode AS inventory_code,
+        Description   AS description,
+        DateFrom      AS date_from,
+        SellLMWide    AS sellsqmw,
+        SellLMHeight  AS sellsqmh,
+        CostLMWide    AS costsqmw,
+        CostLMHeight  AS costsqmh,
+        Operation     AS operation
+      FROM pricing_data;
+    """
+    pr = _df(db, q).fillna("")
+    if pr.empty:
+        pr["_eff"] = pd.NaT
+        return pr.assign(_eff=pd.NaT), pr
+
+    prn = pr.rename(columns=PR_DB_COLS)
+    prn["_eff"] = pd.to_datetime(prn[PRICE_COL_EFF], dayfirst=True, errors="coerce")
+    return prn, prn
+
+
+# ---------- Main orchestrator (DB-based) ----------
+def generate_uploads_from_db(
+    google_source: Any,
+    db,
+    output_dir: str = ".",
+    write_change_log: bool = False,
+    headers_cfg: dict | None = None,
+    progress=None,
+):
+    if headers_cfg is None or "buz_inventory_item_file" not in headers_cfg or "buz_pricing_file" not in headers_cfg:
+        raise RuntimeError("headers config is required (buz_inventory_item_file and buz_pricing_file).")
+
+    def _ping(msg: str, pct: int | None = None):
+        if callable(progress):
+            try:
+                progress(msg, pct)
+            except Exception:
+                pass
+
+    t0 = time.perf_counter()
+    _ping("Starting Curtain Sync…", 1)
+
+    # --- Load Google (raw, then validate)
+    all_cols_needed = [COL_BRAND, COL_FABRIC, COL_COLOUR, COL_WIDTH, COL_DIR,
+                       COL_REPEAT, COL_COST, COL_SELL, COL_EFF]
+    _ping("Loading Google sheet…", 3)
+    # NEW: detect which kind of source we received
+    if isinstance(google_source, (str, os.PathLike)):
+        # old behaviour: XLSX export
+        g_raw = pd.read_excel(google_source, sheet_name=GS_TAB, dtype=str)
+    elif isinstance(google_source, Mapping) and "svc" in google_source:
+        # new behaviour: live Google Sheet
+        svc = google_source["svc"]
+        spreadsheet_id = google_source["spreadsheet_id"]
+        worksheet = google_source.get("worksheet", GS_TAB)
+        g_raw = _df_from_gsheets(svc, spreadsheet_id, worksheet)
+    else:
+        raise RuntimeError("google_source must be a file path or a dict with keys: svc, spreadsheet_id, worksheet")
+
+    _ping("Validating Google sheet rows…", 6)
+    dupes = g_raw.columns[g_raw.columns.duplicated()].unique()
+    if len(dupes) > 0:
+        raise RuntimeError(f"Duplicate columns in Google sheet: {', '.join(dupes)}")
+
+    missing_cols = [c for c in all_cols_needed if c not in g_raw.columns]
+    if missing_cols:
+        raise RuntimeError(f"Missing required columns in Google sheet: {', '.join(missing_cols)}")
+
+    # validate rows
+    issues = []
+    for idx, r in g_raw.iterrows():
+        excel_row = idx + 2
+        b = str(r.get(COL_BRAND, "")).strip()
+        f = str(r.get(COL_FABRIC, "")).strip()
+        c = str(r.get(COL_COLOUR, "")).strip()
+        w = str(r.get(COL_WIDTH, "")).strip()
+        d = str(r.get(COL_DIR, "")).strip()
+        rep = str(r.get(COL_REPEAT, "")).strip()
+        cost = str(r.get(COL_COST, "")).strip()
+        sell = str(r.get(COL_SELL, "")).strip()
+        eff_raw = r.get(COL_EFF, "")
+
+        row_issues = []
+        if not b: row_issues.append("Brand missing")
+        if not f: row_issues.append("Fabric missing")
+        if not c: row_issues.append("Colour missing")
+
+        try: float(w)
+        except Exception: row_issues.append("Width (cm) missing or not numeric")
+
+        try: float(rep)
+        except Exception: row_issues.append("Vertical Repeat (cm) missing or not numeric")
+
+        d_letter = norm_dir_first_letter(d)
+        if d_letter not in {"B", "C", "D"}:
+            row_issues.append("Direction invalid (must begin with B/C/D)")
+
+        if not cost: row_issues.append("Cost missing")
+        if not sell: row_issues.append("Sell missing")
+
+        eff = parse_eff_date_ddmmyyyy_or_blank(eff_raw)
+        if not eff:
+            row_issues.append("Effective from date missing/invalid")
+
+        if row_issues:
+            issues.append({
+                "Row": excel_row, "Brand": b, "Fabric": f, "Colour": c,
+                "Problems": "; ".join(row_issues)
+            })
+
+    if issues:
+        err_df = pd.DataFrame(issues).sort_values(by="Row")
+        lines = ["Validation failed: problematic rows in Google sheet:\n"]
+        for _, r in err_df.iterrows():
+            lines.append(f" Row {r['Row']}: Brand='{r['Brand']}', Fabric='{r['Fabric']}', "
+                         f"Colour='{r['Colour']}' -> {r['Problems']}")
+        raise RuntimeError("\n".join(lines))
+
+    # Build clean Google df
+    g = g_raw[all_cols_needed].copy()
+    g = g[g[COL_BRAND].notna()].copy()
+    g["_key"]       = g.apply(lambda r: build_key(r.get(COL_BRAND,""), r.get(COL_FABRIC,""), r.get(COL_COLOUR,"")), axis=1)
+    g["_width_mm"]  = g[COL_WIDTH].apply(to_mm_from_cm)
+    g["_repeat_mm"] = g[COL_REPEAT].apply(to_mm_from_cm)
+    g["_dir"]       = g[COL_DIR].apply(norm_dir_first_letter)
+    g["_sell"]      = g[COL_SELL].astype(str).str.strip()
+    g["_cost"]      = g[COL_COST].astype(str).str.strip()
+    g["_eff"]       = g[COL_EFF].apply(parse_eff_date_ddmmyyyy_or_blank)
+    g = g.set_index("_key", drop=False)
+    keys_g = set(g.index)
+    _ping(f"Google sheet OK: {len(g)} fabrics", 10)
+
+    # --- Load Inventory (from DB)
+    _ping("Loading inventory from DB…", 12)
+    inv_by_group = load_inventory_by_group(db)
+    _ping("Inventory loaded", 18)
+
+    for sheet in CURTAIN_TABS:
+        df = inv_by_group.get(sheet, pd.DataFrame())
+        if df.empty:
+            log(f"[2/5] Inventory tab {sheet}: 0 rows")
+        else:
+            # HARD EXIT if any blank description parts
+            blanks = df[
+                (df[INV_COL_DESCN1].astype(str).str.strip() == "") |
+                (df[INV_COL_DESCN2].astype(str).str.strip() == "") |
+                (df[INV_COL_DESCN3].astype(str).str.strip() == "")
+            ]
+            if not blanks.empty:
+                sample = blanks.head(10)
+                msg = [f"Found {len(blanks)} row(s) in inventory group '{sheet}' with blank DescnPart fields."]
+                for i, r in sample.iterrows():
+                    msg.append(f"  Code={r.get(INV_COL_CODE,'')} "
+                               f"DescnPart1='{r.get(INV_COL_DESCN1,'')}', "
+                               f"DescnPart2='{r.get(INV_COL_DESCN2,'')}', "
+                               f"DescnPart3='{r.get(INV_COL_DESCN3,'')}'")
+                if len(blanks) > 10:
+                    msg.append(f"  ... and {len(blanks)-10} more rows.")
+                raise RuntimeError("\n".join(msg))
+            log(f"[2/5] Inventory group {sheet}: {len(df)} rows")
+
+    inv_all = pd.concat(inv_by_group.values(), ignore_index=True) if inv_by_group else pd.DataFrame()
+    inv_idx = inv_all.set_index(inv_all.apply(lambda r: build_key(r.get(INV_COL_DESCN1,""), r.get(INV_COL_DESCN2,""), r.get(INV_COL_DESCN3,"")), axis=1))
+    keys_inv = set(inv_idx.index)
+
+    # --- Load Pricing (from DB, all rows; we'll filter per-group by joining on inventory)
+    _ping("Loading pricing rows…", 20)
+    pr_latest, pr_all = load_latest_pricing_by_code(db)
+    _ping(f"Pricing rows: {len(pr_all)}", 25)
+
+    pricing_to_append = {s: [] for s in CURTAIN_TABS}
+    change_log = []
+
+    # --- Process existing rows (D/E/reactivate/desc) and queue pricing if 2dp changed
+    for grp, df in inv_by_group.items():
+        _ping(f"Processing existing rows in {grp}…", None)
+        product_name = PRODUCT_NAME_BY_TAB[grp]
+        log(f"[4/5] Processing existing rows in {grp} …")
+        for i, row in df.iterrows():
+            key = row["_key"]
+            if key not in keys_g:
+                active_val = str(row.get(INV_COL_ACTIVE,"")).strip().upper()
+                if active_val in ("TRUE","YES","1"):
+                    df.at[i, INV_COL_OP] = "D"
+                    change_log.append({
+                        "Tab": grp, "Operation": "D",
+                        "Code": row.get(INV_COL_CODE,""),
+                        "Description": row.get(INV_COL_DESC,""),
+                        "Reason": "Deleted (not in Google)"
+                    })
+                continue
+
+            grow = g.loc[key]
+            reasons = []
+
+            # width / repeat / direction
+            if grow["_width_mm"] and grow["_width_mm"] != str(row.get(INV_COL_PACKOPT,"")).strip():
+                df.at[i, INV_COL_PACKOPT] = grow["_width_mm"]; reasons.append("Width changed")
+            if grow["_repeat_mm"] and grow["_repeat_mm"] != str(row.get(INV_COL_PACKSZ,"")).strip():
+                df.at[i, INV_COL_PACKSZ] = grow["_repeat_mm"]; reasons.append("Repeat changed")
+            if grow["_dir"] and grow["_dir"] != str(row.get(INV_COL_PACKTYPE,"")).strip():
+                df.at[i, INV_COL_PACKTYPE] = grow["_dir"]; reasons.append("Direction changed")
+
+            # Reactivate if inactive
+            if not _safe_boolish(row.get(INV_COL_ACTIVE,"")):
+                df.at[i, INV_COL_ACTIVE] = "TRUE"; reasons.append("Reactivated")
+
+            # Rebuild description
+            new_desc = rebuild_description(product_name, grow[COL_BRAND], grow[COL_FABRIC], grow[COL_COLOUR])
+            old_desc = str(row.get(INV_COL_DESC,"")).rstrip("*").strip()
+            if new_desc and new_desc != old_desc:
+                df.at[i, INV_COL_DESC] = new_desc; reasons.append("Description corrected")
+
+            if reasons:
+                df.at[i, INV_COL_OP] = "E"
+                change_log.append({"Tab": grp, "Operation": "E",
+                                   "Code": str(row.get(INV_COL_CODE,"")).strip(),
+                                   "Description": new_desc or old_desc,
+                                   "Reason": "; ".join(reasons)})
+
+            # --- Pricing (append only if price OR cost changed at 2dp, date = tomorrow)
+            code = str(row.get(INV_COL_CODE,"")).strip()
+            if code:
+                # Source values from Google
+                sheet_sell_q2 = _q2(grow["_sell"])
+                sheet_cost_q2 = _q2(grow["_cost"])
+
+                # Find most recent existing pricing row for this code
+                same_code = pr_all[pr_all[PRICE_COL_CODE].astype(str).str.strip() == code].copy()
+                last_sell_q2 = last_cost_q2 = None
+                if not same_code.empty:
+                    eff_parsed = pd.to_datetime(same_code[PRICE_COL_EFF], dayfirst=True, errors="coerce")
+                    same_code = same_code.assign(_eff=eff_parsed).dropna(subset=["_eff"]).sort_values("_eff")
+                    last = same_code.iloc[-1]
+                    last_sell_q2 = _q2(last.get(PRICE_COL_SELL_W, ""))
+                    last_cost_q2 = _q2(last.get(PRICE_COL_COST_W, ""))
+
+                changed = (
+                    last_sell_q2 is None or last_cost_q2 is None or
+                    sheet_sell_q2 != last_sell_q2 or sheet_cost_q2 != last_cost_q2
+                )
+                if changed:
+                    eff_for_update = tomorrow_ddmmyyyy()
+                    pricing_to_append[grp].append({
+                        PRICE_COL_CODE: code, PRICE_COL_DESC: new_desc or old_desc,
+                        PRICE_COL_EFF:  eff_for_update,
+                        PRICE_COL_SELL_W: f"{sheet_sell_q2:.2f}",
+                        PRICE_COL_SELL_H: f"{sheet_sell_q2:.2f}",
+                        PRICE_COL_COST_W: f"{sheet_cost_q2:.2f}",
+                        PRICE_COL_COST_H: f"{sheet_cost_q2:.2f}",
+                        PRICE_COL_OP:   "A",
+                        PKID_COL: ""
+                    })
+
+            if VERBOSE and (i + 1) % PROG_EVERY == 0:
+                log(f"  • {grp}: {i+1}/{len(df)}", end="\r")
+        _ping(f"{grp}: done", None)
+
+    # --- Adds (ensure fabric exists on both tabs)
+    codes_by_group = {grp: set(df[INV_COL_CODE].astype(str).str.strip()) for grp, df in inv_by_group.items()}
+    new_keys = sorted(keys_g - keys_inv)
+    _ping(f"Scanning for new fabrics: {len(new_keys)} fabrics", 56)
+    for idx, key in enumerate(new_keys, 1):
+        grow = g.loc[key]
+        for grp in CURTAIN_TABS:
+            df = inv_by_group[grp]
+            if key in set(df["_key"]): continue
+
+            code = next_code_for_group(codes_by_group[grp], grp, start=10000)
+            codes_by_group[grp].add(code)
+            product_name = PRODUCT_NAME_BY_TAB[grp]
+            new_desc = rebuild_description(product_name, grow[COL_BRAND], grow[COL_FABRIC], grow[COL_COLOUR])
+
+            new_row = {col:"" for col in df.columns}
+            new_row["_group"]=grp; new_row["_key"]=key
+            new_row[INV_COL_PKID] = ""
+            new_row[INV_COL_CODE]=code
+            new_row[INV_COL_DESCN1]=to_title_case(grow[COL_BRAND])
+            new_row[INV_COL_DESCN2]=to_title_case(grow[COL_FABRIC])
+            new_row[INV_COL_DESCN3]=colour_for_parts(grow[COL_COLOUR])
+            new_row[INV_COL_PACKOPT]=grow["_width_mm"]
+            new_row[INV_COL_PACKTYPE]=grow["_dir"]
+            new_row[INV_COL_PACKSZ]=grow["_repeat_mm"]
+            new_row[INV_COL_TAXRATE]="GST"
+            new_row[INV_COL_ACTIVE]="TRUE"
+            new_row[INV_COL_DESC]=new_desc
+            new_row[INV_COL_OP]="A"
+
+            inv_by_group[grp] = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            pricing_to_append[grp].append({
+                PRICE_COL_CODE: code, PRICE_COL_DESC: new_desc,
+                PRICE_COL_EFF:  NEW_FABRIC_EFF_DATE_STR,
+                PRICE_COL_SELL_W: str(_q2(grow["_sell"])), PRICE_COL_SELL_H: str(_q2(grow["_sell"])),
+                PRICE_COL_COST_W: str(_q2(grow["_cost"])), PRICE_COL_COST_H: str(_q2(grow["_cost"])),
+                PRICE_COL_OP:   "A",
+                PKID_COL: ""
+            })
+            change_log.append({"Tab": grp, "Operation": "A",
+                               "Code": code, "Description": new_desc,
+                               "Reason": "New fabric"})
+        if VERBOSE and idx % PROG_EVERY == 0:
+            log(f"  • adds: {idx}/{len(new_keys)}", end="\r")
+    _ping("Adds pass complete", 70)
+
+    # --- Summarise changes
+    summary = {"A":0,"E":0,"D":0}
+    per_tab = {t:{"A":0,"E":0,"D":0} for t in CURTAIN_TABS}
+    for grp, df in inv_by_group.items():
+        vc = df[df[INV_COL_OP].isin(["A","E","D"])][INV_COL_OP].value_counts().to_dict()
+        for k,v in vc.items(): summary[k]+=v; per_tab[grp][k]=v
+    log("Changes summary")
+    log(f"  Total  A:{summary['A']:>6}  E:{summary['E']:>6}  D:{summary['D']:>6}")
+    for grp in CURTAIN_TABS:
+        a,e,d = per_tab[grp].get("A",0), per_tab[grp].get("E",0), per_tab[grp].get("D",0)
+        log(f"  {grp:5} A:{a:>6}  E:{e:>6}  D:{d:>6}")
+
+    _ping("Writing items workbook…", 75)
+
+    # --- Write items upload (blank row1, headers row2, data row3+, blank col AP after AO)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # --- Write items upload from CONFIG (row1 blank, row2 headers, data row3+, trailing blank col)
+    items_headers = _headers_from_config(headers_cfg, "buz_inventory_item_file")
+
+    items_wb = Workbook(); items_wb.remove(items_wb.active)
+    for grp, df in inv_by_group.items():
+        delta = df[df[INV_COL_OP].isin(["A","E","D"])].copy()
+        if delta.empty:
+            continue
+
+        # make column names match config headers (Code*/Description* → Code/Description)
+        delta = _normalize_items_columns_for_config(delta, items_headers)
+
+        # ensure every required header exists as a column (fill blanks)
+        for h in items_headers:
+            if h not in delta.columns:
+                delta[h] = ""
+
+        # keep only configured columns, in order
+        to_write = delta[items_headers]
+
+        ws = items_wb.create_sheet(title=grp)
+        ws.append([])                      # row 1 blank
+        ws.append(items_headers + [""])    # row 2 headers + one trailing blank cell
+        for _, r in to_write.iterrows():
+            ws.append(list(r.values) + [""])  # trailing blank cell (Buz quirk)
+
+    items_path = os.path.join(output_dir, "items_upload.xlsx")
+    items_wb.save(items_path)
+
+    _ping("Writing pricing workbook…", 85)
+
+    # --- Write pricing upload from CONFIG (preserve order per config)
+    pricing_headers = _headers_from_config(headers_cfg, "buz_pricing_file")
+
+    pwb = Workbook(); pwb.remove(pwb.active)
+    for grp in CURTAIN_TABS:
+        ws = pwb.create_sheet(title=grp)
+        ws.append(pricing_headers)
+
+        rows = pricing_to_append.get(grp, [])
+        for row_dict in rows:
+            # Ensure all columns present in the expected header are provided
+            row_out = []
+            for h in pricing_headers:
+                if h == "Operation":
+                    row_out.append("A")     # enforced as per your logic
+                elif h == "PkId":
+                    row_out.append("")      # must be blank
+                else:
+                    row_out.append(row_dict.get(h, ""))  # use keys same as spreadsheet_column
+            ws.append(row_out)
+
+    pricing_path = os.path.join(output_dir, "pricing_upload.xlsx")
+    pwb.save(pricing_path)
+
+    # --- (Optional) write change log CSV only if requested
+    if write_change_log and change_log:
+        _ping("Writing change log…", 90)
+        pd.DataFrame(change_log).to_csv(os.path.join(output_dir, "change_log.csv"), index=False)
+        reasons_counter = Counter()
+        for r in change_log:
+            for piece in r["Reason"].split(";"):
+                reasons_counter[piece.strip()] += 1
+        top = ", ".join(f"{k}={v}" for k,v in reasons_counter.most_common())
+        log(f"change_log.csv written ({len(change_log)} rows) | Reasons: {top}")
+    else:
+        log("No CSV change log written (UI will display changes).")
+
+    elapsed = time.perf_counter() - t0
+    _ping("Curtain Sync complete ✅", 100)
+    log(f"Files written: {items_path}, {pricing_path}")
+    log(f"Elapsed: {elapsed:0.1f}s")
+    print("✅ Done.")
 
     return {
-            'items_file': item_output_file,
-            'pricing_file': pricing_output_file,
-            'summary': {
-                'new_items': len(new_items),
-                'updated_items': len(updated_items),
-                'removed_items': len(removed_items),
-                'pricing_changes': {k: len(v) for k, v in pricing_changes.items()}
-            }
+        "items_path": items_path,
+        "pricing_path": pricing_path,
+        "elapsed_sec": elapsed,
+        "summary": summary,
+        "per_tab": per_tab,
+        "change_log": change_log,   # <-- ALWAYS return the list
     }
+
+
+# ---- Optional CLI (uses DatabaseManager + config headers) ----
+if __name__ == "__main__":
+    import argparse
+    from services.database import create_db_manager
+    from services.config_service import ConfigManager
+
+    parser = argparse.ArgumentParser(description="Curtain sync (DB + Google XLSX) -> items/pricing uploads")
+    parser.add_argument("google_sheet_xlsx", help="Path to the exported Google Sheet (XLSX)")
+    parser.add_argument("--config", default="config.json", help="Path to config.json (default: config.json)")
+    parser.add_argument("--out", default="uploads", help="Output directory for the two files (default: uploads)")
+    parser.add_argument("--write-change-log", action="store_true", help="Also write change_log.csv to the output dir")
+    args = parser.parse_args()
+
+    # Load config (uses your ConfigManager)
+    cm = ConfigManager(args.config)
+    db_path = cm.get("database", default="buz_data.db")
+    headers_cfg = cm.get("headers", default={})
+    if not headers_cfg:
+        raise SystemExit("Missing headers in config.json (need buz_inventory_item_file and buz_pricing_file).")
+
+    # Open DB via your DatabaseManager
+    db = create_db_manager(db_path)
+    try:
+        res = generate_uploads_from_db(
+            google_sheet_xlsx=args.google_sheet_xlsx,
+            db=db,
+            output_dir=args.out,
+            write_change_log=args.write_change_log,
+            headers_cfg=headers_cfg,
+        )
+        print("Items:", res["items_path"])
+        print("Pricing:", res["pricing_path"])
+    finally:
+        db.close()

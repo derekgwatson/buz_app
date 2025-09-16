@@ -1,5 +1,8 @@
-import tempfile
 from flask import render_template, request, send_from_directory
+from flask import abort, flash, redirect, url_for, send_file
+from flask import Blueprint, jsonify, current_app, g
+
+import tempfile
 from services.database import create_db_manager
 import services.curtain_fabric_sync
 from services.group_options_check import extract_codes_from_excel_flat_dedup
@@ -11,13 +14,15 @@ from services.fabric_mapping_sync import sync_fabric_mappings
 from services.unleashed_sync import sync_unleashed_fabrics, build_sequential_code_provider
 import threading
 import uuid
-from datetime import timezone
-from flask import abort, flash, redirect, url_for, send_file
 from werkzeug.utils import safe_join
 import os
-from flask import Blueprint, jsonify, current_app, g
 from services.curtain_sync_db import run_curtain_fabric_sync_db
-from collections import Counter
+from datetime import timezone, datetime, timedelta
+from services.data_processing import get_last_upload_time
+from services.curtain_fabric_sync import generate_uploads_from_db
+import pytz
+import sys
+import re
 
 
 # Create Blueprint
@@ -139,16 +144,6 @@ def upload_route():
         inventory_group_count=get_unique_inventory_group_count(g.db),
         last_upload_times=last_upload_times
     )
-
-
-@main_routes.app_template_filter('datetimeformat')
-def datetimeformat(value):
-    if not value:
-        return "N/A"
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
-
 
 
 @main_routes.route('/upload_inventory_groups', methods=['POST'])
@@ -961,11 +956,17 @@ def run_curtain_fabric_sync_endpoint():
     return jsonify(res), 200
 
 
+STALE_THRESHOLD = timedelta(hours=6)  # tweak to taste
+
+
 @main_routes.route("/update_combo_bo_fabrics_group_options", methods=["GET", "POST"])
 @auth.login_required
 def update_combo_bo_fabrics_group_options():
     from services.combo_bo_fabrics_group_options_updater import ComboBOFabricsGroupOptionsUpdater
     import os, tempfile, uuid  # ensure uuid is in scope
+
+    # Always fetch last upload time to show in the UI
+    last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
 
     def _prepare_view_summary(summary: dict[str, dict]) -> tuple[dict[str, dict], bool]:
         """
@@ -1004,6 +1005,30 @@ def update_combo_bo_fabrics_group_options():
         return view, any_changed
 
     if request.method == "POST":
+        # Optional: warn or block if stale
+        is_stale = False
+        if last_inventory_upload:
+            # last_inventory_upload is a naive/aware dt depending on SQLite; normalize a bit
+            if isinstance(last_inventory_upload, str):
+                # SQLite may return ISO string; best effort parse
+                try:
+                    last_inventory_upload = datetime.fromisoformat(last_inventory_upload.replace("Z", "+00:00"))
+                except Exception:
+                    last_inventory_upload = None
+            now = datetime.now(timezone.utc)
+            try:
+                # make both aware
+                if last_inventory_upload.tzinfo is None:
+                    last_inventory_upload = last_inventory_upload.replace(tzinfo=timezone.utc)
+                is_stale = (now - last_inventory_upload) > STALE_THRESHOLD
+            except Exception:
+                is_stale = True
+        else:
+            is_stale = True
+
+        if is_stale:
+            flash("Heads up: your inventory items look stale. Upload fresh items before running this for accurate results.", "warning")
+
         uploaded_file = request.files.get("group_options_file")
         if not uploaded_file or uploaded_file.filename == "":
             flash("No file uploaded", "danger")
@@ -1051,3 +1076,203 @@ def update_combo_bo_fabrics_group_options():
 
     # GET
     return render_template("combo_bo_fabrics_update.html")
+
+
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+    LOCAL_TZ = ZoneInfo("Australia/Sydney")
+except Exception:
+    LOCAL_TZ = pytz.timezone("Australia/Sydney")
+
+
+@main_routes.app_template_filter('datetimeformat')
+def datetimeformat(value):
+    if not value:
+        return "N/A"
+
+    # Accept ISO strings too
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            return value  # fallback: show the raw string
+
+    # Make timezone-aware if naive (assume UTC if no tz)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+
+    # Convert to local tz
+    local_dt = value.astimezone(LOCAL_TZ)
+
+    # Cross-platform hour without leading zero
+    fmt = "%a %d %b %Y, %-I:%M %p" if sys.platform != "win32" else "%a %d %b %Y, %#I:%M %p"
+    try:
+        return local_dt.strftime(fmt)
+    except ValueError:
+        # Last-resort: use %I (may include leading zero) and strip it
+        s = local_dt.strftime("%a %d %b %Y, %I:%M %p")
+        return re.sub(r"\b0(\d:)", r"\1", s)
+
+
+CURTAIN_GS_EXPORT_PATH = r"C:\Users\Derek\Documents\Coding\Python_Scripts\curtain-fabric-updater\master.xlsx"
+
+
+# --- Curtain Sync (async with progress) ---
+
+@main_routes.route("/curtain-sync", methods=["GET"])
+@auth.login_required
+def curtain_sync_landing():
+    last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
+    return render_template(
+        "curtain_sync.html",
+        ran=False,
+        last_inventory_upload=last_inventory_upload,
+        stale_threshold_hours=6,
+        job_id=None,     # NEW: allow template to show a "Run" button or progress
+    )
+
+
+from services.google_sheets_service import GoogleSheetsService
+
+
+@main_routes.route("/curtain-sync/start", methods=["POST"])
+@auth.login_required
+def curtain_sync_start():
+    job_id = uuid.uuid4().hex
+    _init_job(job_id)  # use the same in-memory store everywhere
+
+    # capture the actual Flask app object so we can push an app context in the thread
+    app = current_app._get_current_object()  # type: ignore
+
+    out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
+    os.makedirs(out_dir, exist_ok=True)
+    headers_cfg = current_app.config["headers"]
+    db_path = current_app.config["database"]
+
+    # ids from your config (adjust keys to what you have)
+    SPREADSHEET_ID = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["id"]
+    WORKSHEET_TAB = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["tab"]
+
+    def _runner():
+        # make Flask context available inside the thread
+        with app.app_context():
+            progress = _make_progress(job_id)
+            db = create_db_manager(db_path)  # don't use g.db in threads
+            try:
+                progress("Starting…", 1)
+
+                gs_service = GoogleSheetsService()  # uses your default credentials path
+                gs_source = {
+                    "svc": gs_service,
+                    "spreadsheet_id": SPREADSHEET_ID,
+                    "worksheet": WORKSHEET_TAB,
+                }
+
+                result = generate_uploads_from_db(
+                    gs_source,
+                    db,
+                    output_dir=out_dir,
+                    headers_cfg=headers_cfg,
+                    progress=progress,  # your function already accepts this
+                )
+
+                # 👇 Add this check
+                if not result.get("change_log"):
+                    progress("No changes found, skipping file generation", 100)
+                    with _JOBS_LOCK:
+                        _JOBS[job_id]["result"] = {
+                            "elapsed_sec": result.get("elapsed_sec", 0),
+                            "summary": result.get("summary", {}),
+                            "change_log": [],
+                            "files": [],  # no files to download
+                        }
+                        _JOBS[job_id]["done"] = True
+                    return
+                
+                # friendly filenames
+                items_name   = f"items_upload_{uuid.uuid4().hex}.xlsx"
+                pricing_name = f"pricing_upload_{uuid.uuid4().hex}.xlsx"
+                os.replace(result["items_path"],   os.path.join(out_dir, items_name))
+                os.replace(result["pricing_path"], os.path.join(out_dir, pricing_name))
+                result["files"] = [
+                    {"label": "Items upload", "filename": items_name},
+                    {"label": "Pricing upload", "filename": pricing_name},
+                ]
+
+                with _JOBS_LOCK:
+                    _JOBS[job_id]["result"] = result
+            except Exception as e:
+                current_app.logger.exception("Curtain sync failed")
+                with _JOBS_LOCK:
+                    _JOBS[job_id]["error"] = str(e)
+            finally:
+                with _JOBS_LOCK:
+                    _JOBS[job_id]["done"] = True
+                    if _JOBS[job_id]["pct"] < 100 and _JOBS[job_id]["error"] is None:
+                        _JOBS[job_id]["pct"] = 100
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+    # 🚀 actually start the worker thread
+    threading.Thread(target=_runner, daemon=True).start()
+
+    # and send the browser to the progress page (your JS will poll /status/<job_id>)
+    return redirect(url_for("main_routes.curtain_sync_progress", job_id=job_id))
+
+
+@main_routes.route("/curtain-sync/progress/<job_id>", methods=["GET"])
+@auth.login_required
+def curtain_sync_progress(job_id):
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+
+    if not job:
+        flash("Unknown job id.", "warning")
+        return redirect(url_for("main_routes.curtain_sync_landing"))
+
+    last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
+
+    # If finished successfully, render results
+    if job.get("done") and not job.get("error") and job.get("result"):
+        res = job["result"]
+        return render_template(
+            "curtain_sync.html",
+            ran=True,
+            elapsed_sec=res.get("elapsed_sec", 0.0),
+            summary=res.get("summary", {}),
+            per_tab=res.get("per_tab", {}),
+            change_log=res.get("change_log", []),
+            files=res.get("files", []),
+            last_inventory_upload=last_inventory_upload,
+            stale_threshold_hours=6,
+        )
+
+    # Otherwise keep showing progress mode
+    return render_template(
+        "curtain_sync.html",
+        ran=False,
+        job_id=job_id,
+        last_inventory_upload=last_inventory_upload,
+        stale_threshold_hours=6,
+    )
+
+
+@main_routes.route("/curtain-sync/status/<job_id>", methods=["GET"])
+@auth.login_required
+def curtain_sync_status(job_id):
+    with _JOBS_LOCK:
+        data = _JOBS.get(job_id) or {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+    resp = jsonify(data)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@main_routes.route("/curtain-sync/nudge/<job_id>")
+def curtain_sync_nudge(job_id):
+    with _JOBS_LOCK:
+        j = _JOBS.setdefault(job_id, {"pct": 0, "log": [], "done": False, "error": None, "result": None})
+        j["pct"] = min(100, j["pct"] + 25)
+        j["log"].append(f"Nudged to {j['pct']}%")
+    return "ok"
