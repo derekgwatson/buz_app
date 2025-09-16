@@ -18,58 +18,88 @@
   <h3>Summary</h3>
   <ul class="list-unstyled">
     {% for sheet, info in summary.items() %}
-      <li class="mb-2">
+      {# make a unique id per item #}
+      {% set cid = "details-" ~ loop.index ~ "-" ~ sheet|replace(" ", "_") %}
+      <li class="mb-3">
         <strong>{{ sheet }}</strong>:
         {% if info.status == "changed" %}
-          changed ({{ info.total }} total, +{{ info.added_count }}, -{{ info.removed_count }})
-          {% set cid = "details-" ~ loop.index %}
-          <button class="btn btn-link btn-sm p-0 ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#{{ cid }}" aria-expanded="false" aria-controls="{{ cid }}">
+          changed ({{ info.fabrics_total }} fabrics, {{ info.triples_total }} triples)
+          &nbsp; +{{ info.fabrics_added_count }} / -{{ info.fabrics_removed_count }} fabrics,
+          +{{ info.triples_added_count }} / -{{ info.triples_removed_count }} triples
+          &nbsp;·&nbsp;
+          <a class="small text-info toggle-details"
+             data-toggle="collapse"
+             href="#{{ cid }}"
+             aria-expanded="false"
+             aria-controls="{{ cid }}">
             Show details
-          </button>
-          <div class="collapse mt-2" id="{{ cid }}">
-            <div class="row g-3">
-              <div class="col-md-6">
-                <div class="card">
-                  <div class="card-header">Added ({{ info.added_count }})</div>
-                  <div class="card-body p-2">
-                    {% if info.added %}
-                      <ul class="mb-0">
-                        {% for item in info.added %}
-                          <li>
-                            {% if info.is_flex %}YES|{% endif %}{{ item.fabric }} — {{ item.colour }}
-                            {% if item.count > 1 %}<span class="text-muted">×{{ item.count }}</span>{% endif %}
-                          </li>
+          </a>
+
+
+          <div class="collapse" id="{{ cid }}">
+            <div class="panel panel-default" style="margin-top:10px;">
+              <div class="panel-body">
+                <div class="row">
+                  <div class="col-md-6">
+                    <h5 style="margin-top:0;">Fabrics Added ({{ info.fabrics_added_count }})</h5>
+                    {% if info.fabrics_added %}
+                      <ul class="small">
+                        {% for f in info.fabrics_added %}
+                          <li>{{ f }}</li>
                         {% endfor %}
                       </ul>
                     {% else %}
-                      <em>None</em>
+                      <em class="text-muted small">None</em>
+                    {% endif %}
+                  </div>
+                  <div class="col-md-6">
+                    <h5 style="margin-top:0;">Fabrics Removed ({{ info.fabrics_removed_count }})</h5>
+                    {% if info.fabrics_removed %}
+                      <ul class="small">
+                        {% for f in info.fabrics_removed %}
+                          <li>{{ f }}</li>
+                        {% endfor %}
+                      </ul>
+                    {% else %}
+                      <em class="text-muted small">None</em>
                     {% endif %}
                   </div>
                 </div>
-              </div>
-              <div class="col-md-6">
-                <div class="card">
-                  <div class="card-header">Removed ({{ info.removed_count }})</div>
-                  <div class="card-body p-2">
-                    {% if info.removed %}
-                      <ul class="mb-0">
-                        {% for item in info.removed %}
-                          <li>
-                            {% if info.is_flex %}YES|{% endif %}{{ item.fabric }} — {{ item.colour }}
-                            {% if item.count > 1 %}<span class="text-muted">×{{ item.count }}</span>{% endif %}
-                          </li>
+
+                <hr>
+
+                <div class="row">
+                  <div class="col-md-6">
+                    <h5 style="margin-top:0;">Triples Added ({{ info.triples_added_count }})</h5>
+                    {% if info.triples_added %}
+                      <ul class="small">
+                        {% for f,c,code in info.triples_added %}
+                          <li>{{ f }} | {{ c }} | {{ code }}</li>
                         {% endfor %}
                       </ul>
                     {% else %}
-                      <em>None</em>
+                      <em class="text-muted small">None</em>
+                    {% endif %}
+                  </div>
+                  <div class="col-md-6">
+                    <h5 style="margin-top:0;">Triples Removed ({{ info.triples_removed_count }})</h5>
+                    {% if info.triples_removed %}
+                      <ul class="small">
+                        {% for f,c,code in info.triples_removed %}
+                          <li>{{ f }} | {{ c }} | {{ code }}</li>
+                        {% endfor %}
+                      </ul>
+                    {% else %}
+                      <em class="text-muted small">None</em>
                     {% endif %}
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
         {% elif info.status == "unchanged" %}
-          unchanged ({{ info.total }} total)
+          unchanged ({{ info.fabrics_total }} fabrics, {{ info.triples_total }} triples)
         {% elif info.status == "missing_in_input" %}
           <span class="text-warning">missing in uploaded workbook</span>
         {% else %}
@@ -85,4 +115,22 @@
     Download corrected file
   </a>
 {% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+  $('.toggle-details').each(function() {
+    var $link = $(this);
+    var target = $link.attr('href');
+    $(target).on('shown.bs.collapse', function() {
+      $link.text('Hide details');
+    });
+    $(target).on('hidden.bs.collapse', function() {
+      $link.text('Show details');
+    });
+  });
+});
+</script>
 {% endblock %}

@@ -6,7 +6,6 @@ import re
 SHEETS = ["ROLLCB", "WSROLLCB", "ROLLFLEX", "WSROLLFLEX"]
 FLEX_SHEETS = {"ROLLFLEX", "WSROLLFLEX"}
 START_ROW = 17
-EMPTY_STREAK_LIMIT = 50  # stop after this many consecutive empty cells
 
 
 def _norm_text(s: str | None) -> str:
@@ -53,13 +52,12 @@ class ComboBOFabricsGroupOptionsUpdater:
         as two independent sets. Robust to blank rows by scanning until a long empty streak.
         """
         fabric_col = colour_col = None
-        for row in ws.iter_rows(min_row=1, max_row=16):
-            for cell in row:
-                v = str(cell.value).strip().upper() if cell.value else ""
-                if v == "BLOCKOUTFABRIC":
-                    fabric_col = cell.column
-                elif v == "BLOCKOUTFABRICCOLOUR":
-                    colour_col = cell.column
+        for cell in ws[1]:
+            v = str(cell.value).strip().upper() if cell.value else ""
+            if v == "BLOCKOUTFABRIC":
+                fabric_col = cell.column
+            elif v == "BLOCKOUTFABRICCOLOUR":
+                colour_col = cell.column
         if fabric_col is None or colour_col is None:
             raise ValueError(f"{ws.title}: missing BLOCKOUTFABRIC / BLOCKOUTFABRICCOLOUR headers")
 
@@ -70,38 +68,32 @@ class ComboBOFabricsGroupOptionsUpdater:
         # --- Fabrics column ---
         wb_fabrics: Set[str] = set()
         r = START_ROW
-        empty_streak = 0
-        max_rows = ws.max_row or (START_ROW + 1)
-        while r <= max_rows and empty_streak < EMPTY_STREAK_LIMIT:
+        while True:
             val = ws.cell(row=r, column=fabric_col).value
             if val is None or str(val).strip() == "":
-                empty_streak += 1
-            else:
-                empty_streak = 0
-                name = strip_yes(str(val).strip())
-                if name:
-                    wb_fabrics.add(_norm_text(name).lower())
+                break
+
+            name = strip_yes(str(val).strip())
+            if name:
+                wb_fabrics.add(_norm_text(name).lower())
+
             r += 1
 
         # --- Colour triples column ---
         wb_triples: Set[Tuple[str, str, str]] = set()
         r = START_ROW
-        empty_streak = 0
-        while r <= max_rows and empty_streak < EMPTY_STREAK_LIMIT:
+        while True:
             val = ws.cell(row=r, column=colour_col).value
             if val is None or str(val).strip() == "":
-                empty_streak += 1
-            else:
-                empty_streak = 0
-                txt = str(val).strip()
-                if "|" in txt:
-                    parts = [p.strip() for p in txt.split("|")]
-                    if len(parts) >= 2:
-                        f = _norm_text(parts[0]).lower()
-                        c = _norm_text(parts[1]).lower()
-                        code = parts[2].strip() if len(parts) >= 3 else ""
-                        wb_triples.add((f, c, code))
-                # else: ignore stray values without pipes
+                break
+            txt = str(val).strip()
+            if "|" in txt:
+                parts = [p.strip() for p in txt.split("|")]
+                if len(parts) >= 2:
+                    f = _norm_text(parts[0]).lower()
+                    c = _norm_text(parts[1]).lower()
+                    code = parts[2].strip() if len(parts) >= 3 else ""
+                    wb_triples.add((f, c, code))
             r += 1
 
         return wb_fabrics, wb_triples
@@ -114,13 +106,12 @@ class ComboBOFabricsGroupOptionsUpdater:
         Overwrite BLOCKOUTFABRIC and BLOCKOUTFABRICCOLOUR independently.
         """
         fabric_col = colour_col = None
-        for row in ws.iter_rows(min_row=1, max_row=16):
-            for cell in row:
-                v = str(cell.value).strip().upper() if cell.value else ""
-                if v == "BLOCKOUTFABRIC":
-                    fabric_col = cell.column
-                elif v == "BLOCKOUTFABRICCOLOUR":
-                    colour_col = cell.column
+        for cell in ws[1]:
+            v = str(cell.value).strip().upper() if cell.value else ""
+            if v == "BLOCKOUTFABRIC":
+                fabric_col = cell.column
+            elif v == "BLOCKOUTFABRICCOLOUR":
+                colour_col = cell.column
         if fabric_col is None or colour_col is None:
             raise ValueError(f"{ws.title}: missing BLOCKOUTFABRIC / BLOCKOUTFABRICCOLOUR headers")
 
@@ -165,35 +156,45 @@ class ComboBOFabricsGroupOptionsUpdater:
             # WB -> normalized sets
             wb_fabrics, wb_triples = self._load_wb_lists(ws, sheet)
 
+            # fabric sets
+            db_fabrics: Set[str] = {_norm_text(f).lower() for f, _, _ in db_triples}
+            wb_fabrics_from_col: Set[str] = set(wb_fabrics)  # from BLOCKOUTFABRIC (left col)
+            wb_fabrics_from_triples: Set[str] = {f for (f, _, _) in wb_triples}  # inferred from triples (right col)
+
             print("=" * 60)
             print(f"DEBUG for sheet {sheet}")
             print(f"Base group: {base_group}")
             print(f"DB triple count: {len(db_triples)}")
             print(f"WB triple count: {len(wb_triples)}")
+            print(f"DB fabrics count: {len(db_fabrics)}")
+            print(f"WB fabrics (left col) count: {len(wb_fabrics_from_col)}")
+            print(f"WB fabrics (from triples) count: {len(wb_fabrics_from_triples)}")
 
-            # Show a few samples from each
             print("DB triples sample:", list(db_triples)[:5])
             print("WB triples sample:", list(wb_triples)[:5])
 
-            # Find any obvious fabric like ABC
-            db_has_abc = [t for t in db_triples if _norm_text(t[0]).lower() == "abc"]
-            wb_has_abc = [t for t in wb_triples if _norm_text(t[0]).lower() == "abc"]
-            print("DB has ABC triples:", db_has_abc)
-            print("WB has ABC triples:", wb_has_abc)
+            # Focus test (ABC case)
+            target = "abc"
+            print(f"Has '{target.upper()}'?  "
+                  f"DB_fabrics={target in db_fabrics}  "
+                  f"WB_fabrics_col={target in wb_fabrics_from_col}  "
+                  f"WB_fabrics_from_triples={target in wb_fabrics_from_triples}")
 
-            # Show fabric sets for quick comparison
-            db_fabrics = {_norm_text(f).lower() for f, _, _ in db_triples}
-            wb_fabrics = {_norm_text(f).lower() for f, _, _ in wb_triples}
-            print("DB fabrics (sample):", list(db_fabrics)[:10])
-            print("WB fabrics (sample):", list(wb_fabrics)[:10])
-            print("Missing in WB:", sorted(db_fabrics - wb_fabrics)[:10])
-            print("Extra in WB:", sorted(wb_fabrics - db_fabrics)[:10])
+            print(f"DB '{target.upper()}' triples sample:",
+                  [t for t in db_triples if _norm_text(t[0]).lower() == target][:3])
+            print(f"WB '{target.upper()}' triples sample:",
+                  [t for t in wb_triples if t[0] == target][:3])
 
-            # Diffs
-            fabrics_added = sorted(db_fabrics - wb_fabrics)
-            fabrics_removed = sorted(wb_fabrics - db_fabrics)
+            # Diffs (CORRECT: compare DB vs left column; and DB vs triples)
+            fabrics_added = sorted(db_fabrics - wb_fabrics_from_col)  # should include 'abc' if missing in left col
+            fabrics_removed = sorted(wb_fabrics_from_col - db_fabrics)
             triples_added = sorted(db_triples_norm - wb_triples)
             triples_removed = sorted(wb_triples - db_triples_norm)
+
+            print("Missing fabrics (in DB but not WB left col) sample:", fabrics_added[:10])
+            print("Extra fabrics (in WB left col but not DB) sample:", fabrics_removed[:10])
+            print("Missing triples sample:", list(triples_added)[:5])
+            print("Extra triples sample:", list(triples_removed)[:5])
 
             if not fabrics_added and not fabrics_removed and not triples_added and not triples_removed:
                 summary[sheet] = {

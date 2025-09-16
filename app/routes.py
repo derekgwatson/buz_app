@@ -961,48 +961,47 @@ def run_curtain_fabric_sync_endpoint():
     return jsonify(res), 200
 
 
-FLEX_SHEETS = {"ROLLFLEX", "WSROLLFLEX"}
-
-
-def _prepare_view_summary(summary: dict):
-    """
-    Convert updater summary into view-friendly data:
-    - keep compact status/counts
-    - build counted lists for added/removed
-    - precompute whether a sheet is flex (for YES| prefix in UI)
-    """
-    out = {}
-    any_changed = False
-
-    for sheet, info in summary.items():
-        entry = {"status": info.get("status", "unknown")}
-        if entry["status"] == "changed":
-            any_changed = True
-            # info["added"] / ["removed"] are lists of (fabric, colour) tuples.
-            add_counts = Counter(tuple(x) for x in info.get("added", []))
-            rem_counts = Counter(tuple(x) for x in info.get("removed", []))
-            # sort nicely by fabric then colour
-            entry["added"] = [{"fabric": k[0], "colour": k[1], "count": v}
-                              for k, v in sorted(add_counts.items(), key=lambda kv: (kv[0][0], kv[0][1]))]
-            entry["removed"] = [{"fabric": k[0], "colour": k[1], "count": v}
-                                for k, v in sorted(rem_counts.items(), key=lambda kv: (kv[0][0], kv[0][1]))]
-            entry["total"] = info.get("count", 0)
-            entry["added_count"] = sum(d["count"] for d in entry["added"])
-            entry["removed_count"] = sum(d["count"] for d in entry["removed"])
-        elif entry["status"] in ("unchanged", "missing_in_input"):
-            entry["total"] = info.get("count", 0)
-
-        entry["is_flex"] = sheet in FLEX_SHEETS
-        out[sheet] = entry
-
-    return out, any_changed
-
-
 @main_routes.route("/update_combo_bo_fabrics_group_options", methods=["GET", "POST"])
 @auth.login_required
 def update_combo_bo_fabrics_group_options():
     from services.combo_bo_fabrics_group_options_updater import ComboBOFabricsGroupOptionsUpdater
-    import os, tempfile
+    import os, tempfile, uuid  # ensure uuid is in scope
+
+    def _prepare_view_summary(summary: dict[str, dict]) -> tuple[dict[str, dict], bool]:
+        """
+        Convert the raw updater summary into a template-friendly dict
+        with explicit counts and booleans, and report if any sheet changed.
+        """
+        view = {}
+        any_changed = False
+        for sheet, data in summary.items():
+            status = data.get("status", "unchanged")
+            changed = (status == "changed")
+            any_changed = any_changed or changed
+
+            fabrics_added = data.get("fabrics_added", []) or []
+            fabrics_removed = data.get("fabrics_removed", []) or []
+            triples_added = data.get("triples_added", []) or []
+            triples_removed = data.get("triples_removed", []) or []
+
+            view[sheet] = {
+                "status": status,
+                "changed": changed,
+                # Totals if present (fall back to lengths)
+                "fabrics_total": data.get("fabrics_total", data.get("fabrics", len(fabrics_added) + len(fabrics_removed))),
+                "triples_total": data.get("triples_total", data.get("triples", len(triples_added) + len(triples_removed))),
+                # Deltas with counts
+                "fabrics_added_count": len(fabrics_added),
+                "fabrics_removed_count": len(fabrics_removed),
+                "triples_added_count": len(triples_added),
+                "triples_removed_count": len(triples_removed),
+                # Optional details for “expand” section
+                "fabrics_added": fabrics_added,
+                "fabrics_removed": fabrics_removed,
+                "triples_added": triples_added,
+                "triples_removed": triples_removed,
+            }
+        return view, any_changed
 
     if request.method == "POST":
         uploaded_file = request.files.get("group_options_file")
@@ -1010,8 +1009,12 @@ def update_combo_bo_fabrics_group_options():
             flash("No file uploaded", "danger")
             return redirect(request.url)
 
-        # Save the uploaded file temporarily
-        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        # Preserve original extension (helps with xlsm)
+        _, ext = os.path.splitext(uploaded_file.filename)
+        ext = ext.lower() if ext else ".xlsx"
+
+        # Save uploaded file temporarily
+        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         uploaded_file.save(temp_in.name)
         temp_in.close()
 
@@ -1020,7 +1023,6 @@ def update_combo_bo_fabrics_group_options():
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"corrected_group_options_{uuid.uuid4().hex}.xlsx")
 
-        # Run updater
         updater = ComboBOFabricsGroupOptionsUpdater(g.db)
         try:
             summary = updater.update_options_file(temp_in.name, out_path)
@@ -1030,20 +1032,22 @@ def update_combo_bo_fabrics_group_options():
             flash(f"Error while processing file: {e}", "danger")
             return redirect(request.url)
         finally:
-            os.unlink(temp_in.name)
+            try:
+                os.unlink(temp_in.name)
+            except Exception:
+                pass
 
-        # If no changes → tell user
-        if all(v.get("status") != "changed" for v in summary.values()):
+        # Use the prepared view model in both branches
+        if not any_changed:
             flash("✅ No changes required", "success")
-            return render_template("combo_bo_fabrics_update.html", summary=summary, output_file=None)
+            return render_template("combo_bo_fabrics_update.html", summary=view_summary, output_file=None)
 
-        # Otherwise, show summary + download link
-        filename = os.path.basename(out_path) if any_changed else None
+        filename = os.path.basename(out_path)
         return render_template(
             "combo_bo_fabrics_update.html",
             summary=view_summary,
             output_file=filename,
         )
 
-    # GET request
+    # GET
     return render_template("combo_bo_fabrics_update.html")
