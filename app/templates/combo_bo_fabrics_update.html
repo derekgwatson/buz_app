@@ -1,0 +1,88 @@
+{% extends "layout.html" %}
+
+{% block title %}Home - Buz Application{% endblock %}
+
+{% block content %}
+
+<h2>Combo Blockout Fabrics Group Options Updater</h2>
+
+<form method="post" enctype="multipart/form-data" class="mb-4">
+  <div class="mb-3">
+    <label for="group_options_file" class="form-label">Upload Group Options File</label>
+    <input class="form-control" type="file" name="group_options_file" id="group_options_file" required>
+  </div>
+  <button type="submit" class="btn btn-primary">Upload & Update</button>
+</form>
+
+{% if summary %}
+  <h3>Summary</h3>
+  <ul class="list-unstyled">
+    {% for sheet, info in summary.items() %}
+      <li class="mb-2">
+        <strong>{{ sheet }}</strong>:
+        {% if info.status == "changed" %}
+          changed ({{ info.total }} total, +{{ info.added_count }}, -{{ info.removed_count }})
+          {% set cid = "details-" ~ loop.index %}
+          <button class="btn btn-link btn-sm p-0 ms-2" type="button" data-bs-toggle="collapse" data-bs-target="#{{ cid }}" aria-expanded="false" aria-controls="{{ cid }}">
+            Show details
+          </button>
+          <div class="collapse mt-2" id="{{ cid }}">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <div class="card">
+                  <div class="card-header">Added ({{ info.added_count }})</div>
+                  <div class="card-body p-2">
+                    {% if info.added %}
+                      <ul class="mb-0">
+                        {% for item in info.added %}
+                          <li>
+                            {% if info.is_flex %}YES|{% endif %}{{ item.fabric }} — {{ item.colour }}
+                            {% if item.count > 1 %}<span class="text-muted">×{{ item.count }}</span>{% endif %}
+                          </li>
+                        {% endfor %}
+                      </ul>
+                    {% else %}
+                      <em>None</em>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="card">
+                  <div class="card-header">Removed ({{ info.removed_count }})</div>
+                  <div class="card-body p-2">
+                    {% if info.removed %}
+                      <ul class="mb-0">
+                        {% for item in info.removed %}
+                          <li>
+                            {% if info.is_flex %}YES|{% endif %}{{ item.fabric }} — {{ item.colour }}
+                            {% if item.count > 1 %}<span class="text-muted">×{{ item.count }}</span>{% endif %}
+                          </li>
+                        {% endfor %}
+                      </ul>
+                    {% else %}
+                      <em>None</em>
+                    {% endif %}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% elif info.status == "unchanged" %}
+          unchanged ({{ info.total }} total)
+        {% elif info.status == "missing_in_input" %}
+          <span class="text-warning">missing in uploaded workbook</span>
+        {% else %}
+          <span class="text-muted">{{ info.status }}</span>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
+{% if output_file %}
+  <a class="btn btn-success" href="{{ url_for('main_routes.download_file', filename=output_file) }}">
+    Download corrected file
+  </a>
+{% endif %}
+{% endblock %}
