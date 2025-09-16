@@ -1,6 +1,5 @@
 import tempfile
-from flask import Blueprint
-from flask import render_template, request, g, send_from_directory
+from flask import render_template, request, send_from_directory
 from services.database import create_db_manager
 import services.curtain_fabric_sync
 from services.group_options_check import extract_codes_from_excel_flat_dedup
@@ -12,11 +11,12 @@ from services.fabric_mapping_sync import sync_fabric_mappings
 from services.unleashed_sync import sync_unleashed_fabrics, build_sequential_code_provider
 import threading
 import uuid
-from flask import jsonify
 from datetime import timezone
-from flask import current_app, abort, flash, redirect, url_for, send_file
+from flask import abort, flash, redirect, url_for, send_file
 from werkzeug.utils import safe_join
 import os
+from flask import Blueprint, jsonify, current_app, g
+from services.curtain_sync_db import run_curtain_fabric_sync_db
 
 
 # Create Blueprint
@@ -949,3 +949,12 @@ def unleashed_sync_status(job_id):
     resp = jsonify(data)  # keys: pct, log, done, error, result
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@main_routes.post("/admin/run-curtain-fabric-sync")
+@auth.login_required
+def run_curtain_fabric_sync_endpoint():
+    # db manager lives at current_app.extensions['db_manager'] in your app
+    db = current_app.extensions["db_manager"]
+    res = run_curtain_fabric_sync_db(current_app, db, use_google_sheet=True)  # or False to use unleashed_products
+    return jsonify(res), 200
