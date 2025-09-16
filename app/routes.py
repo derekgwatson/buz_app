@@ -17,6 +17,7 @@ from werkzeug.utils import safe_join
 import os
 from flask import Blueprint, jsonify, current_app, g
 from services.curtain_sync_db import run_curtain_fabric_sync_db
+from collections import Counter
 
 
 # Create Blueprint
@@ -958,3 +959,91 @@ def run_curtain_fabric_sync_endpoint():
     db = current_app.extensions["db_manager"]
     res = run_curtain_fabric_sync_db(current_app, db, use_google_sheet=True)  # or False to use unleashed_products
     return jsonify(res), 200
+
+
+FLEX_SHEETS = {"ROLLFLEX", "WSROLLFLEX"}
+
+
+def _prepare_view_summary(summary: dict):
+    """
+    Convert updater summary into view-friendly data:
+    - keep compact status/counts
+    - build counted lists for added/removed
+    - precompute whether a sheet is flex (for YES| prefix in UI)
+    """
+    out = {}
+    any_changed = False
+
+    for sheet, info in summary.items():
+        entry = {"status": info.get("status", "unknown")}
+        if entry["status"] == "changed":
+            any_changed = True
+            # info["added"] / ["removed"] are lists of (fabric, colour) tuples.
+            add_counts = Counter(tuple(x) for x in info.get("added", []))
+            rem_counts = Counter(tuple(x) for x in info.get("removed", []))
+            # sort nicely by fabric then colour
+            entry["added"] = [{"fabric": k[0], "colour": k[1], "count": v}
+                              for k, v in sorted(add_counts.items(), key=lambda kv: (kv[0][0], kv[0][1]))]
+            entry["removed"] = [{"fabric": k[0], "colour": k[1], "count": v}
+                                for k, v in sorted(rem_counts.items(), key=lambda kv: (kv[0][0], kv[0][1]))]
+            entry["total"] = info.get("count", 0)
+            entry["added_count"] = sum(d["count"] for d in entry["added"])
+            entry["removed_count"] = sum(d["count"] for d in entry["removed"])
+        elif entry["status"] in ("unchanged", "missing_in_input"):
+            entry["total"] = info.get("count", 0)
+
+        entry["is_flex"] = sheet in FLEX_SHEETS
+        out[sheet] = entry
+
+    return out, any_changed
+
+
+@main_routes.route("/update_combo_bo_fabrics_group_options", methods=["GET", "POST"])
+@auth.login_required
+def update_combo_bo_fabrics_group_options():
+    from services.combo_bo_fabrics_group_options_updater import ComboBOFabricsGroupOptionsUpdater
+    import os, tempfile
+
+    if request.method == "POST":
+        uploaded_file = request.files.get("group_options_file")
+        if not uploaded_file or uploaded_file.filename == "":
+            flash("No file uploaded", "danger")
+            return redirect(request.url)
+
+        # Save the uploaded file temporarily
+        temp_in = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        uploaded_file.save(temp_in.name)
+        temp_in.close()
+
+        # Prepare output path in uploads folder
+        out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"corrected_group_options_{uuid.uuid4().hex}.xlsx")
+
+        # Run updater
+        updater = ComboBOFabricsGroupOptionsUpdater(g.db)
+        try:
+            summary = updater.update_options_file(temp_in.name, out_path)
+            view_summary, any_changed = _prepare_view_summary(summary)
+        except Exception as e:
+            current_app.logger.exception("Failed to update group options")
+            flash(f"Error while processing file: {e}", "danger")
+            return redirect(request.url)
+        finally:
+            os.unlink(temp_in.name)
+
+        # If no changes → tell user
+        if all(v.get("status") != "changed" for v in summary.values()):
+            flash("✅ No changes required", "success")
+            return render_template("combo_bo_fabrics_update.html", summary=summary, output_file=None)
+
+        # Otherwise, show summary + download link
+        filename = os.path.basename(out_path) if any_changed else None
+        return render_template(
+            "combo_bo_fabrics_update.html",
+            summary=view_summary,
+            output_file=filename,
+        )
+
+    # GET request
+    return render_template("combo_bo_fabrics_update.html")
