@@ -3,7 +3,7 @@ clear
 set -e
 
 # 🔧 CONFIGURATION
-APP_NAME="buz_app"  # Change this for each app
+APP_NAME="buz-app"  # Change this for each app
 
 sudo mkdir -p /var/log/buz_app
 sudo chown -R www-data:www-data /var/log/buz_app
