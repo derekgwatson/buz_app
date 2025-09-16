@@ -225,6 +225,18 @@ def init_db(db_manager: DatabaseManager):
     try:
         logger.info("Initializing the database...")
         tables = {
+            "jobs": '''
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id TEXT PRIMARY KEY,
+                    status TEXT,          -- 'running', 'done', 'error'
+                    pct INTEGER,
+                    log TEXT,             -- JSON array of log lines
+                    error TEXT,
+                    result TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            ''',
             "inventory_items": '''
                 CREATE TABLE IF NOT EXISTS inventory_items (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,7 +1,7 @@
 from flask import render_template, request, send_from_directory
 from flask import abort, flash, redirect, url_for, send_file
 from flask import Blueprint, jsonify, current_app, g
-
+import json
 import tempfile
 from services.database import create_db_manager
 import services.curtain_fabric_sync
@@ -24,40 +24,19 @@ import pytz
 import sys
 import re
 
+from services.job_service import create_job, update_job, get_job
+
 
 # Create Blueprint
 main_routes = Blueprint('main_routes', __name__)
 
 
-# ---- Job store (single copy only) ----
-_JOBS = {}   # job_id -> {"pct": 0, "log": [], "done": False, "error": None, "result": None}
-_JOBS_LOCK = threading.Lock()
+def _make_progress(job_id):
+    """Create a progress callback that updates job in database"""
 
+    def progress(message, pct=None):
+        update_job(job_id, pct, message)
 
-def _init_job(job_id: str):
-    with _JOBS_LOCK:
-        _JOBS[job_id] = {"pct": 0, "log": [], "done": False, "error": None, "result": None}
-
-
-def _make_progress(job_id: str):
-    def progress(msg: str, pct: int | None = None):
-        MAX_LOG = 1000
-        with _JOBS_LOCK:
-            j = _JOBS.get(job_id)
-            if not j:
-                return
-            if msg:
-                j["log"].append(msg)
-                if len(j["log"]) > MAX_LOG:
-                    j["log"] = j["log"][-MAX_LOG:]
-            if pct is not None:
-                try:
-                    pct = max(0, min(100, int(pct)))
-                except Exception:
-                    pct = j["pct"]
-                if pct < j["pct"]:
-                    pct = j["pct"]  # don’t go backwards
-                j["pct"] = pct
     return progress
 
 
@@ -877,20 +856,22 @@ def unleashed_sync_landing():
 @auth.login_required
 def unleashed_sync_start():
     job_id = str(uuid.uuid4())
-    _init_job(job_id)
+    create_job(job_id)
 
+    app = current_app._get_current_object()  # type: ignore
     db_path  = current_app.config["database"]
     cfg_path = current_app.config.get("CONFIG_JSON_PATH", "config.json")
     out_dir  = current_app.config.get("UPLOAD_OUTPUT_DIR", current_app.config.get("upload_folder"))
     minimal_cfg = {
         "unleashed_group_to_inventory_groups": current_app.config.get("unleashed_group_to_inventory_groups", {})
     }
-    progress = _make_progress(job_id)
 
-    def _runner(db_path=db_path, cfg_path=cfg_path, out_dir=out_dir, minimal_cfg=minimal_cfg):
+    def _runner():
         db = create_db_manager(db_path)
         try:
-            progress("Starting…", 1)
+            update_job(job_id, 1, "Job started…")
+            progress = _make_progress(job_id)
+
             code_provider = build_sequential_code_provider(db, minimal_cfg, default_start=10000)
             result = sync_unleashed_fabrics(
                 db=db,
@@ -901,24 +882,15 @@ def unleashed_sync_start():
                 pricing_tolerance=0.005,
                 progress=progress,
             )
-            with _JOBS_LOCK:
-                j = _JOBS.get(job_id)
-                if j is not None:
-                    j["result"] = result
+
+            # Store result in job record
+            update_job(job_id, pct=100, message="Completed", done=True, result=result)
+
         except Exception as e:
             logging.exception("Unleashed sync failed")
-            with _JOBS_LOCK:
-                j = _JOBS.get(job_id)
-                if j is not None:
-                    j["error"] = str(e)
+            update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e))
+
         finally:
-            with _JOBS_LOCK:
-                j = _JOBS.get(job_id)
-                if j is not None:
-                    j["done"] = True
-                    # ensure progress finishes at 100 on completion
-                    if j["pct"] < 100 and j["error"] is None:
-                        j["pct"] = 100
             try:
                 db.close()
             except Exception:
@@ -931,7 +903,8 @@ def unleashed_sync_start():
 @main_routes.route("/sync-unleashed/progress/<job_id>", methods=["GET"])
 @auth.login_required
 def unleashed_sync_progress(job_id):
-    if job_id not in _JOBS:
+    job = get_job(job_id)
+    if not job:
         flash("Unknown job id.", "warning")
         return redirect(url_for("main_routes.unleashed_sync_landing"))
     return render_template("unleashed_sync_progress.html", job_id=job_id)
@@ -940,9 +913,19 @@ def unleashed_sync_progress(job_id):
 @main_routes.route("/sync-unleashed/status/<job_id>", methods=["GET"])
 @auth.login_required
 def unleashed_sync_status(job_id):
-    with _JOBS_LOCK:
-        data = _JOBS.get(job_id) or {"pct": 0, "log": [], "done": False, "error": None, "result": None}
-    resp = jsonify(data)  # keys: pct, log, done, error, result
+    job = get_job(job_id)
+    if not job:
+        data = {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+    else:
+        data = {
+            "pct": job.get("progress", 0),
+            "log": job.get("log", "").split('\n') if job.get("log") else [],
+            "done": job.get("status") in ["completed", "failed"],
+            "error": job.get("error"),
+            "result": job.get("result")
+        }
+
+    resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -1139,7 +1122,7 @@ from services.google_sheets_service import GoogleSheetsService
 @auth.login_required
 def curtain_sync_start():
     job_id = uuid.uuid4().hex
-    _init_job(job_id)  # use the same in-memory store everywhere
+    create_job(job_id)
 
     # capture the actual Flask app object so we can push an app context in the thread
     app = current_app._get_current_object()  # type: ignore
@@ -1176,19 +1159,15 @@ def curtain_sync_start():
                     progress=progress,  # your function already accepts this
                 )
 
-                # 👇 Add this check
                 if not result.get("change_log"):
-                    progress("No changes found, skipping file generation", 100)
-                    with _JOBS_LOCK:
-                        _JOBS[job_id]["result"] = {
-                            "elapsed_sec": result.get("elapsed_sec", 0),
-                            "summary": result.get("summary", {}),
-                            "change_log": [],
-                            "files": [],  # no files to download
-                        }
-                        _JOBS[job_id]["done"] = True
+                    update_job(job_id, 100, "No changes found, skipping file generation", result={
+                        "elapsed_sec": result.get("elapsed_sec", 0),
+                        "summary": result.get("summary", {}),
+                        "change_log": [],
+                        "files": [],
+                    })
                     return
-                
+
                 # friendly filenames
                 items_name   = f"items_upload_{uuid.uuid4().hex}.xlsx"
                 pricing_name = f"pricing_upload_{uuid.uuid4().hex}.xlsx"
@@ -1199,35 +1178,25 @@ def curtain_sync_start():
                     {"label": "Pricing upload", "filename": pricing_name},
                 ]
 
-                with _JOBS_LOCK:
-                    _JOBS[job_id]["result"] = result
+                update_job(job_id, 100, "Completed successfully", result=result)
+
             except Exception as e:
                 current_app.logger.exception("Curtain sync failed")
-                with _JOBS_LOCK:
-                    _JOBS[job_id]["error"] = str(e)
+                update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e))
             finally:
-                with _JOBS_LOCK:
-                    _JOBS[job_id]["done"] = True
-                    if _JOBS[job_id]["pct"] < 100 and _JOBS[job_id]["error"] is None:
-                        _JOBS[job_id]["pct"] = 100
                 try:
                     db.close()
                 except Exception:
                     pass
 
-    # 🚀 actually start the worker thread
     threading.Thread(target=_runner, daemon=True).start()
-
-    # and send the browser to the progress page (your JS will poll /status/<job_id>)
     return redirect(url_for("main_routes.curtain_sync_progress", job_id=job_id))
 
 
 @main_routes.route("/curtain-sync/progress/<job_id>", methods=["GET"])
 @auth.login_required
 def curtain_sync_progress(job_id):
-    with _JOBS_LOCK:
-        job = _JOBS.get(job_id)
-
+    job = get_job(job_id)
     if not job:
         flash("Unknown job id.", "warning")
         return redirect(url_for("main_routes.curtain_sync_landing"))
@@ -1235,7 +1204,7 @@ def curtain_sync_progress(job_id):
     last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
 
     # If finished successfully, render results
-    if job.get("done") and not job.get("error") and job.get("result"):
+    if job.get("status") == "completed" and job.get("result"):
         res = job["result"]
         return render_template(
             "curtain_sync.html",
@@ -1262,17 +1231,18 @@ def curtain_sync_progress(job_id):
 @main_routes.route("/curtain-sync/status/<job_id>", methods=["GET"])
 @auth.login_required
 def curtain_sync_status(job_id):
-    with _JOBS_LOCK:
-        data = _JOBS.get(job_id) or {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+    job = get_job(job_id)
+    if not job:
+        data = {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+    else:
+        data = {
+            "pct": job.get("pct", 0),
+            "log": job.get("log", "").split('\n') if job.get("log") else [],
+            "done": job.get("done", False),
+            "error": job.get("error"),
+            "result": job.get("result")
+        }
+
     resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
-
-
-@main_routes.route("/curtain-sync/nudge/<job_id>")
-def curtain_sync_nudge(job_id):
-    with _JOBS_LOCK:
-        j = _JOBS.setdefault(job_id, {"pct": 0, "log": [], "done": False, "error": None, "result": None})
-        j["pct"] = min(100, j["pct"] + 25)
-        j["log"].append(f"Nudged to {j['pct']}%")
-    return "ok"
