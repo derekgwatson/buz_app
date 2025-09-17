@@ -1,9 +1,10 @@
-import os
+# config.py
 
 
 class Config:
     DEBUG = False
     TESTING = False
+    EXPORT_ROOT_SUBDIR = "exports"          # generic, not feature-specific
 
 
 class ProductionConfig(Config):

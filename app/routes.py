@@ -195,36 +195,14 @@ def delete_inventory_group(inventory_group_code):
 @main_routes.route('/download/<path:filename>')
 @auth.login_required
 def download_file(filename):
-    # Prefer UPLOAD_OUTPUT_DIR, fall back to upload_folder for backward compatibility
-    base_dir = (
-        current_app.config.get("UPLOAD_OUTPUT_DIR")
-        or current_app.config.get("upload_folder")
-    )
-    if not base_dir:
-        abort(500, description="No upload directory configured")
-
-    base_dir = os.path.abspath(base_dir)
-    if not os.path.isdir(base_dir):
-        abort(500, description="Configured upload directory does not exist")
-
-    # Build a safe absolute path
-    file_path = ""
+    base_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config.get("upload_folder")
+    if not base_dir or not os.path.isdir(base_dir):
+        abort(500, description="Upload directory misconfigured")
     try:
-        file_path = safe_join(base_dir, filename)
-    except Exception:
-        # Newer Werkzeug raises on bad paths
-        abort(400, description="Invalid filename")
-
-    # Older Werkzeug may return None on bad paths
-    if not file_path:
-        abort(400, description="Invalid filename")
-
-    if not os.path.isfile(file_path):
+        return send_from_directory(base_dir, filename, as_attachment=True, max_age=0)
+    except FileNotFoundError:
         flash('File not found.', 'warning')
-        return redirect(url_for('main_routes.homepage'))  # or abort(404)
-
-    # Send the exact file path; let Flask infer mimetype and force download
-    return send_file(file_path, as_attachment=True)
+        return redirect(url_for('main_routes.homepage'))
 
 
 @main_routes.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
@@ -332,13 +310,16 @@ def generate_backorder_file():
         original_filename = 'original_file.xlsx'
         upload_filename = 'upload_file.xlsx'
 
-        upload_wb.save(current_app.config["upload_folder"] + '/' + upload_filename)
-        original_wb.save(current_app.config["upload_folder"] + '/' + original_filename)
+        out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
+        upload_wb.save(os.path.join(out_dir, upload_filename))
+        original_wb.save(os.path.join(out_dir, original_filename))
 
         return render_template(
             'generate_backorder_file.html',
             original_filename=original_filename,
             upload_filename=upload_filename,
+            original_download=url_for('main_routes.download_file', filename=original_filename),
+            upload_download=url_for('main_routes.download_file', filename=upload_filename),
         )
 
     return render_template(
@@ -416,7 +397,11 @@ def get_matching_buz_items():
         second_file.save(second_path)
 
         # Process the files
-        output_path = os.path.join("static", "filtered_output.xlsx")
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx",
+                                          dir=current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config[
+                                              "upload_folder"])
+        tmp.close()
+        output_path = tmp.name
         matches_found = process_matching_buz_items(first_path, second_path, output_path)
 
         if not matches_found:
@@ -424,7 +409,12 @@ def get_matching_buz_items():
             return render_template("get_matching_buz_items.html")
 
         # Provide the output file for download
-        return send_file(output_path, as_attachment=True)
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name="filtered_output.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     return render_template("get_matching_buz_items.html")
 
@@ -471,13 +461,13 @@ def generate_deactivation_file():
             upload_filename = os.path.basename(filename)
             return render_template(
                 'generate_deactivation_file.html',
-                upload_filename=upload_filename
+                upload_filename=upload_filename,
+                download_url=url_for('main_routes.download_file', filename=upload_filename),
             )
         else:
             flash('Failed to generate deactivation file. Check logs for details.', 'danger')
 
     return render_template('generate_deactivation_file.html', upload_filename=None)
-
 
 @main_routes.route('/fabric-duplicates-report', methods=['GET', 'POST'])
 @auth.login_required
@@ -598,16 +588,14 @@ def pricing_update():
         log = result.get("log", [])
         if result.get("file"):
             filename = "buz_pricing_upload.xlsx"
-            upload_dir = os.path.join(os.path.dirname(__file__), "..", "uploads")
-            os.makedirs(upload_dir, exist_ok=True)
+            upload_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
             output_path = os.path.join(upload_dir, filename)
-
             try:
                 result["file"].save_workbook(output_path)
                 return render_template(
                     "pricing_result.html",
                     updated=True,
-                    file_path=f"/uploads/{filename}",
+                    download_url=url_for('main_routes.download_file', filename=filename),
                     log=log
                 )
             except PermissionError:
@@ -802,15 +790,13 @@ def sync_unleashed():
 
         files = []
         if items_fp and os.path.exists(items_fp):
-            files.append({
-                "label": "Items upload",
-                "filename": os.path.basename(items_fp),
-            })
+            bn = os.path.basename(items_fp)
+            files.append(
+                {"label": "Items upload", "filename": bn, "url": url_for('main_routes.download_file', filename=bn)})
         if pricing_fp and os.path.exists(pricing_fp):
-            files.append({
-                "label": "Pricing upload",
-                "filename": os.path.basename(pricing_fp),
-            })
+            bn = os.path.basename(pricing_fp)
+            files.append(
+                {"label": "Pricing upload", "filename": bn, "url": url_for('main_routes.download_file', filename=bn)})
 
         return render_template(
             "unleashed_sync.html",
@@ -1146,13 +1132,14 @@ def curtain_sync_start():
 
             if not result.get("change_log"):
                 update_job(job_id, 100, "No changes found, skipping file generation",
-                        result={
-                            "elapsed_sec": result.get("elapsed_sec", 0),
-                            "summary": result.get("summary", {}),
-                            "change_log": [],
-                            "files": [],
-                        },
-                        db=db)
+                           result={
+                                "elapsed_sec": result.get("elapsed_sec", 0),
+                                "summary": result.get("summary", {}),
+                                "change_log": [],
+                                "files": [],
+                            },
+                           done=True,
+                           db=db)
                 return
 
             # friendly filenames
@@ -1165,11 +1152,11 @@ def curtain_sync_start():
                 {"label": "Pricing upload", "filename": pricing_name},
             ]
 
-            update_job(job_id, 100, "Completed successfully", result=result, db=db)
+            update_job(job_id, 100, "Completed successfully", result=result, db=db, done=True)
 
         except Exception as e:
             logger.exception("Curtain sync failed")
-            update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e), db=db)
+            update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e), db=db, done=True)
         finally:
             try:
                 db.close()
@@ -1196,7 +1183,7 @@ def curtain_sync_progress(job_id):
     last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
 
     # If finished successfully, render results
-    if job.get("status") == "completed" and job.get("result"):
+    if job.get("done") and job.get("result"):
         res = job["result"]
         return render_template(
             "curtain_sync.html",
