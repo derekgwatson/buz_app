@@ -21,11 +21,11 @@ fi
 
 # 🧩 SET SERVICE NAMES
 WEB_SERVICE="$APP_NAME.service"
-TASK_SERVICE="$APP_NAME-tasks.service"
+#TASK_SERVICE="$APP_NAME-tasks.service"
 
 if [[ "$ENV" == "staging" ]]; then
     WEB_SERVICE="$APP_NAME-staging.service"
-    TASK_SERVICE="$APP_NAME-staging-tasks.service"
+#    TASK_SERVICE="$APP_NAME-staging-tasks.service"
 fi
 
 echo "📁 App: $APP_NAME"
@@ -39,7 +39,10 @@ sudo systemctl daemon-reload || { echo "❌ Failed to restart systemctl daemon";
 echo "🔄 Restarting $ENV Flask web app..."
 sudo systemctl restart "$WEB_SERVICE" || { echo "❌ Failed to restart web app ($ENV)"; exit 1; }
 
-echo "🔄 Restarting $ENV background tasks..."
-sudo systemctl restart "$TASK_SERVICE" || { echo "❌ Failed to restart background tasks ($ENV)"; exit 1; }
+echo "🔄 Restarting $ENV Gunicorn..."
+sudo systemctl restart "gunicorn-$APP_NAME" || { echo "❌ Failed to restart gunicorn ($ENV)"; exit 1; }
+
+#echo "🔄 Restarting $ENV background tasks..."
+#sudo systemctl restart "$TASK_SERVICE" || { echo "❌ Failed to restart background tasks ($ENV)"; exit 1; }
 
 echo "🚀 Deploy complete for $APP_NAME ($ENV)."
