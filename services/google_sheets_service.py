@@ -3,7 +3,7 @@ import logging
 import os
 import gspread
 from google.oauth2.service_account import Credentials
-from flask import current_app
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +16,22 @@ class GoogleSheetsService:
 
     @staticmethod
     def _get_service_account_path():
-        # Adjust path to look outside the /app folder, directly in the project root
-        project_root = os.path.abspath(os.path.join(current_app.root_path, os.pardir))
-        credentials_path = os.path.join(project_root, 'credentials', 'service_account.json')
-        if os.path.isfile(credentials_path):
-            return credentials_path
-        fallback_path = os.path.join(project_root, 'service_account.json')
-        if os.path.isfile(fallback_path):
-            return fallback_path
-        raise FileNotFoundError("Could not find service_account.json in either /credentials or project root.")
+        env = os.environ.get("GSHEETS_CREDENTIALS") or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        if env and os.path.isfile(env):
+            return env
+
+        candidates = [
+            Path(__file__).resolve().parents[1] / "credentials" / "service_account.json",
+            Path(__file__).resolve().parents[2] / "credentials" / "service_account.json",
+            Path.cwd() / "credentials" / "service_account.json",
+            Path.cwd() / "service_account.json",
+        ]
+        for p in candidates:
+            if p.is_file():
+                return str(p)
+
+        raise FileNotFoundError(
+            "service_account.json not found. Set GSHEETS_CREDENTIALS or GOOGLE_APPLICATION_CREDENTIALS.")
 
     @staticmethod
     def _authenticate_google_sheets(json_file: str) -> Credentials:
@@ -41,8 +48,7 @@ class GoogleSheetsService:
         scope = [
             "https://www.googleapis.com/auth/spreadsheets"
         ]
-        credentials = Credentials.from_service_account_info(creds, scopes=scope)
-        return credentials
+        return Credentials.from_service_account_info(creds, scopes=scope)
 
     def __init__(self, json_file: str = None):
         """

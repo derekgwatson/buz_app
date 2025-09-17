@@ -2,15 +2,17 @@ import json
 from flask import g
 
 
-def create_job(job_id):
-    g.db.execute_query(
+def create_job(job_id, db=None):
+    if db is None:
+        db = g.db
+    db.execute_query(
         "INSERT INTO jobs (id, status, pct, log) VALUES (?, ?, ?, ?)",
         (job_id, "running", 0, json.dumps([])),
     )
-    g.db.commit()
+    db.commit()
 
 
-def update_job(job_id, pct=None, message=None, error=None, result=None, done=False):
+def update_job(job_id, pct=None, message=None, error=None, result=None, done=False, db=None):
     """
     Update job progress and status.
 
@@ -22,8 +24,11 @@ def update_job(job_id, pct=None, message=None, error=None, result=None, done=Fal
         result: Result data (will be JSON serialized)
         done: Whether job is completed successfully
     """
+
+    if db is None:
+        db = g.db
     # Get existing logs
-    row = g.db.execute_query("SELECT log FROM jobs WHERE id=?", (job_id,)).fetchone()
+    row = db.execute_query("SELECT log FROM jobs WHERE id=?", (job_id,)).fetchone()
     logs = json.loads(row["log"]) if row else []
 
     # Append new log message if provided
@@ -42,20 +47,22 @@ def update_job(job_id, pct=None, message=None, error=None, result=None, done=Fal
     result_json = json.dumps(result) if result is not None else None
 
     # Update database
-    g.db.execute_query(
+    db.execute_query(
         "UPDATE jobs SET pct=?, log=?, error=?, result=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
         (pct or 0, json.dumps(logs), error, result_json, status, job_id),
     )
-    g.db.commit()
+    db.commit()
 
 
-def get_job(job_id):
+def get_job(job_id, db=None):
     """
     Retrieve job status and data.
 
     Returns dict with keys: pct, log, done, error, result, status
     """
-    row = g.db.execute_query("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if db is None:
+        db = g.db
+    row = db.execute_query("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     if not row:
         return None
 
@@ -75,3 +82,15 @@ def get_job(job_id):
         "result": result,
         "status": row["status"],  # include raw status for debugging
     }
+
+
+def make_progress(job_id, db=None):
+    """Create a progress callback that updates job in database"""
+
+    if db is None:
+        db = g.db
+
+    def progress(message, pct=None):
+        update_job(job_id, pct=pct, message=message, db=db)
+
+    return progress

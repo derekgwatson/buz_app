@@ -537,14 +537,6 @@ def get_all_fabrics(db_manager: DatabaseManager):
     return db_manager.execute_query(query).fetchall()
 
 
-def get_last_upload_time(db, table_name: str):
-    row = db.execute_query(
-        "SELECT last_upload FROM upload_history WHERE table_name = ?",
-        (table_name,)
-    ).fetchone()
-    return row["last_upload"] if row else None
-
-
 def mark_last_upload_time(db, table_name: str):
     db.execute_query(
         """

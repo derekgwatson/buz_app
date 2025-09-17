@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from flask import g
 
 logger = logging.getLogger(__name__)
 
@@ -74,8 +75,10 @@ def fetch_master_from_sheets(app):
     return master
 
 
-def fetch_master_from_db(db):
+def fetch_master_from_db(db=None):
     # Use your existing Unleashed staging (adjust field names if needed)
+    if db is None:
+        db = g.db
     cur = db.execute_query("""
         SELECT
             Brand                AS brand,

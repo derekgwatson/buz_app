@@ -201,9 +201,13 @@ def create_db_manager(db_file: str):
     """
     connection = sqlite3.connect(
         db_file,
+        timeout=30.0,
         detect_types=sqlite3.PARSE_DECLTYPES,
         check_same_thread=False
     )
+    connection.execute("PRAGMA journal_mode=WAL;")
+    connection.execute("PRAGMA synchronous=NORMAL;")
+    connection.execute("PRAGMA foreign_keys=ON;")
     connection.row_factory = sqlite3.Row
     return DatabaseManager(connection)
 
@@ -429,5 +433,3 @@ def init_db(db_manager: DatabaseManager):
         logger.info("Database initialized successfully!")
     except DatabaseError as e:
         logger.error(f"An error occurred: {e}")
-
-

@@ -1,7 +1,6 @@
 from flask import render_template, request, send_from_directory
 from flask import abort, flash, redirect, url_for, send_file
 from flask import Blueprint, jsonify, current_app, g
-import json
 import tempfile
 from services.database import create_db_manager
 import services.curtain_fabric_sync
@@ -23,21 +22,11 @@ from services.curtain_fabric_sync import generate_uploads_from_db
 import pytz
 import sys
 import re
-
-from services.job_service import create_job, update_job, get_job
+from services.job_service import create_job, update_job, get_job, make_progress
 
 
 # Create Blueprint
 main_routes = Blueprint('main_routes', __name__)
-
-
-def _make_progress(job_id):
-    """Create a progress callback that updates job in database"""
-
-    def progress(message, pct=None):
-        update_job(job_id, pct, message)
-
-    return progress
 
 
 @auth.verify_password
@@ -48,6 +37,7 @@ def verify_password(username, password):
 
 
 @main_routes.route('/debug')
+@auth.login_required
 def debug():
     """Debug route to check g variables."""
     return f"g.start_time: {getattr(g, 'start_time', 'None')}, g.request_duration: {getattr(g, 'request_duration', 'None')}"
@@ -652,6 +642,7 @@ def unleashed_demo():
 
 
 @main_routes.route("/allowed_codes", methods=["GET", "POST"])
+@auth.login_required
 def allowed_codes():
     config_manager = ConfigManager()
     db = g.db
@@ -671,6 +662,7 @@ def allowed_codes():
 
 
 @main_routes.route("/clean_excel_upload", methods=["GET", "POST"])
+@auth.login_required
 def clean_excel_upload():
     config_manager = ConfigManager()
 
@@ -705,6 +697,7 @@ def clean_excel_upload():
 
 
 @main_routes.route("/motorisation-data", methods=["GET", "POST"])
+@auth.login_required
 def motorisation_data():
     data = []
     pricing_fields = []
@@ -719,6 +712,7 @@ def motorisation_data():
 
 
 @main_routes.route('/curtain-fabric-sync', methods=['GET', 'POST'])
+@auth.login_required
 def curtain_fabric_sync():
     config = current_app.config
     column_titles = config["curtain_fabric_columns"].copy()
@@ -737,12 +731,12 @@ def curtain_fabric_sync():
 
 
 @main_routes.route("/sync-fabric-mappings", methods=["GET"])
+@auth.login_required
 def run_fabric_mapping_sync():
     """
     Run fabric mapping sync and return generated Buz upload file.
     """
     try:
-        output_dir = os.path.join(os.path.dirname(current_app.root_path), "uploads")
         output_file = sync_fabric_mappings(
             db_manager=g.db,
             config_path=current_app.config.get("CONFIG_JSON_PATH", "config.json"),
@@ -759,7 +753,7 @@ def run_fabric_mapping_sync():
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     finally:
-        g.db.close()
+        pass
 
 
 def _read_config_paths():
@@ -838,11 +832,6 @@ def sync_unleashed():
             pricing_count=0,
             files=[],
         ), 500
-    finally:
-        try:
-            g.db.close()
-        except Exception:
-            pass
 
 
 @main_routes.route("/sync-unleashed", methods=["GET"])
@@ -858,7 +847,6 @@ def unleashed_sync_start():
     job_id = str(uuid.uuid4())
     create_job(job_id)
 
-    app = current_app._get_current_object()  # type: ignore
     db_path  = current_app.config["database"]
     cfg_path = current_app.config.get("CONFIG_JSON_PATH", "config.json")
     out_dir  = current_app.config.get("UPLOAD_OUTPUT_DIR", current_app.config.get("upload_folder"))
@@ -866,11 +854,11 @@ def unleashed_sync_start():
         "unleashed_group_to_inventory_groups": current_app.config.get("unleashed_group_to_inventory_groups", {})
     }
 
-    def _runner():
+    def unleashed_sync_runner():
         db = create_db_manager(db_path)
         try:
-            update_job(job_id, 1, "Job started…")
-            progress = _make_progress(job_id)
+            update_job(job_id, 1, "Job started…", db=db)
+            progress = make_progress(job_id, db=db)
 
             code_provider = build_sequential_code_provider(db, minimal_cfg, default_start=10000)
             result = sync_unleashed_fabrics(
@@ -884,11 +872,11 @@ def unleashed_sync_start():
             )
 
             # Store result in job record
-            update_job(job_id, pct=100, message="Completed", done=True, result=result)
+            update_job(job_id, pct=100, message="Completed", done=True, result=result, db=db)
 
         except Exception as e:
             logging.exception("Unleashed sync failed")
-            update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e))
+            update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e), db=db)
 
         finally:
             try:
@@ -896,7 +884,11 @@ def unleashed_sync_start():
             except Exception:
                 pass
 
-    threading.Thread(target=_runner, daemon=True).start()
+    threading.Thread(
+        name=f"unleashed-sync-{job_id[:8]}",
+        target=unleashed_sync_runner,
+        daemon=True
+    ).start()
     return redirect(url_for("main_routes.unleashed_sync_progress", job_id=job_id))
 
 
@@ -918,9 +910,9 @@ def unleashed_sync_status(job_id):
         data = {"pct": 0, "log": [], "done": False, "error": None, "result": None}
     else:
         data = {
-            "pct": job.get("progress", 0),
-            "log": job.get("log", "").split('\n') if job.get("log") else [],
-            "done": job.get("status") in ["completed", "failed"],
+            "pct": job.get("pct", 0),
+            "log": job.get("log", []),
+            "done": job.get("done", False),
             "error": job.get("error"),
             "result": job.get("result")
         }
@@ -989,7 +981,6 @@ def update_combo_bo_fabrics_group_options():
 
     if request.method == "POST":
         # Optional: warn or block if stale
-        is_stale = False
         if last_inventory_upload:
             # last_inventory_upload is a naive/aware dt depending on SQLite; normalize a bit
             if isinstance(last_inventory_upload, str):
@@ -1058,7 +1049,7 @@ def update_combo_bo_fabrics_group_options():
         )
 
     # GET
-    return render_template("combo_bo_fabrics_update.html")
+    return render_template("combo_bo_fabrics_update.html",last_inventory_upload=last_inventory_upload)
 
 
 try:
@@ -1097,11 +1088,7 @@ def datetimeformat(value):
         return re.sub(r"\b0(\d:)", r"\1", s)
 
 
-CURTAIN_GS_EXPORT_PATH = r"C:\Users\Derek\Documents\Coding\Python_Scripts\curtain-fabric-updater\master.xlsx"
-
-
 # --- Curtain Sync (async with progress) ---
-
 @main_routes.route("/curtain-sync", methods=["GET"])
 @auth.login_required
 def curtain_sync_landing():
@@ -1124,72 +1111,77 @@ def curtain_sync_start():
     job_id = uuid.uuid4().hex
     create_job(job_id)
 
-    # capture the actual Flask app object so we can push an app context in the thread
-    app = current_app._get_current_object()  # type: ignore
-
     out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
-    os.makedirs(out_dir, exist_ok=True)
     headers_cfg = current_app.config["headers"]
     db_path = current_app.config["database"]
+    spreadsheet_id = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["id"]
+    worksheet_tab = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["tab"]
 
-    # ids from your config (adjust keys to what you have)
-    SPREADSHEET_ID = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["id"]
-    WORKSHEET_TAB = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["tab"]
+    os.makedirs(out_dir, exist_ok=True)
 
-    def _runner():
-        # make Flask context available inside the thread
-        with app.app_context():
-            progress = _make_progress(job_id)
-            db = create_db_manager(db_path)  # don't use g.db in threads
+    def curtain_sync_runner(job_id, db_path, out_dir, headers_cfg, spreadsheet_id, worksheet_tab):
+        # No Flask globals in here.
+        import logging
+        logger = logging.getLogger("curtain_sync")
+        db = create_db_manager(db_path)  # don't use g.db in threads
+
+        try:
+            progress = make_progress(job_id, db)
+            progress("Starting…", 1)
+
+            gs_service = GoogleSheetsService()  # uses your default credentials path
+            gs_source = {
+                "svc": gs_service,
+                "spreadsheet_id": spreadsheet_id,
+                "worksheet": worksheet_tab,
+            }
+
+            result = generate_uploads_from_db(
+                gs_source,
+                db,
+                output_dir=out_dir,
+                headers_cfg=headers_cfg,
+                progress=progress,
+            )
+
+            if not result.get("change_log"):
+                update_job(job_id, 100, "No changes found, skipping file generation",
+                        result={
+                            "elapsed_sec": result.get("elapsed_sec", 0),
+                            "summary": result.get("summary", {}),
+                            "change_log": [],
+                            "files": [],
+                        },
+                        db=db)
+                return
+
+            # friendly filenames
+            items_name = f"items_upload_{uuid.uuid4().hex}.xlsx"
+            pricing_name = f"pricing_upload_{uuid.uuid4().hex}.xlsx"
+            os.replace(result["items_path"],   os.path.join(out_dir, items_name))
+            os.replace(result["pricing_path"], os.path.join(out_dir, pricing_name))
+            result["files"] = [
+                {"label": "Items upload", "filename": items_name},
+                {"label": "Pricing upload", "filename": pricing_name},
+            ]
+
+            update_job(job_id, 100, "Completed successfully", result=result, db=db)
+
+        except Exception as e:
+            logger.exception("Curtain sync failed")
+            update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e), db=db)
+        finally:
             try:
-                progress("Starting…", 1)
+                db.close()
+            except Exception:
+                pass
 
-                gs_service = GoogleSheetsService()  # uses your default credentials path
-                gs_source = {
-                    "svc": gs_service,
-                    "spreadsheet_id": SPREADSHEET_ID,
-                    "worksheet": WORKSHEET_TAB,
-                }
+    threading.Thread(
+        target=curtain_sync_runner,
+        args=(job_id, db_path, out_dir, headers_cfg, spreadsheet_id, worksheet_tab),
+        daemon=True,
+    ).start()
 
-                result = generate_uploads_from_db(
-                    gs_source,
-                    db,
-                    output_dir=out_dir,
-                    headers_cfg=headers_cfg,
-                    progress=progress,  # your function already accepts this
-                )
-
-                if not result.get("change_log"):
-                    update_job(job_id, 100, "No changes found, skipping file generation", result={
-                        "elapsed_sec": result.get("elapsed_sec", 0),
-                        "summary": result.get("summary", {}),
-                        "change_log": [],
-                        "files": [],
-                    })
-                    return
-
-                # friendly filenames
-                items_name   = f"items_upload_{uuid.uuid4().hex}.xlsx"
-                pricing_name = f"pricing_upload_{uuid.uuid4().hex}.xlsx"
-                os.replace(result["items_path"],   os.path.join(out_dir, items_name))
-                os.replace(result["pricing_path"], os.path.join(out_dir, pricing_name))
-                result["files"] = [
-                    {"label": "Items upload", "filename": items_name},
-                    {"label": "Pricing upload", "filename": pricing_name},
-                ]
-
-                update_job(job_id, 100, "Completed successfully", result=result)
-
-            except Exception as e:
-                current_app.logger.exception("Curtain sync failed")
-                update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e))
-            finally:
-                try:
-                    db.close()
-                except Exception:
-                    pass
-
-    threading.Thread(target=_runner, daemon=True).start()
     return redirect(url_for("main_routes.curtain_sync_progress", job_id=job_id))
 
 
@@ -1237,7 +1229,7 @@ def curtain_sync_status(job_id):
     else:
         data = {
             "pct": job.get("pct", 0),
-            "log": job.get("log", "").split('\n') if job.get("log") else [],
+            "log": job.get("log", []),
             "done": job.get("done", False),
             "error": job.get("error"),
             "result": job.get("result")
