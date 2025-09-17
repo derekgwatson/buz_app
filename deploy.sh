@@ -45,4 +45,7 @@ sudo systemctl restart "gunicorn-$APP_NAME" || { echo "❌ Failed to restart gun
 #echo "🔄 Restarting $ENV background tasks..."
 #sudo systemctl restart "$TASK_SERVICE" || { echo "❌ Failed to restart background tasks ($ENV)"; exit 1; }
 
+echo "🔄 Deploying any DB changes..."
+sudo -u www-data -H /var/www/$APP_NAME/venv/bin/flask --app app init-db
+
 echo "🚀 Deploy complete for $APP_NAME ($ENV)."
