@@ -21,19 +21,20 @@ class OpenPyXLFileHandler:
         self.workbook = workbook
 
     @classmethod
-    def from_file(cls, file_path, data_only=True):
+    def from_file(cls, file_path, data_only=True, read_only=True):
         """
         Initialize the file handler with an Excel file from disk.
 
         Args:
             file_path (str): Path to the Excel file.
             data_only (bool): Whether to read the values instead of formulas.
+            read_only (bool): Whether to allow writes, or reads only
 
         Returns:
             OpenPyXLFileHandler: An initialized file handler.
         """
         logger.debug(f"File path we're loading the excel from is {file_path}")
-        workbook = openpyxl.load_workbook(file_path, data_only=data_only)
+        workbook = openpyxl.load_workbook(file_path, data_only=data_only, read_only=read_only)
         return cls(workbook=workbook)
 
     @classmethod
