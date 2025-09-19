@@ -659,5 +659,39 @@
         "pattern_repeat": "Vertical Pattern Repeat Size (cm)",
         "cost_sqm": "Cost to DD per metre CUT (ex GST)",
         "sell_sqm": "Current Buz Sell Price (ex GST)"
-    }
+    },
+
+  "discount_grid": {
+    "google_sheet_id": "1lm_VvI2ad3-F_OoHWq5jAAz92hLgrUVyF-6DWryurAI",
+    "new_group_name_template": "{customer_tab}",
+    "grid": {
+      "sheet_name": "Discount Groups",
+      "header_row": 1,
+      "code_col": 1,
+      "desc_col": 2,
+      "first_group_col": 3
+    },
+    "mapping_tab": {
+      "sheet_name": "Buz name mapping",
+      "tab_product_header": "Mapped to",
+      "grid_code_header": "Code"
+    },
+    "customer_tabs": {
+      "header_row": 4,
+      "product_col_header": "Product",
+      "discount_col_header": "Discount offered"
+    },
+    "ignore_tabs": [
+        "Max Disc %",
+        "AVG Monthly Spend",
+        "Buz name mapping",
+        "Instructions for buz upload",
+        "Current Buz",
+        "Compare step 1",
+        "Compare Step 2",
+        "Compare",
+        "Upload"
+      ]
+  }
+
 }

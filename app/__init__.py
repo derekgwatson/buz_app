@@ -8,6 +8,7 @@ from config import ProductionConfig
 from services.database import init_db_command, create_db_manager
 from services.config_service import ConfigManager
 from pathlib import Path
+from app.routes import main_routes_bp, fabrics_bp, discount_groups_bp
 
 
 load_dotenv()
@@ -112,10 +113,9 @@ def create_app(config_name: str = ""):
             db.close()
 
     # Blueprints
-    from app.routes import main_routes
-    from services.fabric_routes import fabrics_blueprint
-    app.register_blueprint(main_routes)
-    app.register_blueprint(fabrics_blueprint)
+    app.register_blueprint(main_routes_bp)
+    app.register_blueprint(fabrics_bp)
+    app.register_blueprint(discount_groups_bp)
 
     # CLI
     app.cli.add_command(init_db_command)  # type: ignore
