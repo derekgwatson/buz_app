@@ -3,106 +3,19 @@
 
 {% block head %}
 <style>
-/* Enhanced specificity to override Bootstrap's default active states */
-.table-dark {
-  --bs-table-bg: #1b1f22;
-  --bs-table-border-color: #2a2f34;
-  --bs-table-striped-bg: rgba(255,255,255,.03);
-  --bs-table-hover-bg:   rgba(255,255,255,.06);
-  --bs-table-active-bg:  rgba(255,255,255,.06);
-  --bs-table-color: #e9ecef;
+
+/* Row hover */
+.table-hover > tbody > tr:hover {
+  background-color: #782d2d;
 }
 
-/* CRITICAL: Override Bootstrap's hover states specifically */
-.table-dark.table-hover > tbody > tr:hover > td,
-.table-dark.table-hover > tbody > tr:hover > th {
-  background-color: rgba(255,255,255,.06) !important;
-  color: #e9ecef !important;
+/* If any cell has its own background, color the cells too */
+.table-hover > tbody > tr:hover > * {
+  background-color: #782d2d;
+  color: #e0e0e0; /* optional */
 }
 
-/* More specific selectors to override Bootstrap's active states */
-.table-dark tr.table-active,
-.table-dark tr.table-active > td,
-.table-dark tr.table-active > th,
-.table-dark tr.active,
-.table-dark tr.active > td,
-.table-dark tr.active > th,
-.table-dark tbody tr:focus,
-.table-dark tbody tr:focus > td,
-.table-dark tbody tr:focus > th,
-.table-dark tbody tr:focus-within > td,
-.table-dark tbody tr:focus-within > th,
-.table-dark tbody tr:active > td,
-.table-dark tbody tr:active > th {
-  background-color: rgba(255,255,255,.06) !important;
-  color: #e9ecef !important;
-}
-
-/* Specific table hover overrides */
-#changesTable.table-hover > tbody > tr:hover > td,
-#changesTable.table-hover > tbody > tr:hover > th,
-#sampleTable.table-hover > tbody > tr:hover > td,
-#sampleTable.table-hover > tbody > tr:hover > th {
-  background-color: rgba(255,255,255,.06) !important;
-  color: #e9ecef !important;
-}
-
-/* Specific overrides for your tables */
-#changesTable tr.table-active,
-#changesTable tr.table-active > *,
-#changesTable tr.active,
-#changesTable tr.active > *,
-#changesTable tbody tr:focus,
-#changesTable tbody tr:focus > *,
-#changesTable tbody tr:focus-within > *,
-#changesTable tbody tr:active > *,
-#changesTable tbody tr[tabindex]:focus,
-#changesTable tbody tr[tabindex]:focus > * {
-  background-color: rgba(255,255,255,.06) !important;
-  color: #e9ecef !important;
-}
-
-#sampleTable tr.table-active,
-#sampleTable tr.table-active > *,
-#sampleTable tr.active,
-#sampleTable tr.active > *,
-#sampleTable tbody tr:focus,
-#sampleTable tbody tr:focus > *,
-#sampleTable tbody tr:focus-within > *,
-#sampleTable tbody tr:active > *,
-#sampleTable tbody tr[tabindex]:focus,
-#sampleTable tbody tr[tabindex]:focus > * {
-  background-color: rgba(255,255,255,.06) !important;
-  color: #e9ecef !important;
-}
-
-/* Prevent any bright white backgrounds from showing */
-.table-dark .table-active,
-.table-dark .active,
-.table-dark tbody tr:focus,
-.table-dark tbody tr:active {
-  background-color: rgba(255,255,255,.06) !important;
-}
-
-/* Optional: disable tabindex on rows to prevent focus */
-.table-no-select tbody tr {
-  outline: none;
-}
-
-/* Remove any default browser focus outlines */
-.table-dark tbody tr:focus {
-  outline: none;
-  box-shadow: none;
-}
-
-/* CRITICAL: Override Bootstrap's hover states specifically */
-.table-dark.table-hover > tbody > tr:hover > td,
-.table-dark.table-hover > tbody > tr:hover > th {
-  background-color: rgba(255,255,255,.06) !important;
-  color: #e9ecef !important;
-}
 </style>
-
 {% endblock %}
 
 {% block content %}
