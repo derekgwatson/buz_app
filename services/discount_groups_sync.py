@@ -4,45 +4,75 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 import re
-import time
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
-# Uses your existing helpers per your project memories:
-# - GoogleSheetsService (auth + read_range)
-# - OpenPyXLFileHandler (if you prefer; here we use openpyxl directly to preserve VBA)
 from services.google_sheets_service import GoogleSheetsService  # adjust import path if needed
 from services.config_service import ConfigManager
 
+import logging
+from dataclasses import fields, MISSING
+from collections import defaultdict
 
-@dataclass
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
 class GridConfig:
-    sheet_name: str = "Discount Groups"
-    header_row: int = 1                # row with column headers
-    code_col: int = 1                  # column index (1-based) for product code
-    desc_col: int = 2                  # column index for product description
-    first_group_col: int = 3           # the first discount group (customer/group) column
+    sheet_name: str
+    header_row: int
+    code_col: int
+    desc_col: int
+    first_group_col: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class MappingConfig:
-    sheet_name: str = "Buz name mapping"
-    # Expected headers in row 1 of the mapping sheet:
-    # Example: Column A = "Tab Product", Column B = "Grid Product Code"
-    tab_product_header: str = "Tab Product"
-    grid_code_header: str = "Grid Product Code"
+    sheet_name: str
+    tab_product_header: str
+    grid_code_header: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class CustomerTabConfig:
-    header_row: int = 4                # row with headers in each customer tab
-    # Column letters or names in row header; we normalise by text:
-    product_col_header: str = "Product"         # Column A (data starts row 5)
-    discount_col_header: str = "Discount"       # Column C (as number: 15 or 15% or 0.15)
+    header_row: int
+    product_col_header: str
+    discount_col_header: str
+
+
+def load_cfg_strict(cfg_cls, config_mgr, section_path: str):
+    """
+    Load a dataclass from ConfigManager, requiring all fields present.
+    Raises ValueError on missing/invalid config. Warns on unknown keys.
+    """
+    raw = config_mgr.get(section_path, default=None)
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(f"Missing or empty config section '{section_path}'")
+
+    all_fields = {f.name: f for f in fields(cfg_cls)}
+    required = [name for name, f in all_fields.items()
+                if f.default is MISSING and f.default_factory is MISSING]
+
+    missing = [k for k in required if k not in raw]
+    if missing:
+        raise ValueError(
+            f"Config '{section_path}' missing required keys: {', '.join(missing)}"
+        )
+
+    unknown = [k for k in raw.keys() if k not in all_fields]
+    if unknown:
+        logger.warning("Config '%s' has unknown keys (ignored): %s",
+                       section_path, ", ".join(unknown))
+
+    try:
+        return cfg_cls(**{k: raw[k] for k in all_fields.keys() if k in raw})
+    except TypeError as e:
+        # catches wrong types / extra surprises
+        raise ValueError(f"Invalid values in config '{section_path}': {e}")
 
 
 def _norm(s: str) -> str:
@@ -58,15 +88,7 @@ def _find_header_row_in_col(col_values: list[str], wanted_header: str, default_h
     return default_header_row
 
 
-def _as_percent(val: str | float | int) -> Optional[float]:
-    """
-    Accept:
-      15 -> 15.0
-      '15%' -> 15.0
-      0.15 -> 15.0
-      '0.15' -> 15.0
-      '' or None -> None
-    """
+def _as_percent(val: str | float | int) -> float | None:
     if val is None:
         return None
     s = str(val).strip()
@@ -74,12 +96,15 @@ def _as_percent(val: str | float | int) -> Optional[float]:
         return None
     if s.endswith("%"):
         s = s[:-1].strip()
+    s = s.replace(",", "")
     try:
         n = float(s)
     except ValueError:
         return None
-    if 0 < n <= 1:
-        return round(n * 100.0, 4)
+
+    # Only scale true fractions; 1 should be 1%, not 100%
+    if 0 < n < 1:
+        n *= 100.0
     return round(n, 4)
 
 
@@ -93,9 +118,9 @@ class DiscountGroupsSync:
 
     def __init__(self, config: ConfigManager) -> None:
         self.config = config
-        self.grid_cfg = GridConfig(**config.get("discount_grid.grid", default={}))
-        self.map_cfg = MappingConfig(**config.get("discount_grid.mapping_tab", default={}))
-        self.tab_cfg = CustomerTabConfig(**config.get("discount_grid.customer_tabs", default={}))
+        self.grid_cfg = load_cfg_strict(GridConfig, self.config, "discount_grid.grid")
+        self.map_cfg = load_cfg_strict(MappingConfig, self.config, "discount_grid.mapping_tab")
+        self.tab_cfg = load_cfg_strict(CustomerTabConfig, self.config, "discount_grid.customer_tabs")
 
         self.sheet_id = (config.get("discount_grid.google_sheet_id", default="") or "").strip()
         if not self.sheet_id:
@@ -104,10 +129,11 @@ class DiscountGroupsSync:
         # Buz URLs for manual steps
         self.url_create_group = "https://go.buzmanager.com/Settings/CustomerDiscountGroups"
         self.url_find_customer = "https://go.buzmanager.com/Contacts/Customers"
+        self.url_discount_group_grid = "https://go.buzmanager.com/Settings/InventoryDiscountGroups/Create"
 
         # Name pattern for the newly added discount group columns in the grid
         # By default use the tab name (customer name). Override via config if needed.
-        self.new_group_name_template = config.get(
+        self.new_group_name_template = self.config.get(
             "discount_grid.new_group_name_template",
             default="{customer_tab}"
         )
@@ -115,11 +141,6 @@ class DiscountGroupsSync:
                                or config.get("discount_grid.ignore_tabs", default=[]) \
                                or []
         self.ignore_tabs = {_norm(x) for x in self.ignore_tabs_raw}
-
-        self.throttle_seconds = float(
-            config.get("discount_grid", "throttle_seconds", default=0.4)
-            or config.get("discount_grid.throttle_seconds", default=0.4)
-        )
 
     def _should_ignore_tab(self, tab: str) -> bool:
         """True if tab is mapping/utility/ignored by config."""
@@ -131,7 +152,7 @@ class DiscountGroupsSync:
 
     def list_customer_tabs(self, gs: GoogleSheetsService) -> list[str]:
         """All usable customer tabs after filtering."""
-        tabs = gs.get_sheet_names(self.sheet_id)
+        tabs = gs.get_sheet_names(self.sheet_id, include_hidden=False)
         return [t for t in tabs if not self._should_ignore_tab(t)]
 
     @staticmethod
@@ -146,22 +167,36 @@ class DiscountGroupsSync:
     # -----------------------------
 
     def get_manual_steps(self, customer_tabs: List[str]) -> List[Dict[str, str]]:
-        """
-        Produce human steps with links for each tab/customer.
-        """
+        gs = GoogleSheetsService()
+        blocks = gs.fetch_many(self.sheet_id, customer_tabs, "A1:B20")
         steps: List[Dict[str, str]] = []
         for tab in customer_tabs:
+            rows = blocks.get(tab, [])
+            customers = []
+            for row in rows:
+                a = (row[0] if len(row) > 0 else "").strip().lower()
+                b = (row[1] if len(row) > 1 else "").strip()
+                if a.startswith("customer"):
+                    seen = set()
+                    for n in (x.strip() for x in re.split(r",", b) if x.strip()):
+                        k = n.lower()
+                        if k not in seen:
+                            seen.add(k)
+                            customers.append(n)
+                    break
             group_name = self.new_group_name_template.format(customer_tab=tab).strip()
             steps.append({
                 "customer_tab": tab,
                 "discount_group_to_create": group_name,
                 "create_group_url": self.url_create_group,
                 "find_customer_url": self.url_find_customer,
+                "customers": customers,
                 "note": "Create the discount group in Buz, then edit the customer card and attach the new group."
             })
         return steps
 
-    def _resolve_header(self,actual_headers: List[str], wanted: str) -> Optional[str]:
+    @staticmethod
+    def _resolve_header(actual_headers: List[str], wanted: str) -> Optional[str]:
         """Return the actual header text in the sheet that matches 'wanted' (case/space insensitive)."""
         want = _norm(wanted)
         for h in actual_headers:
@@ -170,7 +205,7 @@ class DiscountGroupsSync:
         return None
 
     # top-level helpers in this file
-    def build(self, input_xlsm_path: str, output_xlsm_path: str) -> Dict[str, any]:
+    def build(self, input_xlsm_path: str, output_xlsm_path: str) -> Dict[str, Any]:
         """
         Read Google Sheet, add/update columns in XLSM grid, and save as a new file.
         Returns a summary (for UI).
@@ -195,12 +230,15 @@ class DiscountGroupsSync:
                 f"'{self.map_cfg.grid_code_header}'. Found: {headers}"
             )
 
-        tab_to_grid_code: Dict[str, str] = {}
+        tab_to_grid_codes: dict[str, list[str]] = defaultdict(list)
         for row in mapping_rows:
             tab_name = str(row.get(tab_hdr, "")).strip()
             grid_code = str(row.get(grid_hdr, "")).strip()
-            if tab_name and grid_code:
-                tab_to_grid_code[tab_name] = grid_code
+            if not tab_name or not grid_code:
+                continue
+            key = _norm(tab_name)  # case/space-insensitive match
+            if grid_code not in tab_to_grid_codes[key]:
+                tab_to_grid_codes[key].append(grid_code)
 
         # --- 2) Discover customer tabs (all tabs except mapping + those not prefixed with "_")
         customer_tabs = self.list_customer_tabs(gs)  # gs.get_sheet_names(self.sheet_id)
@@ -224,15 +262,39 @@ class DiscountGroupsSync:
                 existing_headers[name] = c
 
         # --- 6) For each customer tab, add/update a column
-        customers_summary: List[Dict[str, any]] = []
+        customers_summary: List[Dict[str, Any]] = []
         total_changes = 0
-        changes_sample: List[Dict[str, any]] = []
+        changes_sample: List[Dict[str, Any]] = []
+
+        # NEW: batch fetch columns A and C for all tabs in 2 requests total
+        max_rows = 2000
+        colA_by_tab = gs.fetch_many(self.sheet_id, customer_tabs, f"A1:A{max_rows}")  # one values:batchGet
+        colC_by_tab = gs.fetch_many(self.sheet_id, customer_tabs, f"C1:C{max_rows}")  # one values:batchGet
+
+        def _flatten_col(block: list[list[str]]) -> list[str]:
+            # values API returns rows like [["hdr"], ["val"], ...] for a single column
+            return [row[0] if row else "" for row in (block or [])]
 
         for tab in customer_tabs:
-            rows = self._read_products_discounts_fast(gs, tab, max_rows=2000)
+            col_a = _flatten_col(colA_by_tab.get(tab, []))
+            col_c = _flatten_col(colC_by_tab.get(tab, []))
 
-            if self.throttle_seconds > 0:
-                time.sleep(self.throttle_seconds)
+            hdr_row = _find_header_row_in_col(col_a, self.tab_cfg.product_col_header, self.tab_cfg.header_row)
+            start_row = hdr_row + 1
+
+            # Build “rows” dicts from the two columns we already have in memory
+            rows: list[dict[str, str]] = []
+            end = max(len(col_a), len(col_c))
+            for r in range(start_row, end + 1):
+                i = r - 1
+                prod = col_a[i] if i < len(col_a) else ""
+                disc = col_c[i] if i < len(col_c) else ""
+                if not (prod or disc):
+                    continue
+                rows.append({
+                    self.tab_cfg.product_col_header: prod,
+                    self.tab_cfg.discount_col_header: disc,
+                })
 
             if not rows:
                 customers_summary.append({"tab": tab, "added": False, "reason": "empty tab"})
@@ -267,29 +329,29 @@ class DiscountGroupsSync:
                 if not tab_product or pct is None:
                     continue
 
-                grid_code = tab_to_grid_code.get(tab_product)
-                if not grid_code:
-                    continue  # no mapping from tab product -> grid product code
+                codes = tab_to_grid_codes.get(_norm(tab_product), [])
+                if not codes:
+                    continue  # nothing mapped for this tab product label
 
-                grid_row = code_to_row.get(grid_code)
-                if not grid_row:
-                    continue  # product code not present in the Excel grid
+                for grid_code in codes:
+                    grid_row = code_to_row.get(grid_code)
+                    if not grid_row:
+                        continue  # product code not present in the Excel grid
 
-                # Only count/write when value actually changes
-                cell = ws.cell(row=grid_row, column=target_col)
-                before = cell.value
-                after = float(pct)
-                if before is None or float(before) != after:
-                    cell.value = after
-                    changed += 1
-                    total_changes += 1
-                    if len(changes_sample) < 50:
-                        changes_sample.append({
-                            "product_code": grid_code,
-                            "group_column": group_col_name,
-                            "before": before,
-                            "after": after,
-                        })
+                    cell = ws.cell(row=grid_row, column=target_col)
+                    before = cell.value
+                    after = float(pct)
+                    if before is None or float(before) != after:
+                        cell.value = after
+                        changed += 1
+                        total_changes += 1
+                        if len(changes_sample) < 50:
+                            changes_sample.append({
+                                "product_code": grid_code,
+                                "group_column": group_col_name,
+                                "before": before,
+                                "after": after,
+                            })
 
             customers_summary.append({
                 "tab": tab,
@@ -308,35 +370,27 @@ class DiscountGroupsSync:
             "changes_sample": changes_sample,
         }
 
-    def _read_products_discounts_fast(
-        self,
-        gs: GoogleSheetsService,
-        sheet_name: str,
-        *,
-        max_rows: int = 2000,
-    ) -> list[dict[str, str]]:
+    def get_sheet_url(self) -> str:
+        # plain sheet open; no extra API calls or gid lookups
+        return f"https://docs.google.com/spreadsheets/d/{self.sheet_id}/edit"
+
+    def read_customer_names_for_tab(self, gs: GoogleSheetsService, sheet_name: str) -> list[str]:
         """
-        Discount-grid specific: scan column A for the 'Product' header,
-        then read columns A (Product) and C (Discount) only.
+        Look for a header that starts with 'customer' in col A and take the value in col B.
+        Split by commas; strip blanks. Returns [] if not found.
         """
-        col_a = gs.col_values(self.sheet_id, sheet_name, 1, max_rows=max_rows)  # A
-        hdr_row = _find_header_row_in_col(col_a, self.tab_cfg.product_col_header, self.tab_cfg.header_row)
-        start_row = hdr_row + 1
-
-        col_c = gs.col_values(self.sheet_id, sheet_name, 3, max_rows=max_rows)  # C
-
-        out: list[dict[str, str]] = []
-        end = max(len(col_a), len(col_c))
-        for r in range(start_row, end + 1):
-            i = r - 1
-            prod = col_a[i] if i < len(col_a) else ""
-            disc = col_c[i] if i < len(col_c) else ""
-            if not (prod or disc):
-                continue
-            out.append({
-                self.tab_cfg.product_col_header: prod,
-                self.tab_cfg.discount_col_header: disc,
-            })
-        return out
-
-
+        # Read a small window (A1:B20) to keep it cheap
+        vals = gs.read_range(self.sheet_id, sheet_name, "A1:B20")  # returns list[list[str]]
+        for row in vals:
+            a = (row[0] if len(row) > 0 else "").strip().lower()
+            b = (row[1] if len(row) > 1 else "").strip()
+            if a.startswith("customer"):
+                names = [n.strip() for n in re.split(r",", b) if n.strip()]
+                # dedupe while preserving order
+                seen, out = set(), []
+                for n in names:
+                    if n.lower() not in seen:
+                        seen.add(n.lower())
+                        out.append(n)
+                return out
+        return []

@@ -12,11 +12,14 @@
       <a href="{{ find_url }}" target="_blank" rel="noopener" class="btn btn-outline-primary btn-sm">
         Open Buz: Find Customer
       </a>
+      <a href="{{ sheet_url }}" target="_blank" rel="noopener" class="btn btn-info">
+        Open Google Sheet
+      </a>
     </div>
   </div>
 
   <p class="text-muted mb-3">
-    Click a customer to copy the <b>group name</b> (same as the customer name). Then create the group in Buz and attach it to the customer.
+    Click any name to copy it. Use the copied text as the <b>group name</b> and attach it to the customer in Buz.
   </p>
 
   <div class="card shadow-sm">
@@ -30,13 +33,41 @@
         <table class="table table-dark align-middle mb-0" id="customersTable">
           <thead class="table-secondary text-dark">
             <tr>
-              <th>Customers (click to copy name)</th>
+              <th class="w-50">Discount Group</th>
+              <th>Assign to these customers</th>
             </tr>
           </thead>
           <tbody>
             {% for row in rows %}
-            <tr class="copy-row" data-copy="{{ row.customer_tab }}" title="Click to copy '{{ row.customer_tab }}'">
-              <td class="fw-semibold">{{ row.customer_tab }}</td>
+            <tr>
+              <td>
+                <!-- Group name copies itself -->
+                <button
+                  type="button"
+                  class="btn btn-sm btn-secondary copy-btn"
+                  data-copy="{{ row.customer_tab }}"
+                  title="Copy '{{ row.customer_tab }}'">
+                  {{ row.customer_tab }}
+                </button>
+              </td>
+              <td>
+                {% if row.customers and row.customers|length > 0 %}
+                  <div class="d-flex flex-wrap gap-2">
+                    {% for name in row.customers %}
+                      <!-- Each customer name copies itself -->
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-outline-secondary copy-btn"
+                        data-copy="{{ name }}"
+                        title="Copy '{{ name }}'">
+                        {{ name }}
+                      </button>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <span class="text-muted">No customer list on tab</span>
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -51,30 +82,51 @@
   </div>
 </div>
 
-<div class="card shadow-sm mt-4">
-  <div class="card-header">
-    <strong>Generate Updated Discount Grid</strong>
-    <div class="small text-muted">Upload your base .xlsm/.xlsx file; we’ll add/update the customer columns.</div>
-  </div>
+{# app/templates/discount_groups/manual.html #}
+
+<div class="card mt-4">
   <div class="card-body">
-    <form method="post"
-          action="{{ url_for('.build_discount_grid') }}"
-          enctype="multipart/form-data"
-          class="d-flex gap-2 flex-wrap">
-      <input class="form-control" type="file" name="file" accept=".xlsm,.xlsx" required>
-      <button class="btn btn-success" type="submit">Generate Updated Grid</button>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="mb-0">Generate Updated Discount Grid</h5>
+      <a href="{{ invdg_create_url }}"
+         class="btn btn-outline-info"
+         target="_blank" rel="noopener">
+        Open Buz: Create Inventory Discount Group
+      </a>
+    </div>
+
+    <p class="text-muted mb-3">
+      Upload your base .xlsm/.xlsx file; we’ll add/update the customer columns.
+    </p>
+
+    <form method="post" action="{{ url_for('discount_groups.build_discount_grid') }}"
+          enctype="multipart/form-data" class="d-flex gap-2 flex-wrap">
+      <input type="file" name="file" accept=".xlsm,.xlsx" class="form-control" required>
+      <button type="submit" class="btn btn-primary">Generate Updated Grid</button>
     </form>
   </div>
 </div>
-
 
 <style>
   /* dark theme tidy-ups */
   #customersTable tbody tr td { background-color:#1b1f22; border-top-color:#2a2f34; }
   #customersTable tbody tr:hover td { background-color:#20262a !important; }
   #customersTable thead th { background-color:#2b2f33 !important; border-bottom-color:#2a2f34 !important; }
-  /* make rows look clickable */
-  #customersTable tbody tr.copy-row { cursor: pointer; }
+
+  /* subtle copied feedback */
+  .copy-btn.copied { position: relative; }
+  .copy-btn.copied::after {
+    content: "Copied";
+    position: absolute;
+    top: -0.8rem;
+    right: -0.2rem;
+    font-size: .70rem;
+    background: #198754; /* bootstrap success */
+    color: #fff;
+    padding: .15rem .35rem;
+    border-radius: .35rem;
+    white-space: nowrap;
+  }
 </style>
 
 <script>
@@ -92,20 +144,38 @@
     });
   })();
 
-  // click-to-copy (group name == customer name)
+  // Click-to-copy for ANY .copy-btn
   (function () {
-    document.querySelectorAll('#customersTable tbody tr.copy-row').forEach(tr => {
-      tr.addEventListener('click', async () => {
-        const text = tr.getAttribute('data-copy') || '';
-        try {
-          await navigator.clipboard.writeText(text);
-          const td = tr.querySelector('td');
-          const old = td.textContent;
-          td.classList.add('text-success');
-          td.textContent = 'Copied';
-          setTimeout(() => { td.textContent = old; td.classList.remove('text-success'); }, 800);
-        } catch (_) {}
-      });
+    function copyToClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      // Fallback (http/file:)
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return Promise.resolve();
+    }
+
+    function flash(btn) {
+      btn.classList.add('copied');
+      setTimeout(() => btn.classList.remove('copied'), 900);
+    }
+
+    // Event delegation: single listener for all buttons (works with future rows too)
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.copy-btn');
+      if (!btn) return;
+
+      const text = (btn.dataset.copy || btn.textContent || '').trim().replace(/\s+/g, ' ');
+      if (!text) return;
+
+      copyToClipboard(text).then(() => flash(btn));
     });
   })();
 </script>

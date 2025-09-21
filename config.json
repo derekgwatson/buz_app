@@ -666,7 +666,7 @@
     "new_group_name_template": "{customer_tab}",
     "grid": {
       "sheet_name": "Discount Groups",
-      "header_row": 1,
+      "header_row": 2,
       "code_col": 1,
       "desc_col": 2,
       "first_group_col": 3
@@ -677,7 +677,7 @@
       "grid_code_header": "Code"
     },
     "customer_tabs": {
-      "header_row": 4,
+      "header_row": 5,
       "product_col_header": "Product",
       "discount_col_header": "Discount offered"
     },
