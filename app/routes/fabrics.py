@@ -19,10 +19,10 @@ from services.fabrics import (
 )
 
 
-fabrics_blueprint = Blueprint("fabrics", __name__)
+fabrics_bp = Blueprint("fabrics", __name__)
 
 
-@fabrics_blueprint.route("/fabrics/grid", methods=["GET", "POST"])
+@fabrics_bp.route("/fabrics/grid", methods=["GET", "POST"])
 def fabric_grid():
     if request.method == "POST":
         # Process form submission
@@ -47,7 +47,7 @@ def fabric_grid():
     )
 
 
-@fabrics_blueprint.route('/fabrics/update-mapping', methods=['POST'])
+@fabrics_bp.route('/fabrics/update-mapping', methods=['POST'])
 def update_mapping():
     try:
         data = request.json  # Get the change details
@@ -67,7 +67,7 @@ def update_mapping():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@fabrics_blueprint.route('/fabrics/batch-update', methods=['POST'])
+@fabrics_bp.route('/fabrics/batch-update', methods=['POST'])
 def batch_update_mappings():
     try:
         updates = request.json  # Receive the list of changes
@@ -89,7 +89,7 @@ def batch_update_mappings():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@fabrics_blueprint.route("/fabrics/<int:fabric_id>", methods=["DELETE"])
+@fabrics_bp.route("/fabrics/<int:fabric_id>", methods=["DELETE"])
 def delete_fabric(fabric_id):
     try:
         g.db.delete_item('fabrics', {'id': fabric_id})
@@ -98,7 +98,7 @@ def delete_fabric(fabric_id):
         return jsonify({'error': str(e)}), 500
 
 
-@fabrics_blueprint.route('/fabrics/<int:fabric_id>', methods=['PUT'])
+@fabrics_bp.route('/fabrics/<int:fabric_id>', methods=['PUT'])
 def update_fabric(fabric_id):
     db = g.db  # Assuming you are using Flask's `g` object to manage the database connection
 
@@ -133,7 +133,7 @@ def update_fabric(fabric_id):
     }), 200
 
 
-@fabrics_blueprint.route("/fabrics/clone", methods=["POST"])
+@fabrics_bp.route("/fabrics/clone", methods=["POST"])
 def clone_fabric():
     db = g.db
     try:
@@ -173,7 +173,7 @@ def clone_fabric():
         return jsonify({"error": str(e)}), 500
 
 
-@fabrics_blueprint.route("/fabrics/<int:fabric_id>", methods=["GET"])
+@fabrics_bp.route("/fabrics/<int:fabric_id>", methods=["GET"])
 def get_fabric_details(fabric_id):
     db = g.db
     try:
@@ -191,7 +191,7 @@ def get_fabric_details(fabric_id):
         return jsonify({"error": str(e)}), 500
 
 
-@fabrics_blueprint.route('/fabrics/generate-upload', methods=['GET'])
+@fabrics_bp.route('/fabrics/generate-upload', methods=['GET'])
 def generate_workbook():
     db_manager = g.db
 

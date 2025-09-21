@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 class ConfigManager:
     def __init__(self, config_path="config.json"):
-        """Initialize ConfigManager with the path to the config file."""
         self._config_path = config_path
+        self._resolved_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), self._config_path)
         self.config = self._load_config()
         self._observers = []
 
@@ -26,7 +26,7 @@ class ConfigManager:
 
     def _load_config(self):
         """Load configuration from the file or initialize an empty config."""
-        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), self._config_path)
+        path = self._resolved_path
         if os.path.exists(path):
             try:
                 with open(path, "r") as f:
@@ -38,7 +38,7 @@ class ConfigManager:
     def save_config(self):
         """Save the current configuration to the file."""
         try:
-            with open(self._config_path, "w") as f:
+            with open(self._resolved_path, "w") as f:
                 json.dump(self.config, f, indent=4)
         except (OSError, IOError) as e:
             logger.error(f"Unable to save configuration to {self._config_path}. {e}")
@@ -59,15 +59,25 @@ class ConfigManager:
             return True
         return False
 
+    # services/config_service.py
+
     def get(self, *keys, default=None):
-        """Safely access nested configuration values."""
-        config = self.config
-        for key in keys:
-            if isinstance(config, dict):
-                config = config.get(key, default)
+        """
+        Access nested values.
+        Supports both:
+          get("a", "b", "c")  and  get("a.b.c")
+        """
+        # Allow a single dotted string
+        if len(keys) == 1 and isinstance(keys[0], str) and "." in keys[0]:
+            keys = keys[0].split(".")
+
+        node = self.config
+        for k in keys:
+            if isinstance(node, dict) and k in node:
+                node = node[k]
             else:
                 return default
-        return config
+        return node
 
 
 class SpreadsheetConfigUpdater:

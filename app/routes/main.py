@@ -13,7 +13,6 @@ from services.fabric_mapping_sync import sync_fabric_mappings
 from services.unleashed_sync import sync_unleashed_fabrics, build_sequential_code_provider
 import threading
 import uuid
-from werkzeug.utils import safe_join
 import os
 from services.curtain_sync_db import run_curtain_fabric_sync_db
 from datetime import timezone, datetime, timedelta
@@ -26,7 +25,7 @@ from services.job_service import create_job, update_job, get_job, make_progress
 
 
 # Create Blueprint
-main_routes = Blueprint('main_routes', __name__)
+main_routes_bp = Blueprint('main_routes', __name__)
 
 
 @auth.verify_password
@@ -36,20 +35,20 @@ def verify_password(username, password):
         return username
 
 
-@main_routes.route('/debug')
+@main_routes_bp.route('/debug')
 @auth.login_required
 def debug():
     """Debug route to check g variables."""
     return f"g.start_time: {getattr(g, 'start_time', 'None')}, g.request_duration: {getattr(g, 'request_duration', 'None')}"
 
 
-@main_routes.route('/')
+@main_routes_bp.route('/')
 @auth.login_required
 def homepage():
     return render_template('home.html')
 
 
-@main_routes.route('/upload', methods=['GET', 'POST'])
+@main_routes_bp.route('/upload', methods=['GET', 'POST'])
 @auth.login_required
 def upload_route():
     from services.upload import upload, init_last_upload_times
@@ -115,7 +114,7 @@ def upload_route():
     )
 
 
-@main_routes.route('/upload_inventory_groups', methods=['POST'])
+@main_routes_bp.route('/upload_inventory_groups', methods=['POST'])
 @auth.login_required
 def upload_inventory_groups():
     if 'groups_file' not in request.files:
@@ -143,7 +142,7 @@ def upload_inventory_groups():
 
 
 # Route to search for items by supplier product code
-@main_routes.route('/search', methods=['GET', 'POST'])
+@main_routes_bp.route('/search', methods=['GET', 'POST'])
 @auth.login_required
 def search():
     from services.data_processing import search_items_by_supplier_product_code
@@ -155,7 +154,7 @@ def search():
     return render_template('search.html', results=results)
 
 
-@main_routes.route('/manage_inventory_groups', methods=['GET', 'POST'])
+@main_routes_bp.route('/manage_inventory_groups', methods=['GET', 'POST'])
 @auth.login_required
 def manage_inventory_groups():
     from services.data_processing import get_inventory_groups
@@ -173,7 +172,7 @@ def manage_inventory_groups():
     return render_template('manage_inventory_groups.html', inventory_groups=inventory_groups)
 
 
-@main_routes.route('/delete_inventory_group/<string:inventory_group_code>', methods=['POST'])
+@main_routes_bp.route('/delete_inventory_group/<string:inventory_group_code>', methods=['POST'])
 @auth.login_required
 def delete_inventory_group(inventory_group_code):
     from services.data_processing import db_delete_inventory_group
@@ -192,7 +191,7 @@ def delete_inventory_group(inventory_group_code):
     return redirect(url_for('main_routes.manage_inventory_groups'))
 
 
-@main_routes.route('/download/<path:filename>')
+@main_routes_bp.route('/download/<path:filename>')
 @auth.login_required
 def download_file(filename):
     base_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config.get("upload_folder")
@@ -205,7 +204,7 @@ def download_file(filename):
         return redirect(url_for('main_routes.homepage'))
 
 
-@main_routes.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
+@main_routes_bp.route('/get_items_not_in_unleashed', methods=['GET', 'POST'])
 @auth.login_required
 def get_items_not_in_unleashed():
     from services.remove_old_items import remove_old_items
@@ -219,7 +218,7 @@ def get_items_not_in_unleashed():
     return render_template('delete_items_not_in_unleashed.html')
 
 
-@main_routes.route('/get_group_option_codes', methods=['GET', 'POST'])
+@main_routes_bp.route('/get_group_option_codes', methods=['GET', 'POST'])
 @auth.login_required
 def get_group_option_codes():
     if request.method == 'POST':
@@ -238,7 +237,7 @@ def get_group_option_codes():
     return render_template('get_group_option_codes.html')
 
 
-@main_routes.route('/get_duplicate_codes', methods=["GET", "POST"])
+@main_routes_bp.route('/get_duplicate_codes', methods=["GET", "POST"])
 @auth.login_required
 def get_duplicate_codes():
     if request.method == 'POST':
@@ -255,7 +254,7 @@ def get_duplicate_codes():
         return render_template('get_duplicate_codes.html')
 
 
-@main_routes.route('/generate_codes', methods=["GET", "POST"])
+@main_routes_bp.route('/generate_codes', methods=["GET", "POST"])
 @auth.login_required
 def generate_codes():
     if request.method == "POST":
@@ -276,7 +275,7 @@ def generate_codes():
         return render_template('show_generated_ids.html')
 
 
-@main_routes.route('/generate_backorder_file', methods=["GET", "POST"])
+@main_routes_bp.route('/generate_backorder_file', methods=["GET", "POST"])
 @auth.login_required
 def generate_backorder_file():
     from services.google_sheets_service import GoogleSheetsService
@@ -329,12 +328,12 @@ def generate_backorder_file():
     )
 
 
-@main_routes.route('/robots.txt')
+@main_routes_bp.route('/robots.txt')
 def robots_txt():
     return send_from_directory(current_app.static_folder, 'robots.txt')
 
 
-@main_routes.route('/get_buz_items_by_supplier_product_codes', methods=['GET', 'POST'])
+@main_routes_bp.route('/get_buz_items_by_supplier_product_codes', methods=['GET', 'POST'])
 @auth.login_required
 def get_buz_items_by_supplier_product_codes():
     from services.buz_items_by_supplier_product_code import process_buz_items_by_supplier_product_codes
@@ -380,7 +379,7 @@ def get_buz_items_by_supplier_product_codes():
     return render_template('get_buz_items_by_supplier_product_codes.html')
 
 
-@main_routes.route("/get_matching_buz_items", methods=["GET", "POST"])
+@main_routes_bp.route("/get_matching_buz_items", methods=["GET", "POST"])
 @auth.login_required
 def get_matching_buz_items():
     from services.get_matching_buz_items import process_matching_buz_items
@@ -419,7 +418,7 @@ def get_matching_buz_items():
     return render_template("get_matching_buz_items.html")
 
 
-@main_routes.route("/sync_pricing", methods=["GET", "POST"])
+@main_routes_bp.route("/sync_pricing", methods=["GET", "POST"])
 @auth.login_required
 def sync_pricing():
     from services.sync_pricing import get_pricing_changes
@@ -435,7 +434,7 @@ def sync_pricing():
     return render_template("sync_pricing.html")
 
 
-@main_routes.route('/fabrics/create', methods=['GET'])
+@main_routes_bp.route('/fabrics/create', methods=['GET'])
 @auth.login_required
 def create_fabric():
     """
@@ -444,7 +443,7 @@ def create_fabric():
     return render_template('fabric_create.html')
 
 
-@main_routes.route('/generate-deactivation-file', methods=['GET', 'POST'])
+@main_routes_bp.route('/generate-deactivation-file', methods=['GET', 'POST'])
 @auth.login_required
 def generate_deactivation_file():
     """
@@ -469,7 +468,7 @@ def generate_deactivation_file():
 
     return render_template('generate_deactivation_file.html', upload_filename=None)
 
-@main_routes.route('/fabric-duplicates-report', methods=['GET', 'POST'])
+@main_routes_bp.route('/fabric-duplicates-report', methods=['GET', 'POST'])
 @auth.login_required
 def generate_duplicates_report():
     from services.fabrics import get_duplicate_fabric_details
@@ -512,7 +511,7 @@ def generate_duplicates_report():
     return render_template('fabric_duplicates.html')
 
 
-@main_routes.route('/buz', methods=['GET', 'POST'])
+@main_routes_bp.route('/buz', methods=['GET', 'POST'])
 @auth.login_required
 def get_buz_data():
     from services.buz_data import get_buz_data
@@ -520,7 +519,7 @@ def get_buz_data():
     return render_template('show_buz_data.html', buzdata=get_buz_data("CBR"))
 
 
-@main_routes.route('/get_combo_list/empire')
+@main_routes_bp.route('/get_combo_list/empire')
 @auth.login_required
 def get_combo_list_empire():
     from services.combo_roller_blockout_fabrics import get_inventory_items
@@ -530,7 +529,7 @@ def get_combo_list_empire():
     return render_template('blockout_fabric_combo_options_list.html', title='Empire', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
 
 
-@main_routes.route('/get_combo_list/acmeda')
+@main_routes_bp.route('/get_combo_list/acmeda')
 @auth.login_required
 def get_combo_list_acmeda():
     from services.combo_roller_blockout_fabrics import get_inventory_items
@@ -540,7 +539,7 @@ def get_combo_list_acmeda():
     return render_template('blockout_fabric_combo_options_list.html', title='Acmeda', items=items, fabrics=unique_desc_part_1)  # Pass data to HTML template
 
 
-@main_routes.route('/check_inventory_groups', methods=['GET'])
+@main_routes_bp.route('/check_inventory_groups', methods=['GET'])
 @auth.login_required
 def check_inventory_groups():
     from services.check_fabric_group_mappings import check_inventory_groups_against_unleashed
@@ -566,7 +565,7 @@ def check_inventory_groups():
         return render_template("check_inventory_groups.html", violations=[])
 
 
-@main_routes.route('/pricing_update', methods=['GET', 'POST'])
+@main_routes_bp.route('/pricing_update', methods=['GET', 'POST'])
 @auth.login_required
 def pricing_update():
     if request.method == 'POST':
@@ -609,7 +608,7 @@ def pricing_update():
     return render_template('pricing_result.html', ran_update=False)
 
 
-@main_routes.route('/unleashed', methods=['GET'])
+@main_routes_bp.route('/unleashed', methods=['GET'])
 @auth.login_required
 def unleashed_demo():
     from services.unleashed_api import UnleashedAPIClient  # Adjust based on your file name
@@ -629,7 +628,7 @@ def unleashed_demo():
         print(product["ProductCode"], product["ProductDescription"])
 
 
-@main_routes.route("/allowed_codes", methods=["GET", "POST"])
+@main_routes_bp.route("/allowed_codes", methods=["GET", "POST"])
 @auth.login_required
 def allowed_codes():
     config_manager = ConfigManager()
@@ -649,7 +648,7 @@ def allowed_codes():
     return render_template("allowed_codes.html", available_codes=available, allowed_codes=sorted(allowed))
 
 
-@main_routes.route("/clean_excel_upload", methods=["GET", "POST"])
+@main_routes_bp.route("/clean_excel_upload", methods=["GET", "POST"])
 @auth.login_required
 def clean_excel_upload():
     config_manager = ConfigManager()
@@ -684,7 +683,7 @@ def clean_excel_upload():
     return render_template("clean_excel_upload.html")
 
 
-@main_routes.route("/motorisation-data", methods=["GET", "POST"])
+@main_routes_bp.route("/motorisation-data", methods=["GET", "POST"])
 @auth.login_required
 def motorisation_data():
     data = []
@@ -699,7 +698,7 @@ def motorisation_data():
     return render_template("motorisation_data.html", data=data, pricing_fields=pricing_fields)
 
 
-@main_routes.route('/curtain-fabric-sync', methods=['GET', 'POST'])
+@main_routes_bp.route('/curtain-fabric-sync', methods=['GET', 'POST'])
 @auth.login_required
 def curtain_fabric_sync():
     config = current_app.config
@@ -718,7 +717,7 @@ def curtain_fabric_sync():
     return render_template("curtain_fabric_sync.html", column_titles=column_titles)
 
 
-@main_routes.route("/sync-fabric-mappings", methods=["GET"])
+@main_routes_bp.route("/sync-fabric-mappings", methods=["GET"])
 @auth.login_required
 def run_fabric_mapping_sync():
     """
@@ -752,7 +751,7 @@ def _read_config_paths():
 
 
 # /app/routes.py
-@main_routes.route("/sync-unleashed-old", methods=["GET", "POST"])
+@main_routes_bp.route("/sync-unleashed-old", methods=["GET", "POST"])
 @auth.login_required
 def sync_unleashed():
     """
@@ -820,14 +819,14 @@ def sync_unleashed():
         ), 500
 
 
-@main_routes.route("/sync-unleashed", methods=["GET"])
+@main_routes_bp.route("/sync-unleashed", methods=["GET"])
 @auth.login_required
 def unleashed_sync_landing():
     # just render the landing with a GO button
     return render_template("unleashed_sync_run.html")
 
 
-@main_routes.route("/sync-unleashed/start", methods=["POST"])
+@main_routes_bp.route("/sync-unleashed/start", methods=["POST"])
 @auth.login_required
 def unleashed_sync_start():
     job_id = str(uuid.uuid4())
@@ -878,7 +877,7 @@ def unleashed_sync_start():
     return redirect(url_for("main_routes.unleashed_sync_progress", job_id=job_id))
 
 
-@main_routes.route("/sync-unleashed/progress/<job_id>", methods=["GET"])
+@main_routes_bp.route("/sync-unleashed/progress/<job_id>", methods=["GET"])
 @auth.login_required
 def unleashed_sync_progress(job_id):
     job = get_job(job_id)
@@ -888,7 +887,7 @@ def unleashed_sync_progress(job_id):
     return render_template("unleashed_sync_progress.html", job_id=job_id)
 
 
-@main_routes.route("/sync-unleashed/status/<job_id>", methods=["GET"])
+@main_routes_bp.route("/sync-unleashed/status/<job_id>", methods=["GET"])
 @auth.login_required
 def unleashed_sync_status(job_id):
     job = get_job(job_id)
@@ -908,7 +907,7 @@ def unleashed_sync_status(job_id):
     return resp
 
 
-@main_routes.post("/admin/run-curtain-fabric-sync")
+@main_routes_bp.post("/admin/run-curtain-fabric-sync")
 @auth.login_required
 def run_curtain_fabric_sync_endpoint():
     # db manager lives at current_app.extensions['db_manager'] in your app
@@ -920,7 +919,7 @@ def run_curtain_fabric_sync_endpoint():
 STALE_THRESHOLD = timedelta(hours=6)  # tweak to taste
 
 
-@main_routes.route("/update_combo_bo_fabrics_group_options", methods=["GET", "POST"])
+@main_routes_bp.route("/update_combo_bo_fabrics_group_options", methods=["GET", "POST"])
 @auth.login_required
 def update_combo_bo_fabrics_group_options():
     from services.combo_bo_fabrics_group_options_updater import ComboBOFabricsGroupOptionsUpdater
@@ -1045,7 +1044,7 @@ except Exception:
     LOCAL_TZ = pytz.timezone("Australia/Sydney")
 
 
-@main_routes.app_template_filter('datetimeformat')
+@main_routes_bp.app_template_filter('datetimeformat')
 def datetimeformat(value):
     if not value:
         return "N/A"
@@ -1075,7 +1074,7 @@ def datetimeformat(value):
 
 
 # --- Curtain Sync (async with progress) ---
-@main_routes.route("/curtain-sync", methods=["GET"])
+@main_routes_bp.route("/curtain-sync", methods=["GET"])
 @auth.login_required
 def curtain_sync_landing():
     last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
@@ -1091,7 +1090,7 @@ def curtain_sync_landing():
 from services.google_sheets_service import GoogleSheetsService
 
 
-@main_routes.route("/curtain-sync/start", methods=["POST"])
+@main_routes_bp.route("/curtain-sync/start", methods=["POST"])
 @auth.login_required
 def curtain_sync_start():
     job_id = uuid.uuid4().hex
@@ -1172,7 +1171,7 @@ def curtain_sync_start():
     return redirect(url_for("main_routes.curtain_sync_progress", job_id=job_id))
 
 
-@main_routes.route("/curtain-sync/progress/<job_id>", methods=["GET"])
+@main_routes_bp.route("/curtain-sync/progress/<job_id>", methods=["GET"])
 @auth.login_required
 def curtain_sync_progress(job_id):
     job = get_job(job_id)
@@ -1207,7 +1206,7 @@ def curtain_sync_progress(job_id):
     )
 
 
-@main_routes.route("/curtain-sync/status/<job_id>", methods=["GET"])
+@main_routes_bp.route("/curtain-sync/status/<job_id>", methods=["GET"])
 @auth.login_required
 def curtain_sync_status(job_id):
     job = get_job(job_id)

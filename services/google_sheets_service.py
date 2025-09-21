@@ -1,7 +1,10 @@
 import json
 import logging
+import time
 import os
+import re
 import gspread
+from gspread.exceptions import APIError
 from google.oauth2.service_account import Credentials
 from pathlib import Path
 
@@ -93,6 +96,128 @@ class GoogleSheetsService:
         except Exception as e:
             logger.error(f"Error inserting row into spreadsheet {spreadsheet_id}: {e}")
 
+    def get_sheet_names(self, spreadsheet_id: str) -> list[str]:
+        """
+        Return a list of tab (worksheet) names in the spreadsheet.
+        """
+        try:
+            sh = self._client.open_by_key(spreadsheet_id)
+            return [ws.title for ws in sh.worksheets()]
+        except Exception as e:
+            logger.error(f"Error listing sheets for {spreadsheet_id}: {e}")
+            return []
+
+    def read_tab_as_records(
+            self,
+            spreadsheet_id: str,
+            sheet_name: str,
+            header_row: int = 1,
+    ) -> list[dict[str, str]]:
+        """
+        Read a worksheet and return a list of dicts keyed by header cells.
+
+        header_row is 1-based; rows above it are ignored.
+        """
+        try:
+            sh = self._client.open_by_key(spreadsheet_id)
+            ws = sh.worksheet(sheet_name)
+            values = ws.get_all_values()
+            if not values:
+                return []
+
+            # Convert to 0-based index
+            hdr_idx = max(0, header_row - 1)
+            if hdr_idx >= len(values):
+                return []
+
+            headers = [h.strip() for h in values[hdr_idx]]
+            out: list[dict[str, str]] = []
+
+            for row in values[hdr_idx + 1:]:
+                # pad row to headers length
+                padded = row + [""] * (len(headers) - len(row))
+                item = {headers[i]: padded[i] for i in range(len(headers))}
+                # keep row if any cell has a value
+                if any(x.strip() for x in item.values()):
+                    out.append(item)
+            return out
+        except Exception as e:
+            logger.error(f"Error reading tab '{sheet_name}' in {spreadsheet_id}: {e}")
+            return []
+
+    @staticmethod
+    def _norm(s: str) -> str:
+        """Lowercase + strip punctuation/whitespace for robust header matching."""
+        if s is None:
+            return ""
+        s = str(s).strip().lower()
+        return re.sub(r"[^a-z0-9]+", "", s)
+
+    def find_header_row_by_marker(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        marker_text: str,
+        search_col: int = 1,
+        scan_limit: int = 200,
+    ) -> int | None:
+        """
+        Return 1-based row index where `marker_text` appears in the given column.
+        Looks only in column A by default.
+        """
+        sh = self._client.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        col = ws.col_values(search_col)  # 1-based column
+        needle = self._norm(marker_text)
+        for i, v in enumerate(col[:scan_limit], start=1):
+            if self._norm(v) == needle:
+                return i
+        return None
+
+    def read_tab_as_records_by_marker(
+        self,
+        spreadsheet_id: str,
+        sheet_name: str,
+        header_marker_text: str,
+        default_header_row: int = 4,
+    ) -> list[dict[str, str]]:
+        """
+        Find the header row by locating `header_marker_text` in column A,
+        then read the tab using that header row. Falls back to `default_header_row`.
+        """
+        hdr = self.find_header_row_by_marker(spreadsheet_id, sheet_name, header_marker_text) \
+              or default_header_row
+        return self.read_tab_as_records(spreadsheet_id, sheet_name, header_row=hdr)
+
+    def _with_backoff(self, fn, *, tries: int = 5, base: float = 0.6, factor: float = 2.0):
+        """Generic retry for Sheets 429 rate limits."""
+        delay = base
+        for attempt in range(tries):
+            try:
+                return fn()
+            except APIError as e:
+                code = getattr(getattr(e, "response", None), "status_code", None)
+                if code == 429 or "quota" in str(e).lower() or "rate" in str(e).lower():
+                    if attempt == tries - 1:
+                        raise
+                    time.sleep(delay)
+                    delay *= factor
+                    continue
+                raise
+
+    def col_values(self, spreadsheet_id: str, sheet_name: str, col_index: int, max_rows: int | None = None) -> list[str]:
+        """Generic: return 1-based column values."""
+        sh = self._client.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        vals = self._with_backoff(lambda: ws.col_values(col_index))
+        return vals if max_rows is None else vals[:max_rows]
+
+    def values(self, spreadsheet_id: str, sheet_name: str, range_a1: str) -> list[list[str]]:
+        """Generic: get any A1 range."""
+        sh = self._client.open_by_key(spreadsheet_id)
+        ws = sh.worksheet(sheet_name)
+        return self._with_backoff(lambda: ws.get(range_a1))
+
 
 def filter_google_sheet_second_column_numeric(
         sheets_service: GoogleSheetsService, spreadsheet_id: str, range_name: str = 'Sheet1!A:B'
@@ -141,6 +266,5 @@ def filter_google_sheet_second_column_numeric(
         for row in data
         if len(row) > 1 and row[0] and row[1] and is_numeric(row[1])
     ]
-
 
 
