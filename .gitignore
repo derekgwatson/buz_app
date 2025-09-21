@@ -24,3 +24,6 @@ ownership_change.sh
 uploads/
 buz_data.db
 buz_data.db.backup
+
+# Ignore everything in instance (runtime data)
+instance/
