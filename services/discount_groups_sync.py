@@ -42,6 +42,7 @@ class CustomerTabConfig:
     header_row: int
     product_col_header: str
     discount_col_header: str
+    derek_actioned_header: str
 
 
 def load_cfg_strict(cfg_cls, config_mgr, section_path: str):
@@ -282,7 +283,6 @@ class DiscountGroupsSync:
             hdr_row = _find_header_row_in_col(col_a, self.tab_cfg.product_col_header, self.tab_cfg.header_row)
             start_row = hdr_row + 1
 
-            # Build “rows” dicts from the two columns we already have in memory
             rows: list[dict[str, str]] = []
             end = max(len(col_a), len(col_c))
             for r in range(start_row, end + 1):
@@ -294,6 +294,7 @@ class DiscountGroupsSync:
                 rows.append({
                     self.tab_cfg.product_col_header: prod,
                     self.tab_cfg.discount_col_header: disc,
+                    "__sheet_row": r,  # <-- add this
                 })
 
             if not rows:
@@ -322,6 +323,7 @@ class DiscountGroupsSync:
                 existing_headers[group_col_name] = target_col
 
             # Push discounts
+            rows_to_tick: list[int] = []
             changed = 0
             for row in rows:
                 tab_product = str(row.get(prod_key, "")).strip()
@@ -345,6 +347,7 @@ class DiscountGroupsSync:
                         cell.value = after
                         changed += 1
                         total_changes += 1
+                        rows_to_tick.append(int(row["__sheet_row"]))  # <-- remember which sheet row to tick
                         if len(changes_sample) < 50:
                             changes_sample.append({
                                 "product_code": grid_code,
@@ -353,10 +356,13 @@ class DiscountGroupsSync:
                                 "after": after,
                             })
 
+            derek_ticked = self._mark_derek_actioned(gs, tab, hdr_row, rows_to_tick)
+
             customers_summary.append({
                 "tab": tab,
                 "group_column": group_col_name,
                 "cells_changed": changed,
+                "derek_ticked": derek_ticked,  # optional: useful in your UI
             })
 
         # --- 7) Save new copy (preserving macros)
@@ -394,3 +400,25 @@ class DiscountGroupsSync:
                         out.append(n)
                 return out
         return []
+
+    def _mark_derek_actioned(self, gs: GoogleSheetsService, tab: str, header_row: int, rows_to_tick: list[int]) -> int:
+        """
+        Find the 'Derek Actioned' column by header text on `header_row` and tick it (TRUE)
+        for all `rows_to_tick`. Returns #rows ticked. Skips if header missing.
+        """
+        if not rows_to_tick:
+            return 0
+
+        headers = gs.row_values(self.sheet_id, tab, header_row, max_cols=60)
+        want = _norm(self.tab_cfg.derek_actioned_header)
+        col_idx = None
+        for i, h in enumerate(headers, start=1):
+            if _norm(h) == want:
+                col_idx = i
+                break
+        if not col_idx:
+            logger.info("No '%s' header on tab %s; skipping checkbox ticks.",
+                        self.tab_cfg.derek_actioned_header, tab)
+            return 0
+
+        return gs.set_bool_column_cells(self.sheet_id, tab, col_idx, rows_to_tick, True)

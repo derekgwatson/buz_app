@@ -679,7 +679,8 @@
     "customer_tabs": {
       "header_row": 5,
       "product_col_header": "Product",
-      "discount_col_header": "Discount offered"
+      "discount_col_header": "Discount offered",
+      "derek_actioned_header": "Derek Actioned"
     },
     "ignore_tabs": [
         "Max Disc %",

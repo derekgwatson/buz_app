@@ -181,6 +181,40 @@ class GoogleSheetsService:
             logger.error(f"Error reading tab '{sheet_name}' in {spreadsheet_id}: {e}")
             return []
 
+    def row_values(self, spreadsheet_id: str, sheet_name: str, row: int, max_cols: int = 60) -> list[str]:
+        """
+        Read a single row (A… up to max_cols) using the same cached batch_get approach.
+        """
+        a1 = f"'{sheet_name}'!A{row}:{self._col_letter(max_cols)}{row}"
+        block = self.batch_get_cached(spreadsheet_id, [a1])[0] or []
+        # block is a 2D list: [ [row values...] ] ; flatten
+        return (block[0] if block and isinstance(block[0], list) else [])
+
+    def set_bool_column_cells(
+            self,
+            spreadsheet_id: str,
+            sheet_name: str,
+            col_index_1based: int,
+            row_indices_1based: list[int],
+            value: bool = True,
+    ) -> int:
+        """
+        Batch write TRUE/FALSE into a single column for many rows (checkbox-friendly).
+        Returns number of cells written.
+        """
+        rows = sorted(set(int(r) for r in row_indices_1based))
+        if not rows:
+            return 0
+        sh = self._open(spreadsheet_id)
+        col = self._col_letter(col_index_1based)
+        data = [
+            {"range": f"'{sheet_name}'!{col}{r}", "values": [[("TRUE" if value else "FALSE")]]}
+            for r in rows
+        ]
+        # USER_ENTERED so TRUE/FALSE tick existing checkboxes
+        sh.values_batch_update(body={"valueInputOption": "USER_ENTERED", "data": data})
+        return len(rows)
+
     @staticmethod
     def _norm(s: str | None) -> str:
         if not s:
