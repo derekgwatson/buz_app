@@ -2,9 +2,10 @@ from services.database import DatabaseManager
 import logging
 from services.excel import OpenPyXLFileHandler
 from services.config_service import ConfigManager
-from typing import Sequence, Optional
-import re
+from typing import Callable
 from datetime import datetime
+from typing import Iterable, List, Tuple, Optional
+from time import perf_counter
 
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,21 @@ def is_group_allowed(db_manager: DatabaseManager, inventory_group_code: str) -> 
     return db_manager.get_item("inventory_groups", {"group_code": inventory_group_code}) is not None
 
 
+ProgressCb = Optional[Callable[[str, Optional[int]], None]]
+
+
+def _chunked(iterable: Iterable, size: int) -> Iterable[List]:
+    """Yield lists of up to `size` items from `iterable`."""
+    batch = []
+    for item in iterable:
+        batch.append(item)
+        if len(batch) >= size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
 def process_workbook(
     file_handler: OpenPyXLFileHandler,
     table_name: str,
@@ -48,86 +64,105 @@ def process_workbook(
     db_manager: DatabaseManager,
     invalid_pkid: str,
     ignored_groups: list[str],
+    batch_size: int = 1000,
 ) -> dict[str, int]:
     """
     Process an Excel workbook and insert its data into the specified database table.
-
-    This function reads data from an Excel workbook, validates its sheets against
-    expected headers, and inserts rows into a database table. It skips sheets that
-    are not in the allowed list, have invalid headers, or contain no data. Existing
-    rows for the corresponding inventory group are deleted before inserting new data.
-
-    :param ignored_groups:
-    :param invalid_pkid:
-    :param file_handler: An instance of `OpenPyXLFileHandler` used to load and interact
-                         with the Excel workbook.
-    :param table_name: The name of the database table where the data will be inserted.
-    :param expected_headers: A list of expected column headers for validation.
-    :param db_fields: A list of corresponding database fields to be updated.
-    :param header_row: The row number in the Excel sheet that contains the headers.
-    :param db_manager: An instance of `DatabaseManager` used for database operations.
-
-    :return: A summary dictionary containing:
-             - `processed_sheets`: Number of sheets successfully processed.
-             - `skipped_sheets`: Number of sheets skipped due to errors or validation failure.
-             - `rows_inserted`: Total number of rows inserted into the database.
     """
     summary = {"processed_sheets": 0, "skipped_sheets": 0, "rows_inserted": 0}
 
-    # Purge ignored groups before processing any files
+    # Purge ignored groups up front
     purge_result = purge_ignored_groups(db_manager, "inventory_items", ignored_groups)
-    logger.info(f"Purged ignored inventory groups: {purge_result}")
+    logger.info("Purged ignored inventory groups: %s", purge_result)
+
+    known_columns = ["inventory_group_code"] + db_fields
+    max_cols = len(expected_headers)  # hard limit — avoids huge formatted rows
 
     for sheet_name in file_handler.workbook.sheetnames:
         if not is_group_allowed(db_manager, sheet_name):
-            logger.warning(f"Skipping sheet {sheet_name} as it is not in the allowed list.")
+            logger.warning("Skipping sheet %s as it is not in the allowed list.", sheet_name)
             summary["skipped_sheets"] += 1
             continue
 
-        logger.info(f"Processing sheet: {sheet_name}")
+        t0 = perf_counter()
+        logger.info("Processing sheet: %s", sheet_name)
         sheet = file_handler.workbook[sheet_name]
 
-        # Validate headers
+        # ---- Header validation (only read what we expect) ----
+        header_row_vals = next(
+            sheet.iter_rows(
+                min_row=header_row,
+                max_row=header_row,
+                max_col=max_cols,
+                values_only=True,
+            )
+        )
         actual_headers = [
-            str(sheet.cell(row=header_row, column=col).value).strip().rstrip('*')
-            if sheet.cell(row=header_row, column=col).value is not None else ""
-            for col in range(1, sheet.max_column + 1)
+            (str(v).strip().rstrip("*") if v is not None else "")
+            for v in header_row_vals
         ]
 
         if actual_headers != expected_headers:
             logger.warning(
-                f"Skipping sheet '{sheet_name}': Incorrect headers.\n"
-                f"Expected: {expected_headers}, Found: {actual_headers}"
+                "Skipping sheet '%s': Incorrect headers. Expected: %s, Found: %s",
+                sheet_name, expected_headers, actual_headers,
             )
             summary["skipped_sheets"] += 1
             continue
 
-        # Extract and validate rows
-        rows = [
-            (sheet_name, *[parse_excel_date(cell) if actual_headers[idx] == 'Last Edit Date' else cell for idx, cell in enumerate(row)])
-            for row in sheet.iter_rows(min_row=header_row + 1, values_only=True)
-            if any(row) and row[0] is not None  # Skip empty rows or rows with None in the first column
-        ]
-        if not rows:
-            logger.warning(f"Skipping sheet '{sheet_name}' as it contains no data.")
+        # ---- Delete existing data for this group ----
+        try:
+            delete_existing_data(db_manager, table_name, sheet_name)
+        except Exception as exc:
+            logger.error(
+                "Failed to delete existing data for '%s': %s", sheet_name, exc
+            )
             summary["skipped_sheets"] += 1
             continue
 
+        # ---- Stream rows and insert in batches ----
+        total_inserted = 0
         try:
-            # Delete existing data for this sheet (inventory_group_code)
-            delete_existing_data(db_manager, table_name, sheet_name)
+            row_iter = sheet.iter_rows(
+                min_row=header_row + 1,
+                max_col=max_cols,           # hard cap
+                values_only=True,
+            )
 
-            # Insert all valid rows into the table
-            insert_data(db_manager, table_name, ['inventory_group_code'] + db_fields, rows)
+            for batch in _chunked(row_iter, size=1000):
+                to_insert: List[Tuple] = []
+                for row in batch:
+                    if not row or all(v is None for v in row):
+                        continue
+                    if row[0] is None:  # require a value in first column
+                        continue
 
-            # Delete rows with invalid PKID
+                    transformed = [
+                        parse_excel_date(val) if actual_headers[idx] == "Last Edit Date" else val
+                        for idx, val in enumerate(row)
+                    ]
+                    # Prepend inventory_group_code
+                    to_insert.append((sheet_name, *transformed))
+
+                if to_insert:
+                    insert_data(db_manager, table_name, known_columns, to_insert)
+                    total_inserted += len(to_insert)
+
+            # Remove rows with invalid PKID
             delete_invalid_rows(db_manager, table_name, sheet_name, invalid_pkid)
 
-            summary["processed_sheets"] += 1
-            summary["rows_inserted"] += len(rows)
+        except Exception as exc:
+            logger.error("Error processing sheet '%s': %s", sheet_name, exc)
+            summary["skipped_sheets"] += 1
+            # Best-effort: continue other sheets
+            continue
 
-        except Exception as e:
-            logger.error(f"Error processing sheet '{sheet_name}': {e}")
+        summary["processed_sheets"] += 1
+        summary["rows_inserted"] += total_inserted
+        logger.info(
+            "Sheet '%s' done. Inserted %d rows in %.2fs",
+            sheet_name, total_inserted, perf_counter() - t0
+        )
 
     return summary
 

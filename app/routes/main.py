@@ -72,31 +72,35 @@ def upload_route():
             current_app.config["headers"], "buz_pricing_file"
         )
 
-        # Process uploaded files
-        uploaded_files = upload(
-            db_manager=g.db,
-            inventory_file=inventory_file,
-            inventory_file_expected_headers=inventory_file_expected_headers,
-            inventory_file_db_fields=inventory_file_db_fields,
-            pricing_file=pricing_file,
-            pricing_file_expected_headers=pricing_file_expected_headers,
-            pricing_file_db_fields=pricing_file_db_fields,
-            unleashed_file=unleashed_file,
-            unleashed_field_config=current_app.config["headers"]["unleashed_fields"],
-            upload_folder=current_app.config['upload_folder'],
-            invalid_pkid=current_app.config['invalid_pkid'],
-            override_friendly_descriptions_id=current_app.config["spreadsheets"]["friendly_descriptions"]["id"],
-            override_friendly_descriptions_range=current_app.config["spreadsheets"]["friendly_descriptions"]["range"],
-            ignored_groups=current_app.config["ignored_inventory_groups"]
-        )
+        try:
+            # Process uploaded files
+            uploaded_files = upload(
+                db_manager=g.db,
+                inventory_file=inventory_file,
+                inventory_file_expected_headers=inventory_file_expected_headers,
+                inventory_file_db_fields=inventory_file_db_fields,
+                pricing_file=pricing_file,
+                pricing_file_expected_headers=pricing_file_expected_headers,
+                pricing_file_db_fields=pricing_file_db_fields,
+                unleashed_file=unleashed_file,
+                unleashed_field_config=current_app.config["headers"]["unleashed_fields"],
+                upload_folder=current_app.config['upload_folder'],
+                invalid_pkid=current_app.config['invalid_pkid'],
+                override_friendly_descriptions_id=current_app.config["spreadsheets"]["friendly_descriptions"]["id"],
+                override_friendly_descriptions_range=current_app.config["spreadsheets"]["friendly_descriptions"]["range"],
+                ignored_groups=current_app.config["ignored_inventory_groups"]
+            )
 
-        if uploaded_files is None:
-            flash('No files to upload')
-        elif isinstance(uploaded_files, dict) and 'error' in uploaded_files:
-            flash(Markup(uploaded_files['error']), 'danger')
-        else:
-            last_upload_times.update(uploaded_files)
-            flash('Files successfully uploaded and data stored in the database')
+            if uploaded_files is None:
+                flash('No files to upload')
+            elif isinstance(uploaded_files, dict) and 'error' in uploaded_files:
+                flash(Markup(uploaded_files['error']), 'danger')
+            else:
+                last_upload_times.update(uploaded_files)
+                flash('Files successfully uploaded and data stored in the database')
+        except Exception as exc:
+            logging.exception("Upload failed: %s", exc)
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     # Render the upload page
     from services.data_processing import (
@@ -467,6 +471,7 @@ def generate_deactivation_file():
             flash('Failed to generate deactivation file. Check logs for details.', 'danger')
 
     return render_template('generate_deactivation_file.html', upload_filename=None)
+
 
 @main_routes_bp.route('/fabric-duplicates-report', methods=['GET', 'POST'])
 @auth.login_required

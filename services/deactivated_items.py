@@ -20,7 +20,9 @@ def generate_deactivation_upload(db_manager: DatabaseManager):
     # Query database for obsolete/unsellable items
     query = f"""
     SELECT id, inventory_group_code, {', '.join(db_fields)} FROM inventory_items
-    WHERE LOWER(Supplier) = 'unleashed'
+    WHERE Active = 1
+    AND (Warning IS NULL OR LOWER(Warning) NOT LIKE '%deprecated%')
+    AND LOWER(Supplier) = 'unleashed'
     AND SupplierProductCode != ''
     AND LOWER(SupplierProductCode) NOT IN (
         SELECT LOWER(ProductCode) FROM unleashed_products

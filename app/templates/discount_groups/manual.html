@@ -50,6 +50,80 @@
   clip:rect(0,0,0,0);
   white-space:nowrap;border:0;
 }
+</style>
+
+<style>
+/* === BS3-aligned colors (btn-primary) === */
+:root{
+  --btn-bg:        #337ab7;  /* .btn-primary background */
+  --btn-border:    #2e6da4;  /* .btn-primary border     */
+  --btn-hover:     #286090;  /* :hover background       */
+  --btn-hover-brd: #204d74;  /* :hover border           */
+}
+
+/* Base chip */
+.chip{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:30px;
+  padding:0 12px;
+  border-radius:9999px;
+  font-size:.875rem;
+  font-weight:400;     /* match BS3 buttons */
+  letter-spacing:0;    /* match BS3 buttons */
+  line-height:1;       /* consistent vertical centering */
+  transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+}
+
+/* Left pill: EXACT .btn-primary look */
+.chip-primary{
+  background: var(--btn-bg);
+  border:1px solid var(--btn-border);
+  color:#fff;
+}
+.chip-primary:hover{
+  background: var(--btn-hover);
+  border-color: var(--btn-hover-brd);
+  color:#fff;
+}
+
+/* Right pills: higher contrast “ghost” */
+.chip-ghost{
+  /* slightly stronger than before for readability */
+  background: rgba(51,122,183,.28);
+  border:1px solid var(--btn-border);
+  color:#f2f8ff;                 /* near-white for contrast */
+  text-shadow: 0 1px 0 rgba(0,0,0,.25);  /* subtle lift on dark bg */
+}
+.chip-ghost:hover{
+  background: rgba(51,122,183,.42);
+  border-color: var(--btn-hover-brd);
+  color:#fff;
+}
+
+/* Layout tweaks */
+.dg-grid{
+  display:grid;
+  grid-template-columns:260px 1fr;
+  gap:8px 18px;
+  align-items:center;
+}
+.dg-left{ min-width:0; }
+.dg-left .chip{
+  max-width:240px;
+  width:max-content;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* List styling on dark bg */
+#dgList, #dgList .list-group-item{ background:transparent !important; }
+#dgList .list-group-item{ padding:10px 0; border:0 !important; }
+#dgList .list-group-item + .list-group-item{
+  border-top:1px solid rgba(255,255,255,.06) !important;
+}
 
 </style>
 {% endblock %}
@@ -84,50 +158,32 @@
              placeholder="Type to filter by customer…">
 
       {% if rows %}
-      <div class="table-responsive">
-        <table class="table table-dark align-middle mb-0" id="customersTable">
-          <thead class="table-secondary text-dark">
-            <tr>
-              <th class="w-50">Discount Group</th>
-              <th>Assign to these customers</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in rows %}
-            <tr>
-              <td>
-                <!-- Group name copies itself -->
-                <button
-                  type="button"
-                  class="btn btn-sm btn-secondary copy-btn"
-                  data-copy="{{ row.customer_tab }}"
-                  title="Copy '{{ row.customer_tab }}'">
+        <ul class="list-group list-group-flush" id="dgList">
+          {% for row in rows %}
+          <li class="list-group-item">
+            <div class="dg-grid">
+              <div class="dg-left">
+                <span class="chip chip-primary copy-row"
+                      data-copy="{{ row.customer_tab }}"
+                      title="Click to copy '{{ row.customer_tab }}'">
                   {{ row.customer_tab }}
-                </button>
-              </td>
-              <td>
+                </span>
+              </div>
+
+              <div class="dg-right">
                 {% if row.customers and row.customers|length > 0 %}
-                  <div class="d-flex flex-wrap gap-2">
-                    {% for name in row.customers %}
-                      <!-- Each customer name copies itself -->
-                      <button
-                        type="button"
-                        class="btn btn-sm btn-outline-secondary copy-btn"
-                        data-copy="{{ name }}"
-                        title="Copy '{{ name }}'">
-                        {{ name }}
-                      </button>
-                    {% endfor %}
-                  </div>
-                {% else %}
-                  <span class="text-muted">No customer list on tab</span>
+                  {% for name in row.customers %}
+                    <span class="chip chip-ghost" title="Copy '{{ name }}'" data-copy="{{ name }}">
+                      {{ name }}
+                    </span>
+                  {% endfor %}
                 {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+              </div>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+
       {% else %}
       <div class="alert alert-warning mb-0">
         No customer tabs found in the Google Sheet. Check sharing and sheet ID.
@@ -165,60 +221,32 @@
 
 {% block scripts %}
 <script>
-
-  // filter
+  // Filter rows
   (function () {
     const input = document.getElementById('filterInput');
-    const rows  = Array.from(document.querySelectorAll('#customersTable tbody tr'));
     if (!input) return;
+    const items = Array.from(document.querySelectorAll('#dgList .list-group-item'));
     input.addEventListener('input', function () {
       const q = this.value.trim().toLowerCase();
-      rows.forEach(tr => {
-        const txt = tr.innerText.toLowerCase();
-        tr.style.display = txt.includes(q) ? '' : 'none';
+      items.forEach(li => {
+        li.style.display = li.innerText.toLowerCase().includes(q) ? '' : 'none';
       });
     });
   })();
 
-  // Click-to-copy for ANY .copy-btn
+  // Click-to-copy
   (function () {
-    function copyToClipboard(text) {
-      if (navigator.clipboard && window.isSecureContext) {
-        return navigator.clipboard.writeText(text);
-      }
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.left = '-9999px';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
-      return Promise.resolve();
-    }
-
-    // tweaked to set the bubble label
-    function flash(btn, label = 'Copied!') {
-      btn.dataset.copiedLabel = label;
-      btn.classList.add('copied');
-      setTimeout(() => btn.classList.remove('copied'), 900);
-    }
-
-    // NEW: aria-live region hook (optional but nice)
-    const live = document.getElementById('copy-live');
-
-    document.addEventListener('click', (e) => {
-      const btn = e.target.closest('.copy-btn');
-      if (!btn) return;
-
-      const text = (btn.dataset.copy || btn.textContent || '')
-        .trim().replace(/\s+/g, ' ');
-      if (!text) return;
-
-      copyToClipboard(text).then(() => {
-        if (live) live.textContent = `Copied: ${text}`;
-        flash(btn);
-      }).catch(err => console.error('Copy failed:', err));
+    document.querySelectorAll('.chip[data-copy]').forEach(el => {
+      el.addEventListener('click', async () => {
+        const txt = el.getAttribute('data-copy') || '';
+        try {
+          await navigator.clipboard.writeText(txt);
+          const old = el.textContent;
+          el.textContent = 'Copied';
+          el.classList.add('text-success');
+          setTimeout(() => { el.textContent = old; el.classList.remove('text-success'); }, 700);
+        } catch (_) {}
+      });
     });
   })();
 
