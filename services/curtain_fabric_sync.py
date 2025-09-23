@@ -175,6 +175,8 @@ def colour_for_description(p3: str) -> str:
     raw = str(p3).strip()
     if raw.lower() == "specified below":
         return ""
+    if raw.lower() == "to be confirmed":
+        return "Colour To Be Confirmed"
     return to_title_case(raw)
 
 
