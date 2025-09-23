@@ -14,6 +14,14 @@ from app.routes import main_routes_bp, fabrics_bp, discount_groups_bp
 load_dotenv()
 
 
+# call this during app startup
+def cleanup_stale_jobs(db):
+    db.execute_query(
+        "UPDATE jobs SET status='aborted', pct=0 WHERE status='running'"
+    )
+    db.commit()
+
+
 def create_app(config_name: str = ""):
     import time
     from flask import g
@@ -119,5 +127,7 @@ def create_app(config_name: str = ""):
 
     # CLI
     app.cli.add_command(init_db_command)  # type: ignore
+
+    cleanup_stale_jobs(app.extensions["db_manager"])
 
     return app

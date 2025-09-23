@@ -13,6 +13,11 @@ from collections import Counter
 from openpyxl import Workbook
 from typing import Any, Mapping
 
+# Title case known uppers
+KNOWN_ACRONYMS = {
+    "II", "FR", "UV", "PVC", "GSM", "LED", "AC", "DC", "LM", "SQM", "GST", "DD", "POA"
+}
+
 # =========================
 # Config: fixed curtain tabs + product names
 # =========================
@@ -65,7 +70,7 @@ NEW_FABRIC_EFF_DATE_STR = "01/01/2020"
 
 # Progress logging
 VERBOSE = True
-PROG_EVERY = 250
+PROG_EVERY = 50
 t0 = time.perf_counter()
 
 
@@ -118,8 +123,10 @@ def parse_eff_date_ddmmyyyy_or_blank(s):
     except Exception:
         return ""
 
+
 def build_key(p1, p2, p3):
     return f"{str(p1).strip().lower()}||{str(p2).strip().lower()}||{str(p3).strip().lower()}"
+
 
 def next_code_for_group(existing_codes, group_prefix, start=10000):
     pat = re.compile(rf"^{re.escape(group_prefix)}(\d+)$")
@@ -135,9 +142,27 @@ def next_code_for_group(existing_codes, group_prefix, start=10000):
                 pass
     return f"{group_prefix}{max_seen+1}"[:20]
 
+
 def to_title_case(s: str) -> str:
-    s = str(s).strip()
-    return s.title() if s else ""
+    """Title-case words but force known acronyms to UPPER.
+    Preserves punctuation: () , . / - etc."""
+    s = str(s or "").strip()
+    if not s:
+        return ""
+
+    def cap_word(tok: str) -> str:
+        # split on any non-word chunk, keep delimiters
+        parts = re.split(r"([^\w]+)", tok)
+        if len(parts) > 1:
+            return "".join(cap_word(p) if i % 2 == 0 else p
+                           for i, p in enumerate(parts))
+        u = tok.upper()
+        return u if u in KNOWN_ACRONYMS else tok[:1].upper() + tok[1:].lower()
+
+    # preserve original spacing
+    return "".join(cap_word(t) if not t.isspace() else t
+                   for t in re.split(r"(\s+)", s))
+
 
 def colour_for_parts(p3: str) -> str:
     raw = str(p3).strip()
@@ -147,11 +172,13 @@ def colour_for_parts(p3: str) -> str:
         return "Colour To Be Confirmed"
     return to_title_case(raw)
 
+
 def colour_for_description(p3: str) -> str:
     raw = str(p3).strip()
     if raw.lower() == "specified below":
         return ""
     return colour_for_parts(raw)
+
 
 def rebuild_description(product_name, p1, p2, p3):
     brand  = to_title_case(p1)
@@ -160,6 +187,7 @@ def rebuild_description(product_name, p1, p2, p3):
     parts = [product_name.strip(), brand, fabric, colour]
     return " ".join([p for p in parts if p])
 
+
 def _q2(x: str) -> Decimal:
     s = str(x).strip()
     if s == "": return Decimal("0.00")
@@ -167,6 +195,7 @@ def _q2(x: str) -> Decimal:
         return Decimal(s).quantize(Decimal("0.01"))
     except InvalidOperation:
         return Decimal("0.00")
+
 
 def tomorrow_ddmmyyyy():
     return (datetime.today() + timedelta(days=1)).strftime("%d/%m/%Y")
@@ -311,9 +340,7 @@ def load_latest_pricing_by_code(db):
         pr["_eff"] = pd.NaT
         return pr.assign(_eff=pd.NaT), pr
 
-    prn = pr.rename(columns=PR_DB_COLS)
-    prn["_eff"] = pd.to_datetime(prn[PRICE_COL_EFF], dayfirst=True, errors="coerce")
-    return prn, prn
+    return pr.rename(columns=PR_DB_COLS)
 
 
 # ---------- Main orchestrator (DB-based) ----------
@@ -463,22 +490,41 @@ def generate_uploads_from_db(
 
     # --- Load Pricing (from DB, all rows; we'll filter per-group by joining on inventory)
     _ping("Loading pricing rows…", 20)
-    pr_latest, pr_all = load_latest_pricing_by_code(db)
-    _ping(f"Pricing rows: {len(pr_all)}", 25)
+    pr_all = load_latest_pricing_by_code(db)
+
+    # Precompute last (most recent) price per code for fast lookup
+    pr_all["_code_key"] = pr_all[PRICE_COL_CODE].astype(str).str.strip()
+    pr_all["_eff_parsed"] = pd.to_datetime(pr_all[PRICE_COL_EFF], dayfirst=True, errors="coerce")
+    pr_all = pr_all.dropna(subset=["_code_key", "_eff_parsed"])
+
+    last_rows = (
+        pr_all.sort_values("_eff_parsed")
+        .groupby("_code_key", as_index=False)
+        .tail(1)  # last (most recent) row per code
+    )
+
+    last_price_map: dict[str, tuple[Decimal | None, Decimal | None]] = {}
+    for _, r in last_rows.iterrows():
+        last_price_map[r["_code_key"]] = (
+            _q2(r.get(PRICE_COL_SELL_W, "")),
+            _q2(r.get(PRICE_COL_COST_W, "")),
+        )
+
+    _ping(f"Pricing codes: {len(last_price_map)}", 25)
 
     pricing_to_append = {s: [] for s in CURTAIN_TABS}
     change_log = []
 
     # --- Process existing rows (D/E/reactivate/desc) and queue pricing if 2dp changed
     for grp, df in inv_by_group.items():
-        _ping(f"Processing existing rows in {grp}…", None)
+        _ping(f"Processing existing rows in {grp}…", 30)
         product_name = PRODUCT_NAME_BY_TAB[grp]
         log(f"[4/5] Processing existing rows in {grp} …")
         for i, row in df.iterrows():
             key = row["_key"]
             if key not in keys_g:
                 active_val = str(row.get(INV_COL_ACTIVE,"")).strip().upper()
-                if active_val in ("TRUE","YES","1"):
+                if active_val in ("TRUE", "YES", "1"):
                     df.at[i, INV_COL_OP] = "D"
                     change_log.append({
                         "Tab": grp, "Operation": "D",
@@ -524,14 +570,7 @@ def generate_uploads_from_db(
                 sheet_cost_q2 = _q2(grow["_cost"])
 
                 # Find most recent existing pricing row for this code
-                same_code = pr_all[pr_all[PRICE_COL_CODE].astype(str).str.strip() == code].copy()
-                last_sell_q2 = last_cost_q2 = None
-                if not same_code.empty:
-                    eff_parsed = pd.to_datetime(same_code[PRICE_COL_EFF], dayfirst=True, errors="coerce")
-                    same_code = same_code.assign(_eff=eff_parsed).dropna(subset=["_eff"]).sort_values("_eff")
-                    last = same_code.iloc[-1]
-                    last_sell_q2 = _q2(last.get(PRICE_COL_SELL_W, ""))
-                    last_cost_q2 = _q2(last.get(PRICE_COL_COST_W, ""))
+                last_sell_q2, last_cost_q2 = last_price_map.get(code, (None, None))
 
                 changed = (
                     last_sell_q2 is None or last_cost_q2 is None or
@@ -550,9 +589,11 @@ def generate_uploads_from_db(
                         PKID_COL: ""
                     })
 
-            if VERBOSE and (i + 1) % PROG_EVERY == 0:
-                log(f"  • {grp}: {i+1}/{len(df)}", end="\r")
-        _ping(f"{grp}: done", None)
+            if (i + 1) % PROG_EVERY == 0:
+                log(f"  • {grp}: {i + 1}/{len(df)}\n")  # newline so it’s visible next to Werkzeug logs
+                pct_here = 30 + int(20 * ((i + 1) / max(1, len(df))))  # 30–50% across this pass
+                _ping(f"{grp}: {i + 1}/{len(df)}", pct_here)
+        _ping(f"{grp}: done", 50)
 
     # --- Adds (ensure fabric exists on both tabs)
     codes_by_group = {grp: set(df[INV_COL_CODE].astype(str).str.strip()) for grp, df in inv_by_group.items()}
@@ -562,7 +603,9 @@ def generate_uploads_from_db(
         grow = g.loc[key]
         for grp in CURTAIN_TABS:
             df = inv_by_group[grp]
-            if key in set(df["_key"]): continue
+            keys_by_group = {grp: set(df["_key"]) for grp, df in inv_by_group.items()}
+            if key in keys_by_group[grp]:
+                continue
 
             code = next_code_for_group(codes_by_group[grp], grp, start=10000)
             codes_by_group[grp].add(code)
@@ -585,6 +628,7 @@ def generate_uploads_from_db(
             new_row[INV_COL_OP]="A"
 
             inv_by_group[grp] = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            keys_by_group[grp].add(key)  # keep the set in sync
             pricing_to_append[grp].append({
                 PRICE_COL_CODE: code, PRICE_COL_DESC: new_desc,
                 PRICE_COL_EFF:  NEW_FABRIC_EFF_DATE_STR,

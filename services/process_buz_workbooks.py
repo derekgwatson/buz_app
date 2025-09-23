@@ -88,15 +88,43 @@ def process_workbook(
         logger.info("Processing sheet: %s", sheet_name)
         sheet = file_handler.workbook[sheet_name]
 
-        # ---- Header validation (only read what we expect) ----
-        header_row_vals = next(
-            sheet.iter_rows(
-                min_row=header_row,
-                max_row=header_row,
-                max_col=max_cols,
-                values_only=True,
-            )
+
+        logger.info(
+            "Sheet=%s header_row=%s sheet.max_row=%s sheet.max_column=%s max_cols=%s",
+            sheet_name, header_row, sheet.max_row, sheet.max_column, max_cols
         )
+
+        # Sanity for max_cols
+        if not max_cols or max_cols < 1:
+            max_cols = sheet.max_column or 1
+
+        # If sheet is shorter than the header row, skip it cleanly
+        if sheet.max_row < header_row:
+            logger.warning(
+                "Skipping sheet %s: no row %d (max_row=%d).",
+                sheet_name, header_row, sheet.max_row
+            )
+            summary["skipped_sheets"] += 1
+            continue
+
+        rows_iter = sheet.iter_rows(
+            min_row=header_row,
+            max_row=header_row,
+            min_col=1,
+            max_col=max_cols,
+            values_only=True,
+        )
+
+        try:
+            header_row_vals = next(rows_iter)
+        except StopIteration:
+            logger.warning(
+                "Skipping sheet %s: iter_rows yielded no header row (header_row=%d, max_cols=%d).",
+                sheet_name, header_row, max_cols
+            )
+            summary["skipped_sheets"] += 1
+            continue
+
         actual_headers = [
             (str(v).strip().rstrip("*") if v is not None else "")
             for v in header_row_vals
