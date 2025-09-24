@@ -160,8 +160,6 @@ def colour_for_parts(p3: str) -> str:
     raw = str(p3).strip()
     if not raw:
         return ""
-    if raw.lower() == "to be confirmed":
-        return "Colour To Be Confirmed"
     return to_title_case(raw)
 
 
@@ -169,7 +167,9 @@ def colour_for_description(p3: str) -> str:
     raw = str(p3).strip()
     if raw.lower() == "specified below":
         return ""
-    return colour_for_parts(raw)
+    if raw.lower() == "to be confirmed":
+        return "Colour To Be Confirmed"
+    return to_title_case(raw)
 
 
 def rebuild_description(product_name, p1, p2, p3):
