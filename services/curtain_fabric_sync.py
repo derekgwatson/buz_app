@@ -37,7 +37,6 @@ COL_DIR     = "Direction"
 COL_REPEAT  = "Vertical Pattern Repeat Size (cm)"
 COL_COST    = "Cost to DD per metre ROLL (ex GST)"
 COL_SELL    = "Proposed NEW Price"
-COL_EFF     = "Effective from"  # validated but not used for pricing date anymore
 
 # Inventory (items) headers (Excel-style names we output)
 INV_COL_PKID = "PkId"
@@ -54,15 +53,15 @@ INV_COL_PACKOPT = "Custom Var 2 (PackOpt)"     # width (mm)
 INV_COL_PACKTYPE= "Custom Var 3 (PackType)"    # direction (C/B/D)
 
 # Pricing headers (logical)
-PRICE_COL_CODE   = "Inventory Code"
-PRICE_COL_DESC   = "Description"
-PRICE_COL_EFF    = "Date From"
-PRICE_COL_OP     = "Operation"
-PRICE_COL_SELL_W = "SellLMWide"
-PRICE_COL_SELL_H = "SellLMHeight"
-PRICE_COL_COST_W = "CostLMWide"
-PRICE_COL_COST_H = "CostLMHeight"
-PKID_COL         = "PkId"   # present in pricing template (must be blank)
+PRICE_COL_CODE      = "Inventory Code"
+PRICE_COL_DESC      = "Description"
+PRICE_COL_OP        = "Operation"
+PRICE_COL_SELL_W    = "SellLMWide"
+PRICE_COL_SELL_H    = "SellLMHeight"
+PRICE_COL_COST_W    = "CostLMWide"
+PRICE_COL_COST_H    = "CostLMHeight"
+PRICE_COL_DATE_FROM = "Date From"
+PKID_COL            = "PkId"   # present in pricing template (must be blank)
 
 
 NEW_FABRIC_EFF_DATE_STR = "01/01/2020"
@@ -109,19 +108,12 @@ def to_mm_from_cm(val):
     except Exception:
         return ""
 
+
 def norm_dir_first_letter(val):
     s = str(val or "").strip()
     if not s:
         return ""
     return s[0].upper()  # B / C / D
-
-def parse_eff_date_ddmmyyyy_or_blank(s):
-    try:
-        dt = pd.to_datetime(s, errors="coerce", dayfirst=True)
-        if pd.isna(dt): return ""
-        return dt.strftime("%d/%m/%Y")
-    except Exception:
-        return ""
 
 
 def build_key(p1, p2, p3):
@@ -259,7 +251,6 @@ INV_DB_TO_EXPORT = {
 PR_DB_COLS = {
     "inventory_code": PRICE_COL_CODE,
     "description": PRICE_COL_DESC,
-    "date_from": PRICE_COL_EFF,
     "sellsqmw": PRICE_COL_SELL_W,
     "sellsqmh": PRICE_COL_SELL_H,
     "costsqmw": PRICE_COL_COST_W,
@@ -336,10 +327,6 @@ def load_latest_pricing_by_code(db):
       FROM pricing_data;
     """
     pr = _df(db, q).fillna("")
-    if pr.empty:
-        pr["_eff"] = pd.NaT
-        return pr.assign(_eff=pd.NaT), pr
-
     return pr.rename(columns=PR_DB_COLS)
 
 
@@ -367,7 +354,7 @@ def generate_uploads_from_db(
 
     # --- Load Google (raw, then validate)
     all_cols_needed = [COL_BRAND, COL_FABRIC, COL_COLOUR, COL_WIDTH, COL_DIR,
-                       COL_REPEAT, COL_COST, COL_SELL, COL_EFF]
+                       COL_REPEAT, COL_COST, COL_SELL]
     _ping("Loading Google sheet…", 3)
     # NEW: detect which kind of source we received
     if isinstance(google_source, (str, os.PathLike)):
@@ -403,7 +390,6 @@ def generate_uploads_from_db(
         rep = str(r.get(COL_REPEAT, "")).strip()
         cost = str(r.get(COL_COST, "")).strip()
         sell = str(r.get(COL_SELL, "")).strip()
-        eff_raw = r.get(COL_EFF, "")
 
         row_issues = []
         if not b: row_issues.append("Brand missing")
@@ -422,10 +408,6 @@ def generate_uploads_from_db(
 
         if not cost: row_issues.append("Cost missing")
         if not sell: row_issues.append("Sell missing")
-
-        eff = parse_eff_date_ddmmyyyy_or_blank(eff_raw)
-        if not eff:
-            row_issues.append("Effective from date missing/invalid")
 
         if row_issues:
             issues.append({
@@ -450,7 +432,6 @@ def generate_uploads_from_db(
     g["_dir"]       = g[COL_DIR].apply(norm_dir_first_letter)
     g["_sell"]      = g[COL_SELL].astype(str).str.strip()
     g["_cost"]      = g[COL_COST].astype(str).str.strip()
-    g["_eff"]       = g[COL_EFF].apply(parse_eff_date_ddmmyyyy_or_blank)
     g = g.set_index("_key", drop=False)
     keys_g = set(g.index)
     _ping(f"Google sheet OK: {len(g)} fabrics", 10)
@@ -492,14 +473,22 @@ def generate_uploads_from_db(
     _ping("Loading pricing rows…", 20)
     pr_all = load_latest_pricing_by_code(db)
 
-    # Precompute last (most recent) price per code for fast lookup
-    pr_all["_code_key"] = pr_all[PRICE_COL_CODE].astype(str).str.strip()
-    pr_all["_eff_parsed"] = pd.to_datetime(pr_all[PRICE_COL_EFF], dayfirst=True, errors="coerce")
-    pr_all = pr_all.dropna(subset=["_code_key", "_eff_parsed"])
+    # --- Normalize and build a key per code, and sort so "latest" is last per code
+    pr_all[PRICE_COL_CODE] = pr_all[PRICE_COL_CODE].astype(str).str.strip()
+
+    # Use the plain inventory code as the key
+    pr_all["_code_key"] = pr_all[PRICE_COL_CODE]
+
+    # If date_from exists, use it to decide "latest" row; otherwise preserve input order.
+    if "date_from" in pr_all.columns:
+        pr_all["_date_from_dt"] = pd.to_datetime(pr_all["date_from"], errors="coerce", dayfirst=True)
+        # Stable sort so tail(1) reliably gets the newest per code
+        pr_all = pr_all.sort_values(["_code_key", "_date_from_dt"], kind="mergesort")
+    else:
+        pr_all = pr_all.sort_values(["_code_key"], kind="mergesort")
 
     last_rows = (
-        pr_all.sort_values("_eff_parsed")
-        .groupby("_code_key", as_index=False)
+        pr_all.groupby("_code_key", as_index=False)
         .tail(1)  # last (most recent) row per code
     )
 
@@ -577,10 +566,10 @@ def generate_uploads_from_db(
                     sheet_sell_q2 != last_sell_q2 or sheet_cost_q2 != last_cost_q2
                 )
                 if changed:
-                    eff_for_update = tomorrow_ddmmyyyy()
                     pricing_to_append[grp].append({
-                        PRICE_COL_CODE: code, PRICE_COL_DESC: new_desc or old_desc,
-                        PRICE_COL_EFF:  eff_for_update,
+                        PRICE_COL_CODE: code,
+                        PRICE_COL_DESC: new_desc or old_desc,
+                        PRICE_COL_DATE_FROM: tomorrow_ddmmyyyy(),
                         PRICE_COL_SELL_W: f"{sheet_sell_q2:.2f}",
                         PRICE_COL_SELL_H: f"{sheet_sell_q2:.2f}",
                         PRICE_COL_COST_W: f"{sheet_cost_q2:.2f}",
@@ -612,28 +601,32 @@ def generate_uploads_from_db(
             product_name = PRODUCT_NAME_BY_TAB[grp]
             new_desc = rebuild_description(product_name, grow[COL_BRAND], grow[COL_FABRIC], grow[COL_COLOUR])
 
-            new_row = {col:"" for col in df.columns}
-            new_row["_group"]=grp; new_row["_key"]=key
+            new_row = {col: "" for col in df.columns}
+            new_row["_group"] = grp
+            new_row["_key"] = key
             new_row[INV_COL_PKID] = ""
-            new_row[INV_COL_CODE]=code
-            new_row[INV_COL_DESCN1]=to_title_case(grow[COL_BRAND])
-            new_row[INV_COL_DESCN2]=to_title_case(grow[COL_FABRIC])
-            new_row[INV_COL_DESCN3]=colour_for_parts(grow[COL_COLOUR])
-            new_row[INV_COL_PACKOPT]=grow["_width_mm"]
-            new_row[INV_COL_PACKTYPE]=grow["_dir"]
-            new_row[INV_COL_PACKSZ]=grow["_repeat_mm"]
-            new_row[INV_COL_TAXRATE]="GST"
-            new_row[INV_COL_ACTIVE]="TRUE"
-            new_row[INV_COL_DESC]=new_desc
-            new_row[INV_COL_OP]="A"
+            new_row[INV_COL_CODE] = code
+            new_row[INV_COL_DESCN1] = to_title_case(grow[COL_BRAND])
+            new_row[INV_COL_DESCN2] = to_title_case(grow[COL_FABRIC])
+            new_row[INV_COL_DESCN3] = colour_for_parts(grow[COL_COLOUR])
+            new_row[INV_COL_PACKOPT] = grow["_width_mm"]
+            new_row[INV_COL_PACKTYPE] = grow["_dir"]
+            new_row[INV_COL_PACKSZ] = grow["_repeat_mm"]
+            new_row[INV_COL_TAXRATE] = "GST"
+            new_row[INV_COL_ACTIVE] = "TRUE"
+            new_row[INV_COL_DESC] = new_desc
+            new_row[INV_COL_OP] = "A"
 
             inv_by_group[grp] = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             keys_by_group[grp].add(key)  # keep the set in sync
             pricing_to_append[grp].append({
-                PRICE_COL_CODE: code, PRICE_COL_DESC: new_desc,
-                PRICE_COL_EFF:  NEW_FABRIC_EFF_DATE_STR,
-                PRICE_COL_SELL_W: str(_q2(grow["_sell"])), PRICE_COL_SELL_H: str(_q2(grow["_sell"])),
-                PRICE_COL_COST_W: str(_q2(grow["_cost"])), PRICE_COL_COST_H: str(_q2(grow["_cost"])),
+                PRICE_COL_CODE: code,
+                PRICE_COL_DESC: new_desc,
+                PRICE_COL_DATE_FROM: NEW_FABRIC_EFF_DATE_STR,
+                PRICE_COL_SELL_W: f"{_q2(grow['_sell']):.2f}",
+                PRICE_COL_SELL_H: f"{_q2(grow['_sell']):.2f}",
+                PRICE_COL_COST_W: f"{_q2(grow['_cost']):.2f}",
+                PRICE_COL_COST_H: f"{_q2(grow['_cost']):.2f}",
                 PRICE_COL_OP:   "A",
                 PKID_COL: ""
             })
@@ -769,7 +762,7 @@ if __name__ == "__main__":
     db = create_db_manager(db_path)
     try:
         res = generate_uploads_from_db(
-            google_sheet_xlsx=args.google_sheet_xlsx,
+            args.google_sheet_xlsx,
             db=db,
             output_dir=args.out,
             write_change_log=args.write_change_log,
