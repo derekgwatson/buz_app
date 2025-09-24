@@ -35,39 +35,60 @@
       </div>
     </div>
 
-  <script>
-    const bar = document.getElementById('bar');
-    const logBox = document.getElementById('log');
+<script>
+  const bar = document.getElementById('bar');
+  const logBox = document.getElementById('log');
 
-    async function poll() {
-      try {
-        const res = await fetch(
-          '{{ url_for("main_routes.curtain_sync_status", job_id=job_id) }}',
-          { cache: 'no-store', credentials: 'same-origin' }
-        );
-        if (!res.ok) throw new Error('Status ' + res.status);
-        const j = await res.json();
+  // Follow the tail unless user scrolls up
+  let stickToBottom = true;
+  logBox.addEventListener('scroll', () => {
+    // near-bottom threshold avoids jitter
+    stickToBottom = (logBox.scrollTop + logBox.clientHeight) >= (logBox.scrollHeight - 10);
+  });
 
-        bar.style.width = (j.pct || 0) + '%';
-        bar.textContent = (j.pct || 0) + '%';
-        logBox.textContent = (j.log || []).join('\n');
-
-        if (j.done) {
-          if (j.error) {
-            logBox.textContent += '\n\n❌ ' + j.error;
-          } else {
-            location.reload();
-          }
-          return;
-        }
-      } catch (e) {
-        console.error(e);
-        logBox.textContent += '\n[poll error] ' + e.message;
-      }
-      setTimeout(poll, 1000);
+  function setLog(lines) {
+    const shouldStick = stickToBottom;      // snapshot BEFORE we change content
+    logBox.textContent = (lines || []).join('\n');
+    if (shouldStick) {
+      // wait for layout, then jump to bottom
+      requestAnimationFrame(() => { logBox.scrollTop = logBox.scrollHeight; });
     }
-    poll();
-  </script>
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(
+        '{{ url_for("main_routes.curtain_sync_status", job_id=job_id) }}',
+        { cache: 'no-store', credentials: 'same-origin' }
+      );
+      if (!res.ok) throw new Error('Status ' + res.status);
+      const j = await res.json();
+
+      bar.style.width = (j.pct || 0) + '%';
+      bar.textContent = (j.pct || 0) + '%';
+
+      setLog(j.log);
+
+      if (j.done) {
+        if (j.error) {
+          setLog([...(j.log || []), '', '❌ ' + j.error]);
+        } else {
+          location.reload();
+        }
+        return;
+      }
+    } catch (e) {
+      // append error and keep following if we were at bottom
+      const lines = (logBox.textContent || '').split('\n');
+      lines.push('[poll error] ' + e.message);
+      setLog(lines);
+      console.error(e);
+    }
+    setTimeout(poll, 1000);
+  }
+  poll();
+</script>
+
 
   {% elif not ran %}
     {# --- Initial GET: show Run button --- #}
