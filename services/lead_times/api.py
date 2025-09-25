@@ -1,20 +1,62 @@
 # services/lead_times/api.py
 from __future__ import annotations
 
+import html
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Tuple
-import html
-import os
+
+from openpyxl import load_workbook
 
 from .excel_out import inject_and_prune
 from .html_out import build_html_lines
-from .sheets import import_and_merge
+from .sheets import import_and_merge, codes_from_rows
 
 
-# helpers inside run_publish(), after can_rows/reg_rows/cut_rows are fetched
+def _cutoff_attach_note(
+    warnings: list[str],
+    store_name: str,
+    by_product_html: list[tuple[str, str]],
+    cutoff_rows: dict[str, dict],
+) -> None:
+    """Report how many products actually received a CHRISTMAS CUTOFF banner."""
+    # products present in the HTML list for this store
+    html_products = {str(p).strip() for p, _ in by_product_html if str(p).strip()}
+    # products that have a cutoff date in the cutoffs sheet
+    cutoff_products = {
+        str(rec.get("product", "")).strip()
+        for rec in cutoff_rows.values()
+        if str(rec.get("product", "")).strip() and str(rec.get("cutoff", "")).strip()
+    }
+    attached = sorted(html_products & cutoff_products)
+    if attached:
+        sample = ", ".join(attached[:5]) + ("…" if len(attached) > 5 else "")
+        warnings.append(f"[{store_name}] CHRISTMAS CUTOFF appended to {len(attached)} product(s) (e.g., {sample}).")
+    else:
+        # If none attached but there *are* dated cutoffs, hint if they’re absent from leads
+        if cutoff_products:
+            missing_in_leads = sorted(cutoff_products - html_products)
+            if missing_in_leads:
+                sample = ", ".join(missing_in_leads[:3]) + ("…" if len(missing_in_leads) > 3 else "")
+                warnings.append(
+                    f"[{store_name}] No banners appended. "
+                    f"{len(missing_in_leads)} cutoff product(s) aren’t present in this store’s Lead Times mapping "
+                    f"(e.g., {sample})."
+                )
+
+
+def _valid_codes_from_templates(*paths: str) -> set[str]:
+    """Union of sheet names from the uploaded templates (exact, case-sensitive)."""
+    codes: set[str] = set()
+    for p in paths:
+        wb = load_workbook(filename=p, keep_vba=True, data_only=True)
+        codes.update(wb.sheetnames)
+    return codes
+
 
 def _col_idx(a1: str) -> int:
+    """Convert a column letter (e.g. 'C') to a 0-based index."""
     a1 = a1.strip().upper()
     n = 0
     for ch in a1:
@@ -22,51 +64,28 @@ def _col_idx(a1: str) -> int:
     return n - 1
 
 
-def _norm(s: str) -> str:
-    # case/space insensitive; also removes non-breaking spaces
-    return "".join(str(s or "").lower().replace("\xa0", "").split())
-
-
-def _strip_header(rows: list[list[str]], prod_i: int, map_i: int) -> list[list[str]]:
-    """
-    Remove the header row if present. Looks for something like:
-      product  |  buz inventory code(s)
-    within the first few rows.
-    """
-    if not rows:
-        return rows
-
-    scan = min(8, len(rows))
-    for i in range(scan):
-        prod = _norm(rows[i][prod_i] if prod_i < len(rows[i]) else "")
-        mapp = _norm(rows[i][map_i] if map_i < len(rows[i]) else "")
-        if prod.startswith("product") and mapp.startswith("buzinventorycode"):
-            return rows[i + 1 :]
-
-    # fallback: if the very first row smells like headers (non-datay),
-    # drop it; otherwise keep as-is
-    return rows[1:] if len(rows) > 1 and any(c.isalpha() for c in " ".join(rows[0])) else rows
-
-
 def run_publish(
     *,
-    gsheets_service,                 # services.google_sheets_service.GoogleSheetsService()
-    lead_times_cfg: dict,            # current_app.config["lead_times"]
-    detailed_template_path: str,     # uploaded Detailed .xlsm path
-    summary_template_path: str,      # uploaded Summary .xlsm path
-    save_dir: str,                   # ABSOLUTE dir to save generated files (your download base)
+    gsheets_service,
+    lead_times_cfg: dict,
+    detailed_template_path: str,
+    summary_template_path: str,
+    save_dir: str,
     scope: Tuple[str, ...] = ("CANBERRA", "REGIONAL"),
 ) -> dict:
     """Read Sheets, validate/merge, generate HTML + 4 Excel files, return results."""
 
-    # 1) Read Sheets (config uses 'lead_times_ss')
+    # 1) Read Sheets
     lt_block = lead_times_cfg["lead_times_ss"]
     lt_id = lt_block["sheet_id"]
     t_can = lt_block["tabs"]["canberra"]
     t_reg = lt_block["tabs"]["regional"]
+    lt_hdr = int(lt_block.get("header_row", 1))  # 1-based
 
-    co_id = lead_times_cfg["cutoffs"]["sheet_id"]
-    t_cut = lead_times_cfg["cutoffs"]["tab"]
+    co_block = lead_times_cfg["cutoffs"]
+    co_id = co_block["sheet_id"]
+    t_cut = co_block["tab"]
+    co_hdr = int(co_block.get("header_row", 1))  # 1-based
 
     def a1(tab: str, cols: str = "A:Z") -> str:
         return f"{tab}!{cols}"
@@ -75,37 +94,68 @@ def run_publish(
     reg_rows = gsheets_service.fetch_sheet_data(lt_id, a1(t_reg))
     cut_rows = gsheets_service.fetch_sheet_data(co_id, a1(t_cut))
 
-    # apply to all three sheets using your config letters
+    # Fail fast if Lead Times sheets weren't readable
+    sa_email = getattr(gsheets_service, "service_account_email", lambda: "<unknown>")()
+    if not can_rows or not reg_rows:
+        raise ValueError(
+            f"Could not read Lead Times sheet(s). Share {lt_id} with {sa_email} and re-run."
+        )
+
+    # Explicit header slicing by config (drop the header row; 1-based)
+    def strip_headers(rows: list[list[str]], header_row_1based: int) -> list[list[str]]:
+        if not rows:
+            return rows
+        if header_row_1based is None or header_row_1based < 1:
+            return rows
+        # keep rows after the header row
+        return rows[header_row_1based:]
+
+    can_rows = strip_headers(can_rows, lt_hdr)
+    reg_rows = strip_headers(reg_rows, lt_hdr)
+    cut_rows = strip_headers(cut_rows, co_hdr)
+
+    # Column letters → indexes
     lead_cols = lead_times_cfg["columns"]["lead_times_ss"]
     cut_cols = lead_times_cfg["columns"]["cutoff"]
-
     prod_i = _col_idx(lead_cols["product"])
     map_i = _col_idx(lead_cols["mapping"])
     cut_prod_i = _col_idx(cut_cols["product"])
     cut_map_i = _col_idx(cut_cols["mapping"])
 
-    can_rows = _strip_header(can_rows, prod_i, map_i)
-    reg_rows = _strip_header(reg_rows, prod_i, map_i)
-    cut_rows = _strip_header(cut_rows, cut_prod_i, cut_map_i)
+    # Strict: workbook tabs define the valid list
+    valid_tabs = _valid_codes_from_templates(detailed_template_path, summary_template_path)
+    can_codes = codes_from_rows(can_rows, map_i)
+    reg_codes = codes_from_rows(reg_rows, map_i)
+    cut_codes = codes_from_rows(cut_rows, cut_map_i)
 
-    warnings: list[str] = []
+    unknown_can = can_codes - valid_tabs
+    unknown_reg = reg_codes - valid_tabs
+    unknown_cut = cut_codes - valid_tabs
+    if unknown_can or unknown_reg or unknown_cut:
+        def pv(s: set[str]) -> str:
+            return "—" if not s else (
+                ", ".join(sorted(s)[:12]) + (f", +{len(s) - 12} more" if len(s) > 12 else "")
+            )
+
+        from markupsafe import Markup
+        raise ValueError(Markup(
+            "<strong>Unknown codes</strong> — present in Google Sheets but not found as tabs "
+            "in the uploaded templates (tabs define the valid list)."
+            f"<div class='mt-1'><small><strong>Canberra:</strong> <code>{pv(unknown_can)}</code></small></div>"
+            f"<div class='mt-1'><small><strong>Regional:</strong> <code>{pv(unknown_reg)}</code></small></div>"
+            f"<div class='mt-1'><small><strong>Cutoffs:</strong> <code>{pv(unknown_cut)}</code></small></div>"
+        ))
+
+    # 2) Merge + build HTML
     merged = import_and_merge(
         canberra_rows=can_rows,
         regional_rows=reg_rows,
         cutoff_rows=cut_rows,
-        lead_cols=lead_times_cfg["columns"]["lead_times_ss"],
-        cutoff_cols=lead_times_cfg["columns"]["cutoff"],
-    )
-    warnings.append(
-        "[CONTROL] CANBERRA codes=%d (e.g., %s) | REGIONAL codes=%d (e.g., %s)" % (
-            len(merged["CANBERRA"].control_codes),
-            ", ".join(sorted(merged["CANBERRA"].control_codes)[:10]) or "—",
-            len(merged["REGIONAL"].control_codes),
-            ", ".join(sorted(merged["REGIONAL"].control_codes)[:10]) or "—",
-        )
+        lead_cols=lead_cols,
+        cutoff_cols=cut_cols,
     )
 
-    # 2) Build HTML (kept in memory)
+    warnings: list[str] = []
     html_out: Dict[str, str] = {}
     for store in scope:
         ir = merged[store]
@@ -114,23 +164,39 @@ def run_publish(
             f"<p>{html.escape(ln)}<br /></p>" for ln in lines
         )
 
-    # 3) Excel generation → write to provided save_dir
+    warnings: list[str] = warnings  # use your existing list
+
+    if "CANBERRA" in scope:
+        _cutoff_attach_note(
+            warnings,
+            "CANBERRA",
+            merged["CANBERRA"].by_product_html,
+            merged["CANBERRA"].cutoff_rows,
+        )
+    if "REGIONAL" in scope:
+        _cutoff_attach_note(
+            warnings,
+            "REGIONAL",
+            merged["REGIONAL"].by_product_html,
+            merged["REGIONAL"].cutoff_rows,
+        )
+
+    # 3) Excel generation
     outdir = Path(save_dir)
     outdir.mkdir(parents=True, exist_ok=True)
 
     patterns = lead_times_cfg["filename_patterns"]
     ins_cols = lead_times_cfg["insertion_columns"]
-    tag = datetime.now().strftime("%Y%m%d")  # use %Y%m%d_%H%M%S if you want uniqueness
+    anchor_col_letter = lead_times_cfg["columns"]["do_not_show_header"]  # e.g. "F"
+    anchor_header_row = lead_times_cfg["columns"].get("do_not_show_header_row", 2)
+    tag = datetime.now().strftime("%Y%m%d")
 
     def outname(key: str) -> Path:
         return outdir / patterns[key].replace("{YYYYMMDD}", tag)
 
     files: Dict[str, str] = {}
 
-    anchor_col = lead_times_cfg["columns"]["do_not_show_header"]  # "F"
-    anchor_header_row = lead_times_cfg["columns"].get("do_not_show_header_row", 2)
     if "CANBERRA" in scope:
-
         p = outname("canberra_detailed")
         inject_and_prune(
             template_path=Path(detailed_template_path),
@@ -138,9 +204,9 @@ def run_publish(
             store_name="CANBERRA",
             leads_by_code=merged["CANBERRA"].lead_rows,
             cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
-            insertion_col_letter=ins_cols["detailed"],  # "B"
-            anchor_col_letter=anchor_col,  # "F"
-            anchor_header_row=anchor_header_row,  # 2
+            insertion_col_letter=ins_cols["detailed"],
+            anchor_col_letter=anchor_col_letter,
+            anchor_header_row=anchor_header_row,
             control_codes=merged["CANBERRA"].control_codes,
             warnings=warnings,
             workbook_kind="Detailed",
@@ -154,9 +220,9 @@ def run_publish(
             store_name="CANBERRA",
             leads_by_code=merged["CANBERRA"].lead_rows,
             cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
-            insertion_col_letter=ins_cols["summary"],  # "C"
-            anchor_col_letter=anchor_col,  # "F"
-            anchor_header_row=anchor_header_row,  # 2
+            insertion_col_letter=ins_cols["summary"],
+            anchor_col_letter=anchor_col_letter,
+            anchor_header_row=anchor_header_row,
             control_codes=merged["CANBERRA"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",
@@ -172,8 +238,8 @@ def run_publish(
             leads_by_code=merged["REGIONAL"].lead_rows,
             cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
             insertion_col_letter=ins_cols["detailed"],
-            anchor_col_letter=anchor_col,  # "F"
-            anchor_header_row=anchor_header_row,  # 2
+            anchor_col_letter=anchor_col_letter,
+            anchor_header_row=anchor_header_row,
             control_codes=merged["REGIONAL"].control_codes,
             warnings=warnings,
             workbook_kind="Detailed",
@@ -188,8 +254,8 @@ def run_publish(
             leads_by_code=merged["REGIONAL"].lead_rows,
             cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
             insertion_col_letter=ins_cols["summary"],
-            anchor_col_letter=anchor_col,  # "F"
-            anchor_header_row=anchor_header_row,  # 2
+            anchor_col_letter=anchor_col_letter,
+            anchor_header_row=anchor_header_row,
             control_codes=merged["REGIONAL"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",

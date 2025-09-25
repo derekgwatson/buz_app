@@ -697,11 +697,13 @@
             "tabs": {
                 "canberra": "Canberra Retail Production Lead Times",
                 "regional": "Wholesale/Regional Store Lead Times"
-            }
+            },
+            "header_row": 2
         },
         "cutoffs": {
             "sheet_id": "13SfF3DMsz7n_7NKl1MPynp4MbACQefKCY4fGfxNeLB4",
-            "tab": "2025"
+            "tab": "2025",
+            "header_row": 1
         },
         "columns": {
             "lead_times_ss": {

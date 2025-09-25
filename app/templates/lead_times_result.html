@@ -1,79 +1,115 @@
 {% extends "layout.html" %}
 {% block title %}Lead Times Updater — Results{% endblock %}
 
+{% block head %}
+  <style>
+    /* Scoped to this page only */
+    .lead-times .alert-warning { background:#3a2f00; color:#fff; border-color:#6b5300; }
+    .lead-times .alert-success { background:#06340a; color:#d1fae5; border-color:#065f46; }
+
+    .lead-times .lt-box {
+      background:#111827;          /* dark slate */
+      color:#e5e7eb;               /* light text */
+      border:1px solid #374151;
+      border-radius:8px;
+      padding:12px;
+      max-height:300px;
+      overflow:auto;
+      font-size:13px;
+      line-height:1.45;
+      white-space:normal;          /* play nice with <br/> lines */
+    }
+
+    .lead-times .btn-copy,
+    .lead-times .btn.btn-default {
+      background:#374151; color:#e5e7eb; border-color:#4b5563;
+    }
+    .lead-times .btn-copy:hover,
+    .lead-times .btn.btn-default:hover {
+      background:#4b5563; color:#fff;
+    }
+    .lead-times h4 { margin-top:18px; }
+  </style>
+{% endblock %}
+
 {% block content %}
-<h3>Lead Times Updated — Results</h3>
+<div class="lead-times">
 
-{# Warnings (collapsible) #}
-{% if warnings and warnings|length %}
-  <div class="alert alert-warning">
-    <strong>Warnings ({{ warnings|length }}):</strong>
-    <details class="mt-1"><summary>Show details</summary>
-      <ul class="small" style="margin-top:6px;">
-        {% for w in warnings %}
-          <li>{{ w }}</li>
-        {% endfor %}
-      </ul>
-    </details>
-  </div>
-{% else %}
-  <div class="alert alert-success">No warnings.</div>
-{% endif %}
 
-{# HTML blocks with copy buttons #}
-{% if html_canberra %}
-  <h4>
-    HTML — Canberra
-    <button class="btn btn-xs btn-default pull-right" data-copy-target="#html-canberra">Copy</button>
-  </h4>
-  <div id="html-canberra" class="well" style="max-height:300px; overflow:auto;">{{ html_canberra|safe }}</div>
-{% endif %}
+  <h3>Lead Times Updated — Results</h3>
 
-{% if html_regional %}
-  <h4>
-    HTML — Regional
-    <button class="btn btn-xs btn-default pull-right" data-copy-target="#html-regional">Copy</button>
-  </h4>
-  <div id="html-regional" class="well" style="max-height:300px; overflow:auto;">{{ html_regional|safe }}</div>
-{% endif %}
+  {# Warnings (collapsible) #}
+  {% if warnings and warnings|length %}
+    <div class="alert alert-warning">
+      <strong>Warnings ({{ warnings|length }}):</strong>
+      <details class="mt-1"><summary>Show details</summary>
+        <ul class="small" style="margin-top:6px;">
+          {% for w in warnings %}
+            <li>{{ w|safe }}</li>
+          {% endfor %}
+        </ul>
+      </details>
+    </div>
+  {% else %}
+    <div class="alert alert-success">No warnings.</div>
+  {% endif %}
 
-{# Downloads with friendly labels #}
-{% if files %}
-  {% set label_map = {
-    'canberra_detailed': 'Canberra — Detailed',
-    'canberra_summary': 'Canberra — Summary',
-    'regional_detailed': 'Regional — Detailed',
-    'regional_summary': 'Regional — Summary'
-  } %}
-  <h4>Downloads</h4>
-  <ul>
-    {% for key, fname in files.items() %}
-      <li>
-        <a href="{{ url_for('main_routes.download_file', filename=fname) }}">
-          {{ label_map.get(key, fname) }}
-        </a>
-        <small class="text-muted">({{ fname }})</small>
-      </li>
-    {% endfor %}
-  </ul>
-{% endif %}
+  {# HTML blocks with copy buttons #}
+  {% if html_canberra %}
+    <h4>
+      HTML — Canberra
+      <button class="btn btn-xs btn-default pull-right btn-copy" data-copy-target="#html-canberra">Copy</button>
+    </h4>
+    <div id="html-canberra" class="lt-box">{{ html_canberra|safe }}</div>
+  {% endif %}
 
-{# Tiny copy script #}
-<script>
-  document.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-copy-target]');
-    if (!btn) return;
-    var sel = btn.getAttribute('data-copy-target');
-    var el = document.querySelector(sel);
-    if (!el) return;
-    var ta = document.createElement('textarea');
-    ta.value = el.innerText || el.textContent || '';
-    document.body.appendChild(ta);
-    ta.select();
-    try { document.execCommand('copy'); btn.textContent = 'Copied!'; }
-    catch (err) { btn.textContent = 'Copy failed'; }
-    setTimeout(function(){ btn.textContent = 'Copy'; }, 1200);
-    document.body.removeChild(ta);
-  });
-</script>
+  {% if html_regional %}
+    <h4>
+      HTML — Regional
+      <button class="btn btn-xs btn-default pull-right btn-copy" data-copy-target="#html-regional">Copy</button>
+    </h4>
+    <div id="html-regional" class="lt-box">{{ html_regional|safe }}</div>
+  {% endif %}
+
+  {# Downloads with friendly labels #}
+  {% if files %}
+    {% set label_map = {
+      'canberra_detailed': 'Canberra — Detailed',
+      'canberra_summary': 'Canberra — Summary',
+      'regional_detailed': 'Regional — Detailed',
+      'regional_summary': 'Regional — Summary'
+    } %}
+    <h4>Downloads</h4>
+    <ul>
+      {% for key, fname in files.items() %}
+        <li>
+          <a href="{{ url_for('main_routes.download_file', filename=fname) }}">
+            {{ label_map.get(key, fname) }}
+          </a>
+          <small class="text-muted">({{ fname }})</small>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {# Tiny copy script #}
+  <script>
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-copy-target]');
+      if (!btn) return;
+      var sel = btn.getAttribute('data-copy-target');
+      var el = document.querySelector(sel);
+      if (!el) return;
+      var ta = document.createElement('textarea');
+      ta.value = el.innerText || el.textContent || '';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); btn.textContent = 'Copied!'; }
+      catch (err) { btn.textContent = 'Copy failed'; }
+      setTimeout(function(){ btn.textContent = 'Copy'; }, 1200);
+      document.body.removeChild(ta);
+    });
+  </script>
+
+</div>
 {% endblock %}
