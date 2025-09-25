@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+{% block title %}Lead Times Updater — Results{% endblock %}
+
+{% block content %}
+<h3>Lead Times Updated — Results</h3>
+
+{# Warnings (collapsible) #}
+{% if warnings and warnings|length %}
+  <div class="alert alert-warning">
+    <strong>Warnings ({{ warnings|length }}):</strong>
+    <details class="mt-1"><summary>Show details</summary>
+      <ul class="small" style="margin-top:6px;">
+        {% for w in warnings %}
+          <li>{{ w }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+  </div>
+{% else %}
+  <div class="alert alert-success">No warnings.</div>
+{% endif %}
+
+{# HTML blocks with copy buttons #}
+{% if html_canberra %}
+  <h4>
+    HTML — Canberra
+    <button class="btn btn-xs btn-default pull-right" data-copy-target="#html-canberra">Copy</button>
+  </h4>
+  <div id="html-canberra" class="well" style="max-height:300px; overflow:auto;">{{ html_canberra|safe }}</div>
+{% endif %}
+
+{% if html_regional %}
+  <h4>
+    HTML — Regional
+    <button class="btn btn-xs btn-default pull-right" data-copy-target="#html-regional">Copy</button>
+  </h4>
+  <div id="html-regional" class="well" style="max-height:300px; overflow:auto;">{{ html_regional|safe }}</div>
+{% endif %}
+
+{# Downloads with friendly labels #}
+{% if files %}
+  {% set label_map = {
+    'canberra_detailed': 'Canberra — Detailed',
+    'canberra_summary': 'Canberra — Summary',
+    'regional_detailed': 'Regional — Detailed',
+    'regional_summary': 'Regional — Summary'
+  } %}
+  <h4>Downloads</h4>
+  <ul>
+    {% for key, fname in files.items() %}
+      <li>
+        <a href="{{ url_for('main_routes.download_file', filename=fname) }}">
+          {{ label_map.get(key, fname) }}
+        </a>
+        <small class="text-muted">({{ fname }})</small>
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+
+{# Tiny copy script #}
+<script>
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-copy-target]');
+    if (!btn) return;
+    var sel = btn.getAttribute('data-copy-target');
+    var el = document.querySelector(sel);
+    if (!el) return;
+    var ta = document.createElement('textarea');
+    ta.value = el.innerText || el.textContent || '';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); btn.textContent = 'Copied!'; }
+    catch (err) { btn.textContent = 'Copy failed'; }
+    setTimeout(function(){ btn.textContent = 'Copy'; }, 1200);
+    document.body.removeChild(ta);
+  });
+</script>
+{% endblock %}

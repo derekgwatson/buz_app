@@ -471,7 +471,6 @@
             }
         ]
     },
-
     "wastage_percentages": {
         "ROLL": 0.25,
         "ROLC": 0.25,
@@ -619,7 +618,6 @@
         "DONO"
     ],
     "restricted_supplier_groups": {},
-
     "allowed_inventory_group_codes": [
         "AWNS2K",
         "FAAWB",
@@ -648,7 +646,6 @@
         "HNYCV2",
         "GLDSHF"
     ],
-
     "curtain_fabric_columns": {
         "code": "Code",
         "brand": "Brand Name",
@@ -660,39 +657,76 @@
         "cost_sqm": "Cost to DD per metre CUT (ex GST)",
         "sell_sqm": "Current Buz Sell Price (ex GST)"
     },
-
-  "discount_grid": {
-    "google_sheet_id": "1lm_VvI2ad3-F_OoHWq5jAAz92hLgrUVyF-6DWryurAI",
-    "new_group_name_template": "{customer_tab}",
-    "grid": {
-      "sheet_name": "Discount Groups",
-      "header_row": 2,
-      "code_col": 1,
-      "desc_col": 2,
-      "first_group_col": 3
+    "discount_grid": {
+        "google_sheet_id": "1lm_VvI2ad3-F_OoHWq5jAAz92hLgrUVyF-6DWryurAI",
+        "new_group_name_template": "{customer_tab}",
+        "grid": {
+            "sheet_name": "Discount Groups",
+            "header_row": 2,
+            "code_col": 1,
+            "desc_col": 2,
+            "first_group_col": 3
+        },
+        "mapping_tab": {
+            "sheet_name": "Buz name mapping",
+            "tab_product_header": "Mapped to",
+            "grid_code_header": "Code"
+        },
+        "customer_tabs": {
+            "header_row": 5,
+            "product_col_header": "Product",
+            "discount_col_header": "Discount offered",
+            "derek_actioned_header": "Derek Actioned"
+        },
+        "ignore_tabs": [
+            "Max Disc %",
+            "AVG Monthly Spend",
+            "Buz name mapping",
+            "Instructions for buz upload",
+            "Current Buz",
+            "Compare step 1",
+            "Compare Step 2",
+            "Compare",
+            "Upload"
+        ]
     },
-    "mapping_tab": {
-      "sheet_name": "Buz name mapping",
-      "tab_product_header": "Mapped to",
-      "grid_code_header": "Code"
-    },
-    "customer_tabs": {
-      "header_row": 5,
-      "product_col_header": "Product",
-      "discount_col_header": "Discount offered",
-      "derek_actioned_header": "Derek Actioned"
-    },
-    "ignore_tabs": [
-        "Max Disc %",
-        "AVG Monthly Spend",
-        "Buz name mapping",
-        "Instructions for buz upload",
-        "Current Buz",
-        "Compare step 1",
-        "Compare Step 2",
-        "Compare",
-        "Upload"
-      ]
-  }
-
+    "lead_times": {
+        "timezone": "Australia/Sydney",
+        "lead_times_ss": {
+            "sheet_id": "1SS37mFOwe6oXfXuTuHd3e_K27_L3CJpT3ItWbJGl0vU",
+            "tabs": {
+                "canberra": "Canberra Retail Production Lead Times",
+                "regional": "Wholesale/Regional Store Lead Times"
+            }
+        },
+        "cutoffs": {
+            "sheet_id": "13SfF3DMsz7n_7NKl1MPynp4MbACQefKCY4fGfxNeLB4",
+            "tab": "2025"
+        },
+        "columns": {
+            "lead_times_ss": {
+                "product": "A",
+                "mapping": "B",
+                "lead_time": "C"
+            },
+            "cutoff": {
+                "product": "B",
+                "mapping": "C",
+                "cutoff_date": "G"
+            },
+            "do_not_show_header": "F",
+            "do_not_show_header_row": 2
+        },
+        "date_display_format": "dd/MM/yy",
+        "insertion_columns": {
+            "detailed": "B",
+            "summary": "C"
+        },
+        "filename_patterns": {
+            "canberra_detailed": "Quote_Detailed_Canberra_{YYYYMMDD}.xlsx",
+            "canberra_summary": "Quote_Summary_Canberra_{YYYYMMDD}.xlsx",
+            "regional_detailed": "Quote_Detailed_Regional_{YYYYMMDD}.xlsx",
+            "regional_summary": "Quote_Summary_Regional_{YYYYMMDD}.xlsx"
+        }
+    }
 }

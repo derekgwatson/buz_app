@@ -1,0 +1,116 @@
+{% extends "layout.html" %}
+{% block title %}Lead Times Updater{% endblock %}
+{% block head %}
+<style>
+  .quick-links-inline { margin: 8px 0 12px; }
+  .quick-links-inline li { margin: 0 8px 6px 0; }
+  .quick-links-inline .link-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(255,255,255,.08); /* works on light/dark themes */
+    text-decoration: none;
+  }
+  .quick-links-inline .link-pill:hover {
+    text-decoration: none;
+    background: rgba(255,255,255,.15);
+  }
+  .quick-links-inline .link-pill--accent { background: rgba(91,192,222,.2); }
+  .quick-links-inline .glyphicon { top: 2px; margin-right: 4px; }
+
+  .flash-compact code { white-space: nowrap; }
+  .flash-compact details { margin-top: 4px; }
+  .flash-compact summary { cursor: pointer; }
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="container">
+  <h3>Lead Times Publisher</h3>
+
+  <div class="panel panel-default">
+    <div class="panel-heading"><strong>Pre-Christmas Cutoff Publisher — What happens when you press <em>Go</em></strong></div>
+    <div class="panel-body">
+      <p>This reads our Google Sheets, validates them, and publishes:</p>
+      <ul>
+        <li><strong>2 HTML snippets</strong> (Canberra + Regional) for the Buz home page</li>
+        <li><strong>4 Excel quote files</strong> (Canberra/Regional × Detailed/Summary) with lead time and (if set) <strong>CHRISTMAS CUTOFF</strong> appended on each product tab. Tabs not in scope are removed. Macros are preserved.</li>
+      </ul>
+
+      <h5>Inputs (on this page)</h5>
+      <ul>
+        <li>Upload current <em>Detailed</em> and <em>Summary</em> layout files (.xlsm)</li>
+        <li>Uses configured Google Sheets:</li>
+      </ul>
+      <ul style="margin-left:20px">
+        <li><strong>Lead Times</strong>:
+          <ul>
+            <li><code>Canberra Retail Production Lead Times</code> — A: Product, <strong>B: Buz inventory code(s)</strong>, <strong>C: Lead time text</strong></li>
+            <li><code>Wholesale/Regional Store Lead Times</code> — same columns</li>
+          </ul>
+        </li>
+        <li><strong>Cutoffs</strong> — tab <code>2025</code>: <strong>B: Product</strong>, <strong>C: Buz inventory code(s)</strong>, <strong>G: Last Date for Deposits</strong></li>
+      </ul>
+
+      <h5>Rules</h5>
+      <ul>
+        <li><strong>Fail-fast validation</strong> per store: Lead-time code set must match Cutoff code set. If not, we stop and show a diff.</li>
+        <li><strong>Duplicate mapping</strong>: parse all time ranges in the text (weeks/days), choose the row with the <em>largest upper bound</em>. Display the original text.</li>
+        <li><strong>HTML</strong>: <code>Product: &lt;lead time&gt;</code> + <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> when applicable. Sorted A→Z by Product.</li>
+        <li><strong>Excel (no new rows)</strong>: find header <code>Do Not Show?</code> (col F) → first <code>FALSE</code> below (anchor):
+          <ul>
+            <li><em>Summary</em> → append to <strong>Column C</strong></li>
+            <li><em>Detailed</em> → append to <strong>Column B</strong></li>
+          </ul>
+          We warn (continue) if this anchor ≠ the first non-blank in that column.</li>
+      </ul>
+
+      <h5>Results</h5>
+      <p>After you press <strong>Go</strong>, download links for the 4 Excel files + 2 HTML snippets appear here. If there were any shape issues, we also show <code>warnings.txt</code>.</p>
+
+      <h5>Troubleshooting</h5>
+      <ul>
+        <li><strong>Validation failed</strong> → fix missing/extra codes in the Sheets and re-run.</li>
+        <li><strong>Header not found / No FALSE</strong> → check column F and the sheet’s layout.</li>
+        <li><strong>Nothing appended on a tab</strong> → the tab name (Buz code) wasn’t present in Lead Times mapping.</li>
+      </ul>
+    </div>
+  </div>
+
+<ul class="list-inline quick-links-inline">
+  <li class="text-muted">Quick links:</li>
+
+  <li>
+    <a class="link-pill" target="_blank" rel="noopener"
+       href="{{ url_for('lead_times.open_sheet', kind='lead', tab='canberra') }}">
+      <span class="glyphicon glyphicon-list-alt"></span> Lead Times
+    </a>
+  </li>
+
+  <li>
+    <a class="link-pill link-pill--accent" target="_blank" rel="noopener"
+       href="{{ url_for('lead_times.open_sheet', kind='cutoff', tab=cutoff_tab) }}">
+      <span class="glyphicon glyphicon-time"></span> Christmas Cutoffs
+    </a>
+  </li>
+</ul>
+
+  <form method="post" enctype="multipart/form-data">
+    <div class="form-group">
+      <label>Detailed template (.xlsm)</label>
+      <input type="file" name="detailed_template" accept=".xlsm" required>
+    </div>
+    <div class="form-group">
+      <label>Summary template (.xlsm)</label>
+      <input type="file" name="summary_template" accept=".xlsm" required>
+    </div>
+    <!-- Optional store scope toggles -->
+    <label><input type="checkbox" name="scope" value="CANBERRA" checked> Canberra</label>
+    <label><input type="checkbox" name="scope" value="REGIONAL" checked> Regional</label>
+
+    <button type="submit" class="btn btn-primary">Go</button>
+  </form>
+
+</div>
+{% endblock %}

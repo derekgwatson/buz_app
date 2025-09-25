@@ -10,6 +10,24 @@ from .sheets import import_and_merge
 from .excel_out import inject_and_prune
 from .html_out import build_html_lines
 
+import os
+from flask import current_app
+
+
+def _base_output_dir():
+    base = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config.get("upload_folder")
+    # make absolute (important if config is a relative path)
+    if not os.path.isabs(base):
+        base = os.path.join(current_app.root_path, base)
+    return base
+
+
+def _save_dir():
+    root = _base_output_dir()
+    path = os.path.join(root, "lead_times")  # keep outputs tidy; or drop this line to use root directly
+    os.makedirs(path, exist_ok=True)
+    return path
+
 
 def _load_sheets_service():
     try:
@@ -46,7 +64,7 @@ def main() -> None:
     t_reg = cfg["tabs"]["lead_times_regional_tab"]
     t_cut = cfg["tabs"]["cutoff_tab"]
 
-    col_lt = cfg["columns"]["lead_times"]
+    col_lt = cfg["columns"]["lead_times_ss"]
     col_co = cfg["columns"]["cutoff"]
 
     can_rows = read_sheet_values(svc, lt_id, t_can, "A:Z")
@@ -73,7 +91,7 @@ def main() -> None:
         ir = merged[store]
         lines = build_html_lines(ir.by_product_html, cutoffs_by_code=ir.cutoff_rows)
         html_text = "\n".join(f"<p>{ln.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')}<br /></p>" for ln in lines)
-        (outdir / f"prexmas_{store.lower()}.html").write_text(html_text, encoding="utf-8")
+        (outdir / f"lead_times_{store.lower()}.html").write_text(html_text, encoding="utf-8")
 
     # Excel
     ins_cols = cfg["insertion_columns"]
@@ -139,9 +157,12 @@ def main() -> None:
         )
 
     if warnings:
-        (outdir / "warnings.txt").write_text("\n".join(warnings), encoding="utf-8")
-
-    print("Done. Outputs in:", outdir)
+        print("\n=== WARNINGS ===")
+        for w in warnings:
+            print(f"- {w}")
+    else:
+        print("No warnings.")
+    print(f"\nDone. Outputs in {outdir}")
 
 
 if __name__ == "__main__":

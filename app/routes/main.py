@@ -1229,3 +1229,9 @@ def curtain_sync_status(job_id):
     resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@main_routes_bp.route("/lead-times", methods=["GET"])
+@auth.login_required
+def lead_times_start():
+    return render_template('lead_times.html')
