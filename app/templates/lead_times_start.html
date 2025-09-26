@@ -30,52 +30,81 @@
   <h3>Lead Times Publisher</h3>
 
   <div class="panel panel-default">
-    <div class="panel-heading"><strong>Pre-Christmas Cutoff Publisher — What happens when you press <em>Go</em></strong></div>
-    <div class="panel-body">
-      <p>This reads our Google Sheets, validates them, and publishes:</p>
-      <ul>
-        <li><strong>2 HTML snippets</strong> (Canberra + Regional) for the Buz home page</li>
-        <li><strong>4 Excel quote files</strong> (Canberra/Regional × Detailed/Summary) with lead time and (if set) <strong>CHRISTMAS CUTOFF</strong> appended on each product tab. Tabs not in scope are removed. Macros are preserved.</li>
-      </ul>
 
-      <h5>Inputs (on this page)</h5>
-      <ul>
-        <li>Upload current <em>Detailed</em> and <em>Summary</em> layout files (.xlsm)</li>
-        <li>Uses configured Google Sheets:</li>
-      </ul>
-      <ul style="margin-left:20px">
-        <li><strong>Lead Times</strong>:
-          <ul>
-            <li><code>Canberra Retail Production Lead Times</code> — A: Product, <strong>B: Buz inventory code(s)</strong>, <strong>C: Lead time text</strong></li>
-            <li><code>Wholesale/Regional Store Lead Times</code> — same columns</li>
-          </ul>
-        </li>
-        <li><strong>Cutoffs</strong> — tab <code>2025</code>: <strong>B: Product</strong>, <strong>C: Buz inventory code(s)</strong>, <strong>G: Last Date for Deposits</strong></li>
-      </ul>
+    <div class="panel-heading"><strong>Lead Times & Christmas Cutoff Publisher — What happens when you press <em>Go</em></strong></div>
+      <div class="panel-body">
+        <p>This reads our Google Sheets, validates them, and publishes:</p>
+        <ul>
+          <li><strong>2 HTML snippets</strong> (Canberra + Regional) for the Buz home page.</li>
+          <li><strong>4 Excel quote files</strong> (Canberra/Regional × Detailed/Summary) where we update each product tab’s text and <em>keep only tabs that actually change</em>. Macros are preserved.</li>
+        </ul>
 
-      <h5>Rules</h5>
-      <ul>
-        <li><strong>Fail-fast validation</strong> per store: Lead-time code set must match Cutoff code set. If not, we stop and show a diff.</li>
-        <li><strong>Duplicate mapping</strong>: parse all time ranges in the text (weeks/days), choose the row with the <em>largest upper bound</em>. Display the original text.</li>
-        <li><strong>HTML</strong>: <code>Product: &lt;lead time&gt;</code> + <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> when applicable. Sorted A→Z by Product.</li>
-        <li><strong>Excel (no new rows)</strong>: find header <code>Do Not Show?</code> (col F) → first <code>FALSE</code> below (anchor):
-          <ul>
-            <li><em>Summary</em> → append to <strong>Column C</strong></li>
-            <li><em>Detailed</em> → append to <strong>Column B</strong></li>
-          </ul>
-          We warn (continue) if this anchor ≠ the first non-blank in that column.</li>
-      </ul>
+        <h5>Inputs (on this page)</h5>
+        <ul>
+          <li>Upload current <em>Detailed</em> and <em>Summary</em> layout files (.xlsm)</li>
+          <li>Uses configured Google Sheets:</li>
+        </ul>
+        <ul style="margin-left:20px">
+          <li><strong>Lead Times</strong>:
+            <ul>
+              <li><code>Canberra Retail Production Lead Times</code> — A: Product, <strong>B: Buz inventory code(s)</strong>, <strong>C: Lead time text</strong></li>
+              <li><code>Wholesale/Regional Store Lead Times</code> — same columns</li>
+            </ul>
+          </li>
+          <li><strong>Cutoffs</strong> — tab <code>2025</code>: <strong>B: Product</strong>, <strong>C: Buz inventory code(s)</strong>, <strong>G: Last Date for Deposits</strong></li>
+        </ul>
 
-      <h5>Results</h5>
-      <p>After you press <strong>Go</strong>, download links for the 4 Excel files + 2 HTML snippets appear here. If there were any shape issues, we also show <code>warnings.txt</code>.</p>
+        <h5>Rules</h5>
+        <ul>
+          <li><strong>Fail-fast validation</strong> per store: the set of Buz codes in Lead Times must match the set in Cutoffs. If not, we stop and show a diff.</li>
 
-      <h5>Troubleshooting</h5>
-      <ul>
-        <li><strong>Validation failed</strong> → fix missing/extra codes in the Sheets and re-run.</li>
-        <li><strong>Header not found / No FALSE</strong> → check column F and the sheet’s layout.</li>
-        <li><strong>Nothing appended on a tab</strong> → the tab name (Buz code) wasn’t present in Lead Times mapping.</li>
-      </ul>
-    </div>
+          <li><strong>Duplicate mapping</strong>: we parse all ranges (weeks/days) in the lead-time text and pick the row with the <em>largest upper bound</em>. Display text stays as-is.</li>
+
+          <li><strong>Change-only output (new)</strong>:
+            <ul>
+              <li>We compare the <em>current</em> tab text to the <em>proposed</em> values.</li>
+              <li>Normalisation handles tiny format differences (e.g. <code>2–3 weeks</code> vs <code>2 to 3 wks</code>, case/spacing/dashes, and “no cutoff” synonyms).</li>
+              <li>If both the lead time and the Christmas cutoff are unchanged, that tab is <strong>dropped</strong> from the output workbook.</li>
+              <li>If <em>all</em> tabs are unchanged, we create a single <strong>“NO CHANGES”</strong> sheet so the file still opens cleanly.</li>
+            </ul>
+          </li>
+
+          <li><strong>How we edit each workbook</strong>:
+            <ul>
+              <li><em>Summary</em> — in <strong>Column C</strong>, we find the first cell containing <code>Ready in …</code> and <em>replace the lead-time phrase after it</em> using the configured regex. We then append <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> when applicable.</li>
+              <li><em>Detailed</em> — in <strong>Column B</strong>, we replace the value after <code>Lead Time:</code>. If no <code>Lead Time:</code> line exists, we prefix a new one at the first <code>FALSE</code> under the <strong>Do Not Show?</strong> column (F), then append the optional cutoff tag.</li>
+            </ul>
+          </li>
+
+          <li><strong>Safety rails</strong>:
+            <ul>
+              <li>Tabs with a <em>red sheet tab colour</em> are flagged for review and left untouched.</li>
+              <li>Heading-only tabs (no meaningful rows under the header) are silently removed.</li>
+              <li>If required anchors or markers are missing (e.g. no <code>Ready in</code>, no <code>Lead Time:</code>, or no <code>FALSE</code> under column F), we warn and skip that edit for manual review.</li>
+            </ul>
+          </li>
+
+          <li><strong>HTML snippets</strong>:
+            <ul>
+              <li>Format: <code>Product: &lt;lead time text&gt;</code> (+ <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> when set).</li>
+              <li>Sorted A→Z by Product; one snippet for Canberra, one for Regional.</li>
+            </ul>
+          </li>
+        </ul>
+
+        <h5>Results</h5>
+        <p>After you press <strong>Go</strong>, download links for the 4 Excel files (changed tabs only) and the 2 HTML snippets appear here. If we hit shape or data issues, a <code>warnings.txt</code> link is shown with details (e.g. missing anchors, red-tab skips, validation diffs).</p>
+
+        <h5>Troubleshooting</h5>
+        <ul>
+          <li><strong>Validation failed</strong> → fix missing/extra codes in the Google Sheets and re-run.</li>
+          <li><strong>No changes everywhere</strong> → expect a single <code>NO CHANGES</code> sheet in each workbook.</li>
+          <li><strong>Red-tab left untouched</strong> → clear the red tab colour or edit manually.</li>
+          <li><strong>“Ready in” / “Lead Time:” not found</strong> → check the Summary/Detailed templates match the expected layout and column letters.</li>
+          <li><strong>Nothing appended on a tab</strong> → that Buz code likely wasn’t in the Lead Times mapping.</li>
+        </ul>
+      </div>
+
   </div>
 
 <ul class="list-inline quick-links-inline">

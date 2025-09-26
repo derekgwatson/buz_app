@@ -725,18 +725,19 @@
             "summary": "C"
         },
         "filename_patterns": {
-            "canberra_detailed": "Quote_Detailed_Canberra_{YYYYMMDD}.xlsx",
-            "canberra_summary": "Quote_Summary_Canberra_{YYYYMMDD}.xlsx",
-            "regional_detailed": "Quote_Detailed_Regional_{YYYYMMDD}.xlsx",
-            "regional_summary": "Quote_Summary_Regional_{YYYYMMDD}.xlsx"
+            "canberra_detailed": "Quote_Detailed_Canberra_{YYYYMMDD}_{HHMMSS}.xlsx",
+            "canberra_summary": "Quote_Summary_Canberra_{YYYYMMDD}_{HHMMSS}.xlsx",
+            "regional_detailed": "Quote_Detailed_Regional_{YYYYMMDD}_{HHMMSS}.xlsx",
+            "regional_summary": "Quote_Summary_Regional_{YYYYMMDD}_{HHMMSS}.xlsx",
+            "detailed_review": "Quote_Detailed_REVIEW_{YYYYMMDD}_{HHMMSS}.xlsm",
+            "summary_review":  "Quote_Summary_REVIEW_{YYYYMMDD}_{HHMMSS}.xlsm"
         },
-        "detailed_text": {
-            "template": "-       Lead Time: {LEAD}\\n       -       Location:",
-            "lead_regex": "(?i)\\b\\d+(?:\\.\\d+)?(?:\\s*-\\s*\\d+(?:\\.\\d+)?)?\\s*(?:weeks?|wks?|wk)\\b"
-        },
-        "summary_text": {
-            "template": "Ready in {LEAD}, manufactured locally, lifetime warranty",
-            "lead_regex": "(?i)\\b\\d+(?:\\.\\d+)?(?:\\s*-\\s*\\d+(?:\\.\\d+)?)?\\s*(?:weeks?|wks?|wk)\\b"
+        "templates": {
+            "summary_text_template": "Ready in {LEAD}, manufactured locally, lifetime warranty",
+            "summary_lead_regex": "(?i)\\b\\d+(?:\\.\\d+)?(?:\\s*-\\s*\\d+(?:\\.\\d+)?)?\\s*(?:weeks?|wks?|wk)\\b",
+            "summary_ready_phrase": "Ready in",
+            "detailed_prefix_template": "\\n       -       Lead Time: {LEAD}",
+            "detailed_lead_label": "Lead Time"
         }
     }
 }

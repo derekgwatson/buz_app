@@ -7,17 +7,22 @@ import shutil
 import tempfile
 from markupsafe import Markup
 from services.google_sheets_service import GoogleSheetsService
-from services.lead_times.api import run_publish
 from services.lead_times.links import tab_url
-
+from services.config_bridge import get_cfg, where_cfg
+from services.lead_times.api import run_publish
 
 lead_times_bp = Blueprint("lead_times", __name__, url_prefix="/tools/lead_times")
 
 
+# app/routes/lead_times.py
 def _base_output_dir() -> str:
+    # Prefer global app config first (these are NOT under lead_times)
     base = (
         current_app.config.get("UPLOAD_OUTPUT_DIR")
         or current_app.config.get("upload_folder")
+        # then allow lead_times-scoped values (for people who moved them)
+        or get_cfg("UPLOAD_OUTPUT_DIR")
+        or get_cfg("upload_folder")
         or "uploads"
     )
     if not os.path.isabs(base):
@@ -28,8 +33,18 @@ def _base_output_dir() -> str:
 
 @lead_times_bp.route("/", methods=["GET", "POST"])
 def start():
+    # Pull the whole lead_times dict from file-backed config (preferred),
+    # falling back to app.config["lead_times"] if needed.
+    lead_times_cfg = get_cfg() or current_app.config.get("lead_times")
+    if not lead_times_cfg:
+        raise RuntimeError(
+            "Lead Times config missing. Call get_cfg() with NO arguments "
+            "(it is already rooted at 'lead_times'), or set current_app.config['lead_times'].\n"
+            f"Debug: {where_cfg()}"
+        )
+
     if request.method == "GET":
-        cutoff_tab = current_app.config["lead_times"]["cutoffs"]["tab"]
+        cutoff_tab = get_cfg("lead_times", "cutoffs", "tab")
         return render_template("lead_times_start.html", cutoff_tab=cutoff_tab)
 
     detailed = request.files.get("detailed_template")
@@ -46,26 +61,23 @@ def start():
         summary.save(s_path)
 
         svc = GoogleSheetsService()
-        cfg = current_app.config["lead_times"]
         scope = request.form.getlist("scope") or ["CANBERRA", "REGIONAL"]
 
         res = run_publish(
             gsheets_service=svc,
-            lead_times_cfg=cfg,
+            lead_times_cfg=lead_times_cfg,
             detailed_template_path=d_path,
             summary_template_path=s_path,
             save_dir=_base_output_dir(),
             scope=tuple(scope),
         )
 
-        file_links = res["files"]  # basenames
-
         return render_template(
             "lead_times_result.html",
             warnings=res["warnings"],
             html_canberra=res["html"].get("canberra", ""),
             html_regional=res["html"].get("regional", ""),
-            files=file_links,
+            files=res["files"],
         )
 
     except ValueError as exc:
@@ -78,20 +90,19 @@ def start():
 @lead_times_bp.get("/open")
 def open_sheet():
     """302 to the correct Google Sheet tab using your config shape."""
-    cfg = current_app.config["lead_times"]
     svc = GoogleSheetsService()
 
     kind = (request.args.get("kind") or "lead").lower()
     tab_param = (request.args.get("tab") or "").strip()
 
     if kind == "cutoff":
-        sheet_id = cfg["cutoffs"]["sheet_id"]
-        tab_name = tab_param or cfg["cutoffs"]["tab"]
+        sheet_id = get_cfg("cutoffs","sheet_id")
+        tab_name = tab_param or get_cfg("cutoffs","tab")
         return redirect(tab_url(svc, sheet_id, tab_name), code=302)
 
     # default: lead times (note: config key is 'lead_times_ss')
-    sheet_id = cfg["lead_times_ss"]["sheet_id"]
-    tabs = cfg["lead_times_ss"]["tabs"]
+    sheet_id = get_cfg("lead_times", "lead_times_ss", "sheet_id")
+    tabs = get_cfg("lead_times", "lead_times_ss", "tabs") or {}
     if tab_param.lower() in ("canberra", "regional"):
         tab_name = tabs[tab_param.lower()]
     else:

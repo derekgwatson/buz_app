@@ -12,8 +12,17 @@ class ConfigManager:
     def __init__(self, config_path="config.json"):
         self._config_path = config_path
         self._resolved_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), self._config_path)
+        self._last_load_error = None
         self.config = self._load_config()
         self._observers = []
+
+    @property
+    def last_load_error(self):
+        return self._last_load_error
+
+    @property
+    def resolved_path(self):
+        return self._resolved_path
 
     def register_observer(self, observer: Callable[[List[str], object], None]):
         """Register an observer to be notified on configuration changes."""
