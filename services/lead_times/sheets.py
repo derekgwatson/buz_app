@@ -1,14 +1,46 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 import re
 
 
 # ———————————————————————————————————————————————————————————
-# Parsing
+# Simple parsing
 # ———————————————————————————————————————————————————————————
 
-_CODE_RE = re.compile(r"[A-Z0-9]+")
+def parse_mapping_codes(cell: str) -> List[str]:
+    """
+    Split a mapping cell like 'ROLL, ROLLCB,  ZIPSV2' into a cleaned list
+    of tokens. No normalisation: we keep whatever is in the sheet.
+    """
+    if not cell:
+        return []
+    return [t.strip() for t in str(cell).split(",") if t.strip()]
+
+
+def codes_from_rows(rows: List[List[str]], mapping_col_idx0: int) -> Set[str]:
+    """
+    Extract the *set* of codes found in a given column across the rows.
+    """
+    out: Set[str] = set()
+    for r in rows:
+        if mapping_col_idx0 < len(r):
+            for c in parse_mapping_codes(r[mapping_col_idx0]):
+                out.add(c)
+    return out
+
+
+def codes_from_triples(triples: List[tuple[str, str, str]], mapping_pos: int = 1) -> Set[str]:
+    """
+    Same idea as codes_from_rows(), but for (A, B, C) row triples.
+    """
+    out: Set[str] = set()
+    for t in triples:
+        cell = t[mapping_pos] if len(t) > mapping_pos else ""
+        for c in parse_mapping_codes(cell):
+            out.add(c)
+    return out
 
 
 def _triples(
@@ -37,54 +69,27 @@ def _triples(
     return out
 
 
-def parse_mapping_codes(cell: str) -> List[str]:
-    """
-    Strict parsing: split on commas and trim whitespace.
-    Tokens are left as-is (no normalization).
-    """
-    if not cell:
-        return []
-    return [t.strip() for t in str(cell).split(",") if t.strip()]
-
-
-def codes_from_rows(rows: List[List[str]], mapping_col_idx0: int) -> Set[str]:
-    """
-    Extract the control set of codes appearing in a column of comma-separated lists.
-    """
-    out: Set[str] = set()
-    for r in rows:
-        if mapping_col_idx0 < len(r):
-            for c in parse_mapping_codes(r[mapping_col_idx0]):
-                out.add(c)
-    return out
-
-
-def codes_from_triples(triples: List[tuple[str, str, str]], mapping_pos: int = 1) -> Set[str]:
-    """Same as codes_from_rows, but for (product, mapping, value) triples."""
-    out: Set[str] = set()
-    for t in triples:
-        mapping_cell = t[mapping_pos] if len(t) > mapping_pos else ""
-        for c in parse_mapping_codes(mapping_cell):
-            out.add(c)
-    return out
-
-
 # ———————————————————————————————————————————————————————————
-# Data structures
+# Data model
 # ———————————————————————————————————————————————————————————
 
 @dataclass
 class ImportResultStore:
-    # lead_rows: per-code record used by excel_out.inject_and_prune()
+    # Per-code record used by excel_out.inject_and_prune()
     lead_rows: Dict[str, Dict]
-    # cutoff_rows: per-code record used for appending the date
+    # Per-code record used for appending the date
     cutoff_rows: Dict[str, Dict]
-    # control_codes: the set of codes we operate on (from mapping column)
+    # The set of codes we operate on for this store (from mapping column)
     control_codes: Set[str]
-    # convenience for HTML building
+    # Convenience for HTML building
     by_product_html: List[Tuple[str, str]]  # (product_name, lead_time_text)
-    product_to_codes: Dict[str, Set[str]]   # product -> set(codes)
+    # NEW: product -> set(codes) for code-based joins to Cutoffs
+    product_to_codes: Dict[str, Set[str]]
 
+
+# ———————————————————————————————————————————————————————————
+# Validation helpers
+# ———————————————————————————————————————————————————————————
 
 def _preview(items: set[str], limit: int = 12) -> str:
     if not items:
@@ -150,7 +155,7 @@ def _validate_three_way_sets_or_die(
 
 
 # ———————————————————————————————————————————————————————————
-# Import/merge
+# Import and merge
 # ———————————————————————————————————————————————————————————
 
 def import_and_merge(
@@ -200,11 +205,11 @@ def import_and_merge(
         can_codes=can_codes,
         reg_codes=reg_codes,
         cut_codes=cut_codes,
-        lead_mapping_col_letter=lead_cols["mapping"],        # 'B'
-        cutoff_mapping_col_letter=cutoff_cols["mapping"],    # 'C'
+        lead_mapping_col_letter=lead_cols["mapping"],
+        cutoff_mapping_col_letter=cutoff_cols["mapping"],
     )
 
-    # Per-code lead rows (choose the row with the largest upper-bound weeks)
+    # Build per-code lead rows and product→codes map
     def make_lead_rows(
         triples: List[Tuple[str, str, str]]
     ) -> Tuple[Dict[str, Dict], List[Tuple[str, str]], Dict[str, Set[str]]]:
@@ -213,6 +218,7 @@ def import_and_merge(
         product_to_codes: Dict[str, Set[str]] = {}
 
         def upper_bound_weeks(text: str) -> float:
+            # Extract an upper-bound number for comparison; very forgiving.
             if not text:
                 return -1.0
             nums = re.findall(r"(\d+(?:\.\d+)?)", str(text))
@@ -234,8 +240,13 @@ def import_and_merge(
                 continue
 
             by_product.append((product, lt_text))
-            product_to_codes.setdefault(product, set()).update(codes)
 
+            # maintain product -> set(codes)
+            s = product_to_codes.setdefault(product, set())
+            for c in codes:
+                s.add(c)
+
+            # keep "best" lead text per code by largest upper bound
             score = upper_bound_weeks(lt_text)
             for code in codes:
                 rec = per_code.get(code)
@@ -248,10 +259,11 @@ def import_and_merge(
 
         for v in per_code.values():
             v.pop("_score", None)
+
         return per_code, by_product, product_to_codes
 
-    can_leads, can_html, can_p2c = make_lead_rows(can_triples)
-    reg_leads, reg_html, reg_p2c = make_lead_rows(reg_triples)
+    can_leads, can_html, can_prod2codes = make_lead_rows(can_triples)
+    reg_leads, reg_html, reg_prod2codes = make_lead_rows(reg_triples)
 
     # Cutoff per-code rows
     def make_cutoff_rows(triples: List[Tuple[str, str, str]]) -> Dict[str, Dict]:
@@ -273,13 +285,13 @@ def import_and_merge(
             cutoff_rows=cut_by_code,
             control_codes=can_codes,
             by_product_html=sorted(can_html, key=lambda t: t[0].casefold()),
-            product_to_codes=can_p2c,
+            product_to_codes=can_prod2codes,
         ),
         "REGIONAL": ImportResultStore(
             lead_rows=reg_leads,
             cutoff_rows=cut_by_code,
             control_codes=reg_codes,
             by_product_html=sorted(reg_html, key=lambda t: t[0].casefold()),
-            product_to_codes=reg_p2c,
+            product_to_codes=reg_prod2codes,
         ),
     }

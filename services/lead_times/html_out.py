@@ -1,14 +1,15 @@
 # services/lead_times/html_out.py
 from __future__ import annotations
+
 import re
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Set
 
 
 _TRAIL_PUNCT_RE = re.compile(r"[\s:–—-]+$")  # spaces, colon, hyphen, en/em dash at the end
 
 
 def _tidy_product(name: str) -> str:
-    """Collapse whitespace and remove any trailing ':'/dashes so we don't render '::'."""
+    """Collapse whitespace and strip any trailing ':', dashes, etc."""
     if not name:
         return ""
     s = re.sub(r"\s+", " ", str(name)).strip()
@@ -18,24 +19,31 @@ def _tidy_product(name: str) -> str:
 def build_html_lines(
     by_product: Iterable[tuple],
     *,
+    product_to_codes: Dict[str, Set[str]],
     cutoffs_by_code: Dict[str, Dict],
     placeholder: str = "TBC",
 ) -> List[str]:
     """
-    Build display lines from (product, lead_time_text) pairs.
-    Accepts either 2-tuples or longer; only the first two items are used.
-    Appends '***CHRISTMAS CUTOFF ...***' when any code maps to that product with a cutoff.
-    Output is sorted alphabetically by product name.
+    Build display lines from (product, lead_time_text) pairs and append a cutoff marker
+    when ANY code mapped to that product has a cutoff date.
 
-    If lead_time_text is blank, uses `placeholder` (default 'TBC').
+    - Matching is done by *Buz code* (via product_to_codes), not by product text.
+    - If lead_time_text is blank, uses `placeholder` (default 'TBC').
+    - Output is sorted by product name (case-insensitive).
     """
-    # product -> cutoff date (string as-is)
-    cutoff_by_product: Dict[str, str] = {}
-    for rec in cutoffs_by_code.values():
-        product = str(rec.get("product") or "").strip()
-        cutoff = str(rec.get("cutoff") or "").strip()
-        if product and cutoff:
-            cutoff_by_product[product] = cutoff
+
+    # product -> cutoff date (via any of its codes)
+    cutoff_for_product: Dict[str, str] = {}
+    for product, codes in product_to_codes.items():
+        for code in codes:
+            rec = cutoffs_by_code.get(code)
+            if not rec:
+                continue
+            cutoff = str(rec.get("cutoff") or "").strip()
+            if cutoff:
+                # keep the first non-empty cutoff we see for this product
+                cutoff_for_product.setdefault(product, cutoff)
+                break
 
     lines: List[str] = []
     seen_products: set[str] = set()
@@ -45,20 +53,19 @@ def build_html_lines(
             continue
 
         product = str(row[0]).strip()
-        lead_text = str(row[1]).strip() if len(row) > 1 else ""
-
         if not product or product in seen_products:
             continue
         seen_products.add(product)
 
-        # Use TBC when lead time missing
-        lead_text = lead_text if lead_text else placeholder
+        lead_text = str(row[1]).strip() if len(row) > 1 else ""
+        if not lead_text:
+            lead_text = placeholder
 
-        # Normalise common double-colon artefacts
-        display_product = product.replace("::", ":")
+        # Tidy to avoid '::' and trailing colons/dashes from source text
+        display_product = _tidy_product(product).replace("::", ":")
 
         line = f"{display_product}: {lead_text}"
-        cutoff = cutoff_by_product.get(product)
+        cutoff = cutoff_for_product.get(product)
         if cutoff:
             line += f" ***CHRISTMAS CUTOFF {cutoff}***"
 
@@ -66,4 +73,3 @@ def build_html_lines(
 
     lines.sort(key=lambda s: s.split(":", 1)[0].casefold())
     return lines
-

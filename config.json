@@ -729,6 +729,14 @@
             "canberra_summary": "Quote_Summary_Canberra_{YYYYMMDD}.xlsx",
             "regional_detailed": "Quote_Detailed_Regional_{YYYYMMDD}.xlsx",
             "regional_summary": "Quote_Summary_Regional_{YYYYMMDD}.xlsx"
+        },
+        "detailed_text": {
+            "template": "-       Lead Time: {LEAD}\\n       -       Location:",
+            "lead_regex": "(?i)\\b\\d+(?:\\.\\d+)?(?:\\s*-\\s*\\d+(?:\\.\\d+)?)?\\s*(?:weeks?|wks?|wk)\\b"
+        },
+        "summary_text": {
+            "template": "Ready in {LEAD}, manufactured locally, lifetime warranty",
+            "lead_regex": "(?i)\\b\\d+(?:\\.\\d+)?(?:\\s*-\\s*\\d+(?:\\.\\d+)?)?\\s*(?:weeks?|wks?|wk)\\b"
         }
     }
 }

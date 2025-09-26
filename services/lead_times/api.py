@@ -18,31 +18,44 @@ def _cutoff_attach_note(
     warnings: list[str],
     store_name: str,
     by_product_html: list[tuple[str, str]],
+    product_to_codes: dict[str, set[str]],
     cutoff_rows: dict[str, dict],
 ) -> None:
-    """Report how many products actually received a CHRISTMAS CUTOFF banner."""
-    # products present in the HTML list for this store
-    html_products = {str(p).strip() for p, _ in by_product_html if str(p).strip()}
-    # products that have a cutoff date in the cutoffs sheet
-    cutoff_products = {
-        str(rec.get("product", "")).strip()
-        for rec in cutoff_rows.values()
-        if str(rec.get("product", "")).strip() and str(rec.get("cutoff", "")).strip()
+    """
+    Report how many products actually received a CHRISTMAS CUTOFF banner.
+    This mirrors the HTML builder logic: a product is considered 'attached'
+    if ANY of its mapped buz codes has a cutoff date.
+    """
+    cutoff_codes_with_date = {
+        code for code, rec in cutoff_rows.items() if str(rec.get("cutoff", "")).strip()
     }
-    attached = sorted(html_products & cutoff_products)
+
+    products = [str(p).strip() for p, _ in by_product_html if str(p).strip()]
+    attached = [
+        p for p in products
+        if product_to_codes.get(p, set()) & cutoff_codes_with_date
+    ]
+
     if attached:
-        sample = ", ".join(attached[:5]) + ("…" if len(attached) > 5 else "")
-        warnings.append(f"[{store_name}] CHRISTMAS CUTOFF appended to {len(attached)} product(s) (e.g., {sample}).")
+        sample = ", ".join(sorted(attached)[:5]) + ("…" if len(attached) > 5 else "")
+        warnings.append(
+            f"[{store_name}] CHRISTMAS CUTOFF appended to {len(attached)} product(s) "
+            f"(e.g., {sample})."
+        )
     else:
-        # If none attached but there *are* dated cutoffs, hint if they’re absent from leads
-        if cutoff_products:
-            missing_in_leads = sorted(cutoff_products - html_products)
+        if cutoff_codes_with_date:
+            cutoff_products = {
+                str(rec.get("product", "")).strip()
+                for code, rec in cutoff_rows.items()
+                if code in cutoff_codes_with_date and str(rec.get("product", "")).strip()
+            }
+            missing_in_leads = sorted(set(cutoff_products) - set(products))
             if missing_in_leads:
                 sample = ", ".join(missing_in_leads[:3]) + ("…" if len(missing_in_leads) > 3 else "")
                 warnings.append(
                     f"[{store_name}] No banners appended. "
-                    f"{len(missing_in_leads)} cutoff product(s) aren’t present in this store’s Lead Times mapping "
-                    f"(e.g., {sample})."
+                    f"{len(missing_in_leads)} cutoff product(s) aren’t present in this store’s "
+                    f"Lead Times mapping (e.g., {sample})."
                 )
 
 
@@ -107,7 +120,6 @@ def run_publish(
             return rows
         if header_row_1based is None or header_row_1based < 1:
             return rows
-        # keep rows after the header row
         return rows[header_row_1based:]
 
     can_rows = strip_headers(can_rows, lt_hdr)
@@ -136,7 +148,6 @@ def run_publish(
             return "—" if not s else (
                 ", ".join(sorted(s)[:12]) + (f", +{len(s) - 12} more" if len(s) > 12 else "")
             )
-
         from markupsafe import Markup
         raise ValueError(Markup(
             "<strong>Unknown codes</strong> — present in Google Sheets but not found as tabs "
@@ -159,18 +170,22 @@ def run_publish(
     html_out: Dict[str, str] = {}
     for store in scope:
         ir = merged[store]
-        lines = build_html_lines(ir.by_product_html, cutoffs_by_code=ir.cutoff_rows)
+        lines = build_html_lines(
+            ir.by_product_html,
+            product_to_codes=ir.product_to_codes,   # match by codes, not product text
+            cutoffs_by_code=ir.cutoff_rows,
+        )
         html_out[store.lower()] = "\n".join(
             f"<p>{html.escape(ln)}<br /></p>" for ln in lines
         )
 
-    warnings: list[str] = warnings  # use your existing list
-
+    # Sanity note about how many banners were appended (by code)
     if "CANBERRA" in scope:
         _cutoff_attach_note(
             warnings,
             "CANBERRA",
             merged["CANBERRA"].by_product_html,
+            merged["CANBERRA"].product_to_codes,
             merged["CANBERRA"].cutoff_rows,
         )
     if "REGIONAL" in scope:
@@ -178,8 +193,14 @@ def run_publish(
             warnings,
             "REGIONAL",
             merged["REGIONAL"].by_product_html,
+            merged["REGIONAL"].product_to_codes,
             merged["REGIONAL"].cutoff_rows,
         )
+
+    # --- Summary text config (template + regex) ---
+    summary_cfg = lead_times_cfg.get("summary_text", {}) or {}
+    summary_template = summary_cfg.get("template") or "Ready in {LEAD}"
+    summary_lead_regex = summary_cfg.get("lead_regex") or r"(?i)\b\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?\s*(?:weeks?|wks?|wk)\b"
 
     # 3) Excel generation
     outdir = Path(save_dir)
@@ -197,10 +218,9 @@ def run_publish(
     files: Dict[str, str] = {}
 
     if "CANBERRA" in scope:
-        p = outname("canberra_detailed")
-        inject_and_prune(
+        p = inject_and_prune(
             template_path=Path(detailed_template_path),
-            out_path=p,
+            out_path=outname("canberra_detailed"),
             store_name="CANBERRA",
             leads_by_code=merged["CANBERRA"].lead_rows,
             cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
@@ -213,10 +233,9 @@ def run_publish(
         )
         files["canberra_detailed"] = os.path.basename(str(p))
 
-        p = outname("canberra_summary")
-        inject_and_prune(
+        p = inject_and_prune(
             template_path=Path(summary_template_path),
-            out_path=p,
+            out_path=outname("canberra_summary"),
             store_name="CANBERRA",
             leads_by_code=merged["CANBERRA"].lead_rows,
             cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
@@ -226,14 +245,15 @@ def run_publish(
             control_codes=merged["CANBERRA"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",
+            summary_template=summary_template,
+            summary_lead_regex=summary_lead_regex,
         )
         files["canberra_summary"] = os.path.basename(str(p))
 
     if "REGIONAL" in scope:
-        p = outname("regional_detailed")
-        inject_and_prune(
+        p = inject_and_prune(
             template_path=Path(detailed_template_path),
-            out_path=p,
+            out_path=outname("regional_detailed"),
             store_name="REGIONAL",
             leads_by_code=merged["REGIONAL"].lead_rows,
             cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
@@ -246,10 +266,9 @@ def run_publish(
         )
         files["regional_detailed"] = os.path.basename(str(p))
 
-        p = outname("regional_summary")
-        inject_and_prune(
+        p = inject_and_prune(
             template_path=Path(summary_template_path),
-            out_path=p,
+            out_path=outname("regional_summary"),
             store_name="REGIONAL",
             leads_by_code=merged["REGIONAL"].lead_rows,
             cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
@@ -259,11 +278,13 @@ def run_publish(
             control_codes=merged["REGIONAL"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",
+            summary_template=summary_template,
+            summary_lead_regex=summary_lead_regex,
         )
         files["regional_summary"] = os.path.basename(str(p))
 
     return {
         "warnings": warnings,
-        "html": html_out,   # {"canberra": "<p>..</p>", "regional": "<p>..</p>"}
-        "files": files,     # basenames; your download route serves from save_dir
+        "html": html_out,
+        "files": files,
     }
