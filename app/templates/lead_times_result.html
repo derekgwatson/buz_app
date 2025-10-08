@@ -55,29 +55,53 @@
   {% endif %}
 
   {# HTML blocks with copy buttons #}
-  {% if html_canberra %}
-    <h4>
-      HTML — Canberra
-      <button class="btn btn-xs btn-default pull-right btn-copy" data-copy-target="#html-canberra">Copy</button>
-    </h4>
-    <div id="html-canberra" class="lt-box">{{ html_canberra|safe }}</div>
-  {% endif %}
+ {% if html_canberra %}
+  <h4>
+    HTML — Canberra
+    <button class="btn btn-xs btn-default pull-right btn-copy" data-copy-target="#html-canberra-raw">Copy raw</button>
+  </h4>
 
-  {% if html_regional %}
-    <h4>
-      HTML — Regional
-      <button class="btn btn-xs btn-default pull-right btn-copy" data-copy-target="#html-regional">Copy</button>
-    </h4>
-    <div id="html-regional" class="lt-box">{{ html_regional|safe }}</div>
-  {% endif %}
+  <div class="row">
+    <div class="col-sm-6">
+      <div class="lt-subtitle">Preview</div>
+      <div id="html-canberra-preview" class="lt-box">{{ html_canberra|safe }}</div>
+    </div>
+    <div class="col-sm-6">
+      <div class="lt-subtitle">Raw (paste into app)</div>
+      <pre id="html-canberra-raw" class="lt-code">{{ html_canberra }}</pre>
+    </div>
+  </div>
+{% endif %}
+
+
+   {% if html_regional %}
+  <h4>
+    HTML — Regional
+    <button class="btn btn-xs btn-default pull-right btn-copy" data-copy-target="#html-regional-raw">Copy raw</button>
+  </h4>
+
+  <div class="row">
+    <div class="col-sm-6">
+      <div class="lt-subtitle">Preview</div>
+      <div id="html-regional-preview" class="lt-box">{{ html_regional|safe }}</div>
+    </div>
+    <div class="col-sm-6">
+      <div class="lt-subtitle">Raw (paste into app)</div>
+      <pre id="html-regional-raw" class="lt-code">{{ html_regional }}</pre>
+    </div>
+  </div>
+{% endif %}
+
 
   {# Downloads with friendly labels #}
   {% if files %}
     {% set label_map = {
       'canberra_detailed': 'Canberra — Detailed',
-      'canberra_summary': 'Canberra — Summary',
+      'canberra_summary':  'Canberra — Summary',
       'regional_detailed': 'Regional — Detailed',
-      'regional_summary': 'Regional — Summary'
+      'regional_summary':  'Regional — Summary',
+      'detailed_review':   'Detailed — REVIEW ONLY',
+      'summary_review':    'Summary — REVIEW ONLY',
     } %}
     <h4>Downloads</h4>
     <ul>
