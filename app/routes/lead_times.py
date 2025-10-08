@@ -16,7 +16,9 @@ lead_times_bp = Blueprint("lead_times", __name__, url_prefix="/tools/lead_times"
 
 # app/routes/lead_times.py
 def _base_output_dir() -> str:
-    # Prefer global app config first (these are NOT under lead_times)
+    """
+    Prefer global app config first (these are NOT under lead_times).
+    """
     base = (
         current_app.config.get("UPLOAD_OUTPUT_DIR")
         or current_app.config.get("upload_folder")
@@ -31,8 +33,52 @@ def _base_output_dir() -> str:
     return base
 
 
+def _compose_html(scope: str, store: str, body_html: str) -> str:
+    lead_cfg = get_cfg() or {}
+    html_cfg = (lead_cfg.get("html") or {}) if isinstance(lead_cfg, dict) else {}
+
+    legacy_prefix = lead_cfg.get("html_prefix", "")
+    legacy_suffix = lead_cfg.get("html_suffix", "")
+
+    global_prefix = html_cfg.get("prefix", "") or legacy_prefix
+    global_suffix = html_cfg.get("suffix", "") or legacy_suffix
+    prefix_by_scope = html_cfg.get("prefix_by_scope", {}) or {}
+    suffix_by_scope = html_cfg.get("suffix_by_scope", {}) or {}
+
+    store_overrides = html_cfg.get("store_overrides", {}) or {}
+    store_cfg = store_overrides.get((store or "").lower(), {}) or {}
+
+    s = (scope or "").lower()
+    store_key = (store or "").lower()
+
+    parts = [
+        str(store_cfg.get("prefix", "") or ""),           # 0 store prefix (moved earlier)
+        str(prefix_by_scope.get(s, "") or ""),            # 1 scope prefix
+        str(global_prefix or ""),                         # 2 global prefix
+        str(body_html or ""),                             # 3 BODY (unchanged)
+        str(global_suffix or ""),                         # 4 global suffix (moved earlier)
+        str(suffix_by_scope.get(s, "") or ""),            # 5 scope suffix
+        str(store_cfg.get("suffix", "") or ""),           # 6 store suffix (last)
+    ]
+
+    def _apply_tokens(text: str) -> str:
+        return (
+            text.replace("{{STORE}}", store_key.title())
+                .replace("{{store}}", store_key)
+                .replace("{{STORE_UPPER}}", store_key.upper())
+        )
+
+    out = []
+    for i, p in enumerate(parts):
+        out.append(_apply_tokens(p) if i != 3 else p)  # don’t touch BODY
+    return "".join(out).strip()
+
+
 @lead_times_bp.route("/", methods=["GET", "POST"])
 def start():
+    """
+    Lead Times entry point. Accepts two .xlsm uploads and produces HTML + files.
+    """
     # Pull the whole lead_times dict from file-backed config (preferred),
     # falling back to app.config["lead_times"] if needed.
     lead_times_cfg = get_cfg() or current_app.config.get("lead_times")
@@ -72,11 +118,20 @@ def start():
             scope=tuple(scope),
         )
 
+        # Body-only HTML (existing behavior)
+        body_canberra = res["html"].get("canberra", "")
+        body_regional = res["html"].get("regional", "")
+
+        full_canberra = _compose_html("canberra", "canberra", body_canberra)
+        full_regional = _compose_html("regional", "regional", body_regional)
+
         return render_template(
             "lead_times_result.html",
             warnings=res["warnings"],
-            html_canberra=res["html"].get("canberra", ""),
-            html_regional=res["html"].get("regional", ""),
+            html_canberra=body_canberra,
+            html_regional=body_regional,
+            full_html_canberra=full_canberra,
+            full_html_regional=full_regional,
             files=res["files"],
         )
 
@@ -89,15 +144,17 @@ def start():
 
 @lead_times_bp.get("/open")
 def open_sheet():
-    """302 to the correct Google Sheet tab using your config shape."""
+    """
+    302 to the correct Google Sheet tab using your config shape.
+    """
     svc = GoogleSheetsService()
 
     kind = (request.args.get("kind") or "lead").lower()
     tab_param = (request.args.get("tab") or "").strip()
 
     if kind == "cutoff":
-        sheet_id = get_cfg("cutoffs","sheet_id")
-        tab_name = tab_param or get_cfg("cutoffs","tab")
+        sheet_id = get_cfg("cutoffs", "sheet_id")
+        tab_name = tab_param or get_cfg("cutoffs", "tab")
         return redirect(tab_url(svc, sheet_id, tab_name), code=302)
 
     # default: lead times (note: config key is 'lead_times_ss')

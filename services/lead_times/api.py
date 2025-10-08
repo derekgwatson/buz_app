@@ -1,7 +1,6 @@
 # services/lead_times/api.py
 from __future__ import annotations
 
-import html
 import os
 from datetime import datetime
 from pathlib import Path
@@ -13,8 +12,355 @@ from .excel_out import (
     save_review_only_workbook,
     InjectResult,
 )
-from .html_out import build_html_lines
 from .sheets import import_and_merge, codes_from_rows
+
+
+import re
+
+
+# replace the existing _LEAD_LINE_RE with this
+# If you also parse/insert cutoffs, re-use your cutoff detector here.
+# Kept simple: looks for "cutoff" word in the entire cell (case-insensitive).
+_CUTOFF_WORD_RE = re.compile(r"cut\s*off", re.I)
+
+
+# --- Banner + row/column helpers ---
+
+_CUTOFF_BANNER_RE = re.compile(r"(?i)\*{3}\s*christmas\s*cut\s*off.*?\*{3}")
+
+
+# Summary "ready in ..." block:
+# - optional leading comma/space captured in (?P<punc>)
+# - main weeks value: single or range
+# - zero or more " ( ... )" tails captured in (?P<brackets>)
+# Keep this near your other regexes
+_SUMMARY_READY_BLOCK_RE = re.compile(
+    r'''(?ix)
+        (,\s*)?                 # optional leading comma/space
+        ready \s* in \s*
+        (?: \d+(?:\.\d+)? \s* (?:-|–|to) \s* \d+(?:\.\d+)? | \d+(?:\.\d+)? )
+        \s* (?:weeks?|days?)
+        (?: \s* \([^)]*\) )*    # zero or more bracket tails, part of the same block
+    '''
+)
+
+
+_DURATION_FINDER_RE = re.compile(
+    r'(?i)'
+    r'(\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(\d+(?:\.\d+)?)\s*(weeks?|days?)'
+    r'|\b(\d+(?:\.\d+)?)\s*(weeks?|days?)\b'
+)
+
+
+# Minimal header finder: literal "\n" or real newline, then bullet, then "Lead Time:"
+_LEAD_HEADER_RE = re.compile(r'(?i)(?:\\n|[\r\n])\s*-\s*Lead\s*Time\s*:\s*')
+
+
+# Detailed "Lead Time:" line — capture one bracket block, eat any extras
+_DETAILED_LEAD_LINE_RE = re.compile(
+    r'''(?imx)
+        (?P<header> (?:\\n|[\r\n])\s*-\s*Lead\s*Time\s*:\s* )
+        (?P<val>
+            (?:\d+(?:\.\d+)?\s*(?:-|–|to)\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?)
+            \s*(?:weeks?|days?)
+        )
+        (?P<brackets> \s*\([^)]*\) )?   # keep at most one
+        (?: \s*\([^)]*\) )*             # eat any extra bracket blocks from old text
+        (?P<trail>\s*)
+        (?P<eol> (?:\\n|[\r\n]) | $ )
+    '''
+)
+
+
+def _lit(s: str) -> str:
+    """Use literal \\n tokens, keep spaces exactly."""
+    return (s or "").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+
+
+def _find_lead_line_span(s: str) -> tuple[int, int, int, str, str] | None:
+    if not s:
+        return None
+    m = _DETAILED_LEAD_LINE_RE.search(s)
+    if m:
+        start = m.start('header')
+        header_end = m.end('header')
+        eol_end = m.end('eol')
+        header_text = m.group('header')
+        # Keep exactly one bracket block if present
+        value_text = (m.group('val') or '') + (m.group('brackets') or '')
+        return start, header_end, eol_end, header_text, value_text
+
+    # Fallback (rare) – old behavior
+    m = _LEAD_HEADER_RE.search(s)
+    if not m:
+        return None
+    start = m.start()
+    header_end = m.end()
+    m_eol = re.search(r'(?:\\n|[\r\n])', s[header_end:])
+    if m_eol:
+        v_end = header_end + m_eol.start()
+        eol_end = header_end + m_eol.end()
+    else:
+        v_end = len(s)
+        eol_end = len(s)
+    header_text = s[start:header_end]
+    value_text = s[header_end:v_end]
+    return start, header_end, eol_end, header_text, value_text
+
+
+def _to_weeks(value: float, unit: str) -> float:
+    return value / 7.0 if unit.lower().startswith('day') else value
+
+
+def _normalize_lead_line_spacing_from_template(
+    *,
+    template_path: Path,
+    output_path: Path,
+    do_not_show_col_letter: str,
+    header_row_1based: int,
+    target_col_letter: str,  # "B" for Detailed
+    warnings: list[str],
+    label: str,
+) -> int:
+    if not output_path.exists():
+        return 0
+
+    wb_out = load_workbook(filename=str(output_path), keep_vba=True, data_only=True)
+    wb_tpl = load_workbook(filename=str(template_path), keep_vba=True, data_only=True)
+
+    changed = 0
+    tgt_col = _col1(target_col_letter)
+    common = set(wb_out.sheetnames) & set(wb_tpl.sheetnames)
+
+    for code in list(common):
+        ws_out = wb_out[code]
+        ws_tpl = wb_tpl[code]
+
+        r_out = _first_row_do_not_show_false(ws_out, do_not_show_col_letter, header_row_1based)
+        r_tpl = _first_row_do_not_show_false(ws_tpl, do_not_show_col_letter, header_row_1based)
+        if r_out == -1 or r_tpl == -1:
+            continue
+
+        s_out = "" if ws_out.cell(row=r_out, column=tgt_col).value is None else str(ws_out.cell(row=r_out, column=tgt_col).value)
+        s_tpl = "" if ws_tpl.cell(row=r_tpl, column=tgt_col).value is None else str(ws_tpl.cell(row=r_tpl, column=tgt_col).value)
+
+        # find spans
+        span_out = _find_lead_line_span(s_out)
+        if not span_out:
+            continue
+        start, _header_end, eol_end, header_out, value_out = span_out
+
+        span_tpl = _find_lead_line_span(s_tpl)
+
+        # --- header: prefer template spacing; else keep output header
+        header_use = header_out
+
+        # --- prefix: ALWAYS from the uploaded Detailed input; but preserve any injected banner
+        pre_out = s_out[:start]
+        pre_tpl = s_tpl[:span_tpl[0]] if span_tpl else ""  # input’s prefix up to its Lead Time:
+
+        # pull a banner (if present) from the *output* prefix, so we don’t lose it
+        m_banner = re.match(r'^(?:\\n|[\r\n])\*{3}.*?\*{3}(?:\\n|[\r\n])?', pre_out, flags=re.I)
+        banner = m_banner.group(0) if m_banner else ""
+
+        prefix_use = _lit((banner or "") + pre_tpl)
+
+        # --- tail: ALWAYS from the uploaded Detailed input (it can vary per tab);
+        # if the input has no Lead Time line, fall back to the output tail
+        tail_use = s_tpl[span_tpl[2]:] if span_tpl else s_out[eol_end:]
+
+        # rebuild ONLY the lead-time line (value_out stays as written by injector)
+        new_segment = _lit(header_use) + value_out + "\\n"
+        fixed = prefix_use + new_segment + _lit(tail_use)
+
+        if fixed != s_out:
+            ws_out.cell(row=r_out, column=tgt_col).value = fixed
+            changed += 1
+
+    if changed:
+        wb_out.save(str(output_path))
+        warnings.append(f"[FORMAT] {label}: normalized Lead Time line spacing on {changed} tab(s).")
+    return changed
+
+
+def _strip_cutoff_banner(s: str | None) -> str:
+    """Remove any ***CHRISTMAS CUTOFF ...*** chunk anywhere."""
+    return _CUTOFF_BANNER_RE.sub("", "" if s is None else str(s))
+
+
+def _banner(date_str: str) -> str:
+    return f"***CHRISTMAS CUTOFF {date_str}***"
+
+
+def _is_trueish(v) -> bool:
+    """Interpret TRUE-ish values in the Do Not Show? column."""
+    if v is True or v == 1:
+        return True
+    s = ("" if v is None else str(v)).strip().lower()
+    return s in {"true", "t", "yes", "y", "1"}
+
+
+def _col1(a1: str) -> int:
+    """1-based column index from a letter like 'F'."""
+    return _col_idx(a1) + 1
+
+
+def _first_row_do_not_show_false(ws, do_not_show_col_letter: str, header_row_1based: int) -> int:
+    """
+    Find the first row > header_row_1based where Do Not Show? is FALSE (or empty/blank).
+    Returns -1 if none found.
+    """
+    c = _col1(do_not_show_col_letter)
+    start = (header_row_1based or 1) + 1
+    for r in range(start, ws.max_row + 1):
+        val = ws.cell(row=r, column=c).value
+        if not _is_trueish(val):
+            return r
+    return -1
+
+
+def _apply_banner_detailed_text(old: str, cutoff: str | None) -> str:
+    """
+    Detailed: if cutoff present, produce:
+      \n***CHRISTMAS CUTOFF {date}***<body>
+    (no trailing \n after the banner; body keeps its own leading \n)
+    """
+    base = _strip_cutoff_banner(old or "")
+    cutoff = (cutoff or "").strip()
+    if not cutoff:
+        return base
+
+    # ensure the next section has its leading \n; if not, add one
+    if not re.match(r'^(?:\\n|[\r\n])', base):
+        base = "\\n" + base
+
+    return f"\\n{_banner(cutoff)}{base}"
+
+
+def _apply_banner_summary_text(old: str, cutoff: str | None) -> str:
+    """
+    Summary: remove any existing banner; if cutoff present, append ' ***…***' at end.
+    (Ensure exactly one separating space if the cell doesn't already end with whitespace.)
+    """
+    base = _strip_cutoff_banner(old)
+    cutoff = (cutoff or "").strip()
+    if not cutoff:
+        return base
+    sep = "" if (len(base) > 0 and base[-1].isspace()) else " "
+    return f"{base}{sep}{_banner(cutoff)}"
+
+
+def _canon(s: str) -> str:
+    """
+    Canonicalize for comparison: normalize whitespace and case.
+    """
+    if s is None:
+        return ""
+    s = s.replace("\xa0", " ")
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"[ \t]+\n", "\n", s)
+    return s.strip().lower()
+
+
+def _apply_banners_to_workbook(
+    *,
+    output_path: Path,
+    cutoffs_by_code: dict[str, dict],
+    warnings: list[str],
+    label: str,
+    kind: str,  # "detailed" or "summary"
+    do_not_show_col_letter: str,
+    header_row_1based: int,
+    target_col_letter: str,  # insertion col for that kind (e.g., "B" or "C")
+) -> int:
+    """
+    For each sheet:
+      - find the first row where Do Not Show? is FALSE
+      - edit target cell (Detailed: Before Answer, Summary: After Answer)
+      - remove old banner; insert new in canonical place if cutoff exists
+    Returns: number of tabs modified (where cell content actually changed).
+    """
+    if not output_path.exists():
+        return 0
+
+    wb = load_workbook(filename=str(output_path), keep_vba=True, data_only=True)
+    changed = 0
+    target_col = _col1(target_col_letter)
+
+    for code in list(wb.sheetnames):
+        ws = wb[code]
+        r = _first_row_do_not_show_false(ws, do_not_show_col_letter, header_row_1based)
+        if r == -1:
+            continue
+
+        cell = ws.cell(row=r, column=target_col)
+        old = "" if cell.value is None else str(cell.value)
+
+        cutoff = ""
+        if cutoffs_by_code and code in cutoffs_by_code:
+            cutoff = str(cutoffs_by_code[code].get("cutoff", "")).strip()
+
+        new = _apply_banner_detailed_text(old, cutoff) if kind == "detailed" else _apply_banner_summary_text(old, cutoff)
+
+        if new != old:
+            cell.value = new
+            changed += 1
+
+    if changed:
+        wb.save(str(output_path))
+        warnings.append(f"[CUTOFF] {label}: normalized banner on {changed} tab(s).")
+
+    return changed
+
+
+def _prune_unchanged_tabs_cell_based(
+    *,
+    template_path: Path,
+    output_path: Path,
+    warnings: list[str],
+    label: str,
+    do_not_show_col_letter: str,
+    header_row_1based: int,
+    target_col_letter: str,  # "B" for detailed, "C" for summary (from config)
+) -> list[str]:
+    """
+    Remove a tab if the target cell text (first row where Do Not Show? is FALSE, target column)
+    is EXACTLY the same as in the template workbook. Any character difference => keep.
+    """
+    pruned: list[str] = []
+    if not output_path.exists():
+        return pruned
+
+    wb_out = load_workbook(filename=str(output_path), keep_vba=True, data_only=True)
+    wb_tpl = load_workbook(filename=str(template_path), keep_vba=True, data_only=True)
+
+    target_col = _col1(target_col_letter)
+    common = set(wb_out.sheetnames) & set(wb_tpl.sheetnames)
+
+    for code in list(common):
+        ws_out = wb_out[code]
+        ws_tpl = wb_tpl[code]
+
+        r_out = _first_row_do_not_show_false(ws_out, do_not_show_col_letter, header_row_1based)
+        r_tpl = _first_row_do_not_show_false(ws_tpl, do_not_show_col_letter, header_row_1based)
+        if r_out == -1 or r_tpl == -1:
+            # If either workbook can't find a display row, don't prune on this heuristic
+            continue
+
+        out_text = "" if ws_out.cell(row=r_out, column=target_col).value is None else str(ws_out.cell(row=r_out, column=target_col).value)
+        tpl_text = "" if ws_tpl.cell(row=r_tpl, column=target_col).value is None else str(ws_tpl.cell(row=r_tpl, column=target_col).value)
+
+        if out_text == tpl_text:
+            wb_out.remove(ws_out)
+            pruned.append(code)
+
+    if pruned:
+        wb_out.save(str(output_path))
+        samp = ", ".join(sorted(pruned)[:5]) + ("…" if len(pruned) > 5 else "")
+        warnings.append(f"[PRUNE] {label}: removed {len(pruned)} unchanged tab(s) (e.g., {samp}).")
+
+    return pruned
 
 
 def _need(d: dict, *path):
@@ -247,13 +593,11 @@ def run_publish(
 
     # Text templates/regex from config (with safe defaults)
     tmpl = lead_times_cfg.get("templates", {})
-    detailed_review_template = tmpl.get("detailed_review")
-    summary_review_template = tmpl.get("summary_review")
-    summary_lead_regex = tmpl.get("summary_lead_regex")  # optional override
-    detailed_prefix_template = tmpl.get(
-        "detailed_prefix_template",
-        "\n       -       Lead Time: {LEAD} \n       -       ",
-    )
+    summary_lead_regex = tmpl.get("summary_lead_regex") or _SUMMARY_READY_BLOCK_RE
+
+    # IMPORTANT: Avoid formatting drift. Let excel_out do minimal edits.
+    # Keep this template empty by default (we'll prune unchanged tabs post-write).
+    detailed_prefix_template = tmpl.get("detailed_prefix_template", "")
 
     files: Dict[str, str] = {}
     review_detailed: set[str] = set()
@@ -276,6 +620,34 @@ def run_publish(
             summary_lead_regex=None,
             detailed_prefix_template=detailed_prefix_template,
         )
+        _apply_banners_to_workbook(
+            output_path=Path(res.saved_path),
+            cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
+            warnings=warnings,
+            label="Detailed CANBERRA",
+            kind="detailed",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],
+        )
+        _normalize_lead_line_spacing_from_template(
+            template_path=Path(detailed_template_path),
+            output_path=Path(res.saved_path),
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],  # "B"
+            warnings=warnings,
+            label="Detailed CANBERRA",
+        )
+        _prune_unchanged_tabs_cell_based(
+            template_path=Path(detailed_template_path),
+            output_path=Path(res.saved_path),
+            warnings=warnings,
+            label="Detailed CANBERRA",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],
+        )
         review_detailed |= set(res.review_codes)
         files["canberra_detailed"] = os.path.basename(str(res.saved_path))
 
@@ -294,6 +666,34 @@ def run_publish(
             workbook_kind="Detailed",
             detailed_prefix_template=detailed_prefix_template,
         )
+        _apply_banners_to_workbook(
+            output_path=Path(res.saved_path),
+            cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
+            warnings=warnings,
+            label="Detailed REGIONAL",
+            kind="detailed",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],
+        )
+        _normalize_lead_line_spacing_from_template(
+            template_path=Path(detailed_template_path),
+            output_path=Path(res.saved_path),
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],  # "B"
+            warnings=warnings,
+            label="Detailed REGIONAL",
+        )
+        _prune_unchanged_tabs_cell_based(
+            template_path=Path(detailed_template_path),
+            output_path=Path(res.saved_path),
+            warnings=warnings,
+            label="Detailed REGIONAL",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],
+        )
         review_detailed |= set(res.review_codes)
         files["regional_detailed"] = os.path.basename(str(res.saved_path))
 
@@ -311,7 +711,27 @@ def run_publish(
             control_codes=merged["CANBERRA"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",
-            summary_lead_regex=summary_lead_regex,
+            summary_lead_regex=summary_lead_regex.pattern if hasattr(summary_lead_regex,
+                                                                     "pattern") else summary_lead_regex,
+        )
+        _apply_banners_to_workbook(
+            output_path=Path(res.saved_path),
+            cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
+            warnings=warnings,
+            label="Summary CANBERRA",
+            kind="summary",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["summary"],
+        )
+        _prune_unchanged_tabs_cell_based(
+            template_path=Path(summary_template_path),
+            output_path=Path(res.saved_path),
+            warnings=warnings,
+            label="Summary CANBERRA",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["summary"],
         )
         review_summary |= set(res.review_codes)
         files["canberra_summary"] = os.path.basename(str(res.saved_path))
@@ -329,7 +749,27 @@ def run_publish(
             control_codes=merged["REGIONAL"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",
-            summary_lead_regex=summary_lead_regex,
+            summary_lead_regex=summary_lead_regex.pattern if hasattr(summary_lead_regex,
+                                                                     "pattern") else summary_lead_regex,
+        )
+        _apply_banners_to_workbook(
+            output_path=Path(res.saved_path),
+            cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
+            warnings=warnings,
+            label="Summary REGIONAL",
+            kind="summary",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["summary"],
+        )
+        _prune_unchanged_tabs_cell_based(
+            template_path=Path(summary_template_path),
+            output_path=Path(res.saved_path),
+            warnings=warnings,
+            label="Summary REGIONAL",
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["summary"],
         )
         review_summary |= set(res.review_codes)
         files["regional_summary"] = os.path.basename(str(res.saved_path))

@@ -691,7 +691,33 @@
         ]
     },
     "lead_times": {
-        "timezone": "Australia/Sydney",
+        "stores": {
+          "canberra":   "canberra",
+          "tweed":      "regional",
+          "bay":        "regional",
+          "shoalhaven": "regional",
+          "wagga":      "regional"
+        },
+        "html": {
+          "prefix": "<!-- GLOBAL header for all stores (optional) -->",
+          "suffix": "<!-- GLOBAL footer for all stores (optional) -->",
+          "prefix_by_scope": {
+            "canberra": "<!-- header for Canberra scope (optional) -->",
+            "regional": "<!-- header for Regional scope (optional) -->"
+          },
+          "suffix_by_scope": {
+            "canberra": "<!-- footer for Canberra scope (optional) -->",
+            "regional": "<!-- footer for Regional scope (optional) -->"
+          },
+          "store_overrides": {
+            "canberra":   { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+            "tweed":      { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+            "bay":        { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+            "shoalhaven": { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+            "wagga":      { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" }
+          }
+        },
+       "timezone": "Australia/Sydney",
         "lead_times_ss": {
             "sheet_id": "1SS37mFOwe6oXfXuTuHd3e_K27_L3CJpT3ItWbJGl0vU",
             "tabs": {
