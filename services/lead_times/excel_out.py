@@ -11,6 +11,34 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 _LEAD_LABEL_RE = re.compile(r"(?i)\bLead\s*Time\s*:\s*")
 
+# Matches: *** CHRISTMAS CUTOFF <anything> ***
+# - case-insensitive
+# - captures whatever sits between "CUTOFF" and the next *** (non-greedy)
+_CUTOFF_BANNER_RE = re.compile(r"(?is)\*\*\*\s*CHRISTMAS\s+CUTOFF\b(.*?)\*\*\*")
+
+
+def _extract_cutoff_values(text: str) -> list[str]:
+    """Return all cutoff payloads found (the text after 'CUTOFF' and before the closing ***)."""
+    if not isinstance(text, str) or not text:
+        return []
+    return [m.group(1).strip() for m in _CUTOFF_BANNER_RE.finditer(text)]
+
+
+def _normalize_cutoffs(text: str, cut: str) -> str:
+    """
+    Ensure there is at most one cutoff banner. Behaviour:
+      - If `cut` is truthy: remove ALL existing banners, then append ***CHRISTMAS CUTOFF {cut}*** once.
+      - If `cut` is falsy/empty: remove ALL existing banners.
+    """
+    s = "" if text is None else str(text)
+    # Strip all existing banners
+    s = _CUTOFF_BANNER_RE.sub("", s)
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    if cut:
+        banner = f"***CHRISTMAS CUTOFF {cut}***"
+        return f"{s} {banner}".strip() if s else banner
+    return s
+
 
 def _is_nonblank(value) -> bool:
     if value is None:
@@ -184,23 +212,41 @@ def _replace_lead_in_text(
     return text, False
 
 
-def _replace_detailed_lead_line(text: str, lead: str, suffix: str) -> tuple[str, bool]:
+def _ensure_single_cutoff(text: str, cut: str) -> str:
     """
-    (Detailed) Replace the value on the 'Lead Time:' line within `text`, preserving everything else.
-    We match the label case-insensitively and replace the remainder of that line up to newline.
-    Returns (new_text, replaced?).
+    Remove all existing cutoff markers and append exactly one for `cut` if provided.
+    Also squashes excessive whitespace at the seams.
+    """
+    base = text or ""
+    base = _CUTOFF_BANNER_RE.sub("", base)              # strip any existing markers
+    base = re.sub(r"\s{2,}", " ", base).strip()  # normalise spacing
+    if cut:
+        suffix = f"***CHRISTMAS CUTOFF {cut}***"
+        if not base:
+            return suffix
+        # ensure single space before suffix
+        return (base.rstrip() + " " + suffix).rstrip()
+    return base
+
+
+def _replace_detailed_lead_line(text: str, lead: str, cut: str) -> tuple[str, bool]:
+    """
+    Replace the value on the 'Lead Time:' line. Put the (deduped) cutoff on that line.
     """
     if not isinstance(text, str) or not text.strip():
         return text, False
 
-    # Match "Lead Time:" and capture the rest of the line (until \r or \n)
+    # Remove banners anywhere in the block so we re-home it on the Lead Time line
+    text = _CUTOFF_BANNER_RE.sub("", text)
+
     rx = re.compile(r"(?im)(\bLead\s*Time\s*:\s*)([^\r\n]*)")
     m = rx.search(text)
     if not m:
         return text, False
 
-    new_line_value = lead + (f" {suffix}" if suffix and not suffix.startswith(" ") else suffix)
-    new_text = rx.sub(lambda mo: mo.group(1) + new_line_value, text, count=1)
+    # Build the line payload (lead + cutoff normalised ON THAT LINE ONLY)
+    new_line_payload = _ensure_single_cutoff(lead, cut)
+    new_text = rx.sub(lambda mo: mo.group(1) + new_line_payload, text, count=1)
     return new_text, True
 
 
@@ -262,7 +308,6 @@ def inject_and_prune(
             continue
 
         cut = (cutoffs_by_code.get(code, {}).get("cutoff") or "").strip()
-        suffix = f"***CHRISTMAS CUTOFF {cut}***" if cut else ""
 
         if is_summary:
             row, reason = _first_insertion_row_summary(
@@ -280,6 +325,7 @@ def inject_and_prune(
             cell = ws.cell(row=row, column=ins_idx)
 
             if reason == "C_NONBLANK" and isinstance(cell.value, str) and cell.value.strip():
+                # Replace the lead phrase if present
                 new_text, replaced = _replace_lead_in_text(cell.value, lt_text, summary_lead_regex)
                 if not replaced:
                     # If no recognizable lead phrase, use template if provided, else append the lead
@@ -288,15 +334,16 @@ def inject_and_prune(
                     else:
                         new_text = f"{cell.value} {lt_text}"
                     warnings.append(f"[{store_name}/{code}] Summary: pattern not found — used fallback.")
-                if suffix:
-                    # Add suffix once; avoid duplicate spaces
-                    new_text = new_text.rstrip() + " " + suffix
+
+                # --- NEW: ensure only one cutoff marker remains
+                new_text = _ensure_single_cutoff(new_text, cut)
+
                 cell.value = new_text
             else:
                 template_text = summary_template or "{LEAD}"
                 value = _apply_template(template_text, lt_text)
-                if suffix:
-                    value = value.rstrip() + " " + suffix
+                # --- NEW: ensure only one cutoff marker even when writing fresh
+                value = _ensure_single_cutoff(value, cut)
                 cell.value = value
 
         else:
@@ -319,9 +366,9 @@ def inject_and_prune(
                 # Do NOT modify this tab
                 continue
 
-            new_text, replaced = _replace_detailed_lead_line(cell_text, lt_text, suffix)
+            # --- NEW: replace the Lead Time line with deduped cutoff
+            new_text, replaced = _replace_detailed_lead_line(cell_text, lt_text, cut)
             if not replaced:
-                # Shouldn’t happen if _LEAD_LABEL_RE matched, but be safe
                 detailed_missing_seed.append(code)
                 continue
 

@@ -1,0 +1,112 @@
+{% extends "layout.html" %}
+{% block title %}Filter Workbook Tabs{% endblock %}
+
+{% block head %}{% endblock %}
+
+{% block content %}
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for m in messages %}
+          <div class="flash">{{ m }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <h1>Filter Workbook Tabs (by terms)</h1>
+    <p class="hint">
+      Paste one term per line. Upload an .xlsx/.xlsm workbook. Any sheet that
+      does <em>not</em> contain at least one term (substring match) will be removed.
+      Matching is case-insensitive by default. Optionally, also delete non-matching
+      <em>rows</em> below your header rows.
+    </p>
+
+    <form method="post" enctype="multipart/form-data">
+      <div class="row">
+        <label>
+          <strong>Search terms</strong><br>
+          <textarea name="terms" rows="10" cols="50" placeholder="e.g.&#10;Order 12345&#10;PO-7789&#10;Alice Johnson"></textarea>
+        </label>
+        <br>
+        <label>
+          <strong>Workbook (.xlsx / .xlsm)</strong><br>
+          <input type="file" name="workbook" accept=".xlsx,.xlsm" required>
+        </label>
+
+        <div class="checkboxes">
+          <label><input type="checkbox" name="case_sensitive"> Case-sensitive</label>
+          <label><input type="checkbox" name="search_sheet_names"> Also match sheet names</label>
+          <label><input type="checkbox" name="prune_rows"> Remove non-matching data rows</label>
+          <label>
+            Header rows to keep:
+            <input type="number" name="header_rows" min="0" value="2" style="width:6rem;">
+          </label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit">Go</button>
+      </div>
+    </form>
+
+{% if results %}
+  <hr>
+  <h2>Results</h2>
+  <p class="hint">
+    File: <strong>{{ results.source_filename }}</strong>
+    {% if results.is_inventory_items %}&nbsp;•&nbsp;InventoryItems formatting applied (hide J–Z, AD–AG, AL; autofit; B2/C2 asterisk trim).{% endif %}
+    {% if results.prune_rows %}&nbsp;•&nbsp;Pruned non-matching rows (kept first {{ results.header_rows }} header row{{ 's' if results.header_rows|int != 1 }}).{% endif %}
+    &nbsp;•&nbsp;<em>Showing kept sheets only</em>.
+  </p>
+
+  {% if results.sheets and results.kept_count > 0 %}
+    <table border="1" cellpadding="6" cellspacing="0">
+      <thead>
+        <tr>
+          <th>Sheet</th>
+          <th>Matched by</th>
+          <th>Matched terms (preview)</th>
+          <th>
+            Rows{% if results.prune_rows %} (before → after){% endif %}
+          </th>
+          <th>Matching data rows</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in results.sheets %}
+          <tr>
+            <td>{{ s.name }}</td>
+            <td>{{ s.matched_by }}</td>
+            <td>{{ s.matched_terms_preview }}</td>
+            <td>
+              {% if results.prune_rows %}
+                {{ s.rows_before }} → {{ s.rows_after }} (−{{ s.rows_removed }})
+              {% else %}
+                {{ s.rows_before }}
+              {% endif %}
+            </td>
+            <td>{{ s.matching_rows }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <p style="margin-top:0.5rem;">
+      Sheets kept: <strong>{{ results.kept_count }}</strong>
+    </p>
+  {% endif %}
+
+  {% if download_token %}
+    <div class="actions" style="margin-top:1rem;">
+      <a class="button" href="{{ url_for('excel_tools.download_filtered', token=download_token) }}">
+        Download {{ download_name }}
+      </a>
+    </div>
+  {% else %}
+    <p class="hint" style="margin-top:0.75rem;">
+      No output file generated because no sheets matched your terms.
+    </p>
+  {% endif %}
+{% endif %}
+
+{% endblock %}
