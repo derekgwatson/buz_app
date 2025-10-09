@@ -381,6 +381,7 @@ def filter_tabs():
     # Build file in memory
     out = BytesIO()
     wb.save(out)
+    wb.close()
     out.seek(0)
 
     base = uploaded.filename.rsplit(".", 1)[0]

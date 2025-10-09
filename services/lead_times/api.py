@@ -25,8 +25,16 @@ _CUTOFF_WORD_RE = re.compile(r"cut\s*off", re.I)
 
 
 # --- Banner + row/column helpers ---
+# Exactly: optional leading \n or real newline, then ***CHRISTMAS CUTOFF d/m/yy ***
+_CUTOFF_BANNER_RE = re.compile(
+    r'(?:\\n|[\r\n])?\*{3}CHRISTMAS CUTOFF\s+\d{1,2}/\d{1,2}/\d{2}\s*\*{3}'
+)
 
-_CUTOFF_BANNER_RE = re.compile(r"(?i)\*{3}\s*christmas\s*cut\s*off.*?\*{3}")
+
+# Also catch plain text forms like "Christmas cutoff: 6/11/25" or "Xmas cut-off 6/11"
+_CUTOFF_PLAIN_RE = re.compile(
+    r"(?is)\b(?:christmas|xmas)\s*cut[\s-]*off\s*[:\-]?\s*.*?(?=(?:\\n|[\r\n])|$)"
+)
 
 
 # Summary "ready in ..." block:
@@ -70,6 +78,22 @@ _DETAILED_LEAD_LINE_RE = re.compile(
         (?P<eol> (?:\\n|[\r\n]) | $ )
     '''
 )
+
+
+def _deep_strip_banners(obj):
+    """
+    Recursively strip banners from any str inside dict/list/tuple structures.
+    Safe to run on leads_by_code before inject_and_prune.
+    """
+    if isinstance(obj, dict):
+        return {k: _deep_strip_banners(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_deep_strip_banners(v) for v in obj]
+    if isinstance(obj, tuple):
+        return tuple(_deep_strip_banners(v) for v in obj)
+    if isinstance(obj, str):
+        return _strip_only_banner(obj)
+    return obj
 
 
 def _lit(s: str) -> str:
@@ -125,8 +149,8 @@ def _normalize_lead_line_spacing_from_template(
     if not output_path.exists():
         return 0
 
-    wb_out = load_workbook(filename=str(output_path), keep_vba=True, data_only=True)
-    wb_tpl = load_workbook(filename=str(template_path), keep_vba=True, data_only=True)
+    wb_out = load_workbook(filename=str(output_path), keep_vba=False, data_only=True)
+    wb_tpl = load_workbook(filename=str(template_path), keep_vba=False, data_only=True)
 
     changed = 0
     tgt_col = _col1(target_col_letter)
@@ -157,17 +181,16 @@ def _normalize_lead_line_spacing_from_template(
 
         # --- prefix: ALWAYS from the uploaded Detailed input; but preserve any injected banner
         pre_out = s_out[:start]
+
+        # prefix: take it from template up to its Lead Time, but ensure it's banner-free
         pre_tpl = s_tpl[:span_tpl[0]] if span_tpl else ""  # input’s prefix up to its Lead Time:
-
-        # pull a banner (if present) from the *output* prefix, so we don’t lose it
-        m_banner = re.match(r'^(?:\\n|[\r\n])\*{3}.*?\*{3}(?:\\n|[\r\n])?', pre_out, flags=re.I)
-        banner = m_banner.group(0) if m_banner else ""
-
-        prefix_use = _lit((banner or "") + pre_tpl)
+        pre_tpl = _strip_only_banner(pre_tpl)
+        prefix_use = _lit(pre_tpl)
 
         # --- tail: ALWAYS from the uploaded Detailed input (it can vary per tab);
         # if the input has no Lead Time line, fall back to the output tail
-        tail_use = s_tpl[span_tpl[2]:] if span_tpl else s_out[eol_end:]
+        raw_tail = s_tpl[span_tpl[2]:] if span_tpl else s_out[eol_end:]
+        tail_use = _strip_only_banner(raw_tail)
 
         # rebuild ONLY the lead-time line (value_out stays as written by injector)
         new_segment = _lit(header_use) + value_out + "\\n"
@@ -183,8 +206,8 @@ def _normalize_lead_line_spacing_from_template(
     return changed
 
 
-def _strip_cutoff_banner(s: str | None) -> str:
-    """Remove any ***CHRISTMAS CUTOFF ...*** chunk anywhere."""
+def _strip_only_banner(s: str | None) -> str:
+    """Remove only the exact CHRISTMAS CUTOFF banner instances; leave everything else intact."""
     return _CUTOFF_BANNER_RE.sub("", "" if s is None else str(s))
 
 
@@ -219,35 +242,63 @@ def _first_row_do_not_show_false(ws, do_not_show_col_letter: str, header_row_1ba
     return -1
 
 
+def _strip_banners_in_workbook(
+        *,
+        output_path: Path,
+        do_not_show_col_letter: str,
+        header_row_1based: int,
+        target_col_letter: str,
+) -> int:
+    """
+    For each sheet, remove ONLY the banner from the target cell of the first visible row.
+    Returns count of tabs changed.
+    """
+    if not output_path.exists():
+        return 0
+
+    wb = load_workbook(filename=str(output_path), keep_vba=False, data_only=True)
+    changed = 0
+    col = _col1(target_col_letter)
+
+    for code in list(wb.sheetnames):
+        ws = wb[code]
+        r = _first_row_do_not_show_false(ws, do_not_show_col_letter, header_row_1based)
+        if r == -1:
+            continue
+
+        cell = ws.cell(row=r, column=col)
+        before = "" if cell.value is None else str(cell.value)
+        after = _strip_only_banner(before)
+        if after != before:
+            cell.value = after
+            changed += 1
+
+    if changed:
+        wb.save(str(output_path))
+    return changed
+
+
 def _apply_banner_detailed_text(old: str, cutoff: str | None) -> str:
     """
-    Detailed: if cutoff present, produce:
-      \n***CHRISTMAS CUTOFF {date}***<body>
-    (no trailing \n after the banner; body keeps its own leading \n)
+    Detailed policy:
+      1) Remove ONLY our exact banner wherever it sits.
+      2) If cutoff present, prepend '\n***CHRISTMAS CUTOFF d/m/yy ***' to the start.
+      3) Do not touch any other spacing/newlines in the body.
     """
-    base = _strip_cutoff_banner(old or "")
+    body = _strip_only_banner(old or "")
     cutoff = (cutoff or "").strip()
     if not cutoff:
-        return base
-
-    # ensure the next section has its leading \n; if not, add one
-    if not re.match(r'^(?:\\n|[\r\n])', base):
-        base = "\\n" + base
-
-    return f"\\n{_banner(cutoff)}{base}"
+        return body
+    return f"\\n***CHRISTMAS CUTOFF {cutoff} ***{body}"
 
 
 def _apply_banner_summary_text(old: str, cutoff: str | None) -> str:
-    """
-    Summary: remove any existing banner; if cutoff present, append ' ***…***' at end.
-    (Ensure exactly one separating space if the cell doesn't already end with whitespace.)
-    """
-    base = _strip_cutoff_banner(old)
+    base = _strip_only_banner(old or "")
     cutoff = (cutoff or "").strip()
     if not cutoff:
         return base
-    sep = "" if (len(base) > 0 and base[-1].isspace()) else " "
-    return f"{base}{sep}{_banner(cutoff)}"
+    sep = "" if (len(base) == 0 or base[-1].isspace()) else " "
+    return f"{base}{sep}***CHRISTMAS CUTOFF {cutoff} ***"
 
 
 def _canon(s: str) -> str:
@@ -284,7 +335,7 @@ def _apply_banners_to_workbook(
     if not output_path.exists():
         return 0
 
-    wb = load_workbook(filename=str(output_path), keep_vba=True, data_only=True)
+    wb = load_workbook(filename=str(output_path), keep_vba=False, data_only=True)
     changed = 0
     target_col = _col1(target_col_letter)
 
@@ -332,8 +383,8 @@ def _prune_unchanged_tabs_cell_based(
     if not output_path.exists():
         return pruned
 
-    wb_out = load_workbook(filename=str(output_path), keep_vba=True, data_only=True)
-    wb_tpl = load_workbook(filename=str(template_path), keep_vba=True, data_only=True)
+    wb_out = load_workbook(filename=str(output_path), keep_vba=False, data_only=True)
+    wb_tpl = load_workbook(filename=str(template_path), keep_vba=False, data_only=True)
 
     target_col = _col1(target_col_letter)
     common = set(wb_out.sheetnames) & set(wb_tpl.sheetnames)
@@ -385,7 +436,7 @@ def _valid_codes_from_templates(*paths: str) -> set[str]:
     """Union of sheet names from the uploaded templates (exact, case-sensitive)."""
     codes: set[str] = set()
     for p in paths:
-        wb = load_workbook(filename=p, keep_vba=True, data_only=True)
+        wb = load_workbook(filename=p, keep_vba=False, data_only=True)
         codes.update(wb.sheetnames)
     return codes
 
@@ -593,7 +644,6 @@ def run_publish(
 
     # Text templates/regex from config (with safe defaults)
     tmpl = lead_times_cfg.get("templates", {})
-    summary_lead_regex = tmpl.get("summary_lead_regex") or _SUMMARY_READY_BLOCK_RE
 
     # IMPORTANT: Avoid formatting drift. Let excel_out do minimal edits.
     # Keep this template empty by default (we'll prune unchanged tabs post-write).
@@ -605,21 +655,32 @@ def run_publish(
 
     # Detailed
     if "CANBERRA" in scope:
+        leads_clean = _deep_strip_banners(merged["CANBERRA"].lead_rows)
+
         res: InjectResult = inject_and_prune(
             template_path=Path(detailed_template_path),
-            out_path=outname("canberra_detailed", "Quote_Detailed_Canberra_{YYYYMMDD}.xlsm"),
+            out_path=outname("canberra_detailed", "Quote_Detailed_Canberra_{YYYYMMDD}.xlsx"),
             store_name="CANBERRA",
-            leads_by_code=merged["CANBERRA"].lead_rows,
-            cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
+            leads_by_code=leads_clean,
             insertion_col_letter=ins_cols["detailed"],   # "B"
             anchor_col_letter=anchor_col_letter,         # "F"
             anchor_header_row=anchor_header_row,         # 2
             control_codes=merged["CANBERRA"].control_codes,
             warnings=warnings,
             workbook_kind="Detailed",
-            summary_lead_regex=None,
             detailed_prefix_template=detailed_prefix_template,
         )
+
+        _normalize_lead_line_spacing_from_template(
+            template_path=Path(detailed_template_path),
+            output_path=Path(res.saved_path),
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],  # "B"
+            warnings=warnings,
+            label="Detailed CANBERRA",
+        )
+
         _apply_banners_to_workbook(
             output_path=Path(res.saved_path),
             cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
@@ -630,15 +691,7 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["detailed"],
         )
-        _normalize_lead_line_spacing_from_template(
-            template_path=Path(detailed_template_path),
-            output_path=Path(res.saved_path),
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],  # "B"
-            warnings=warnings,
-            label="Detailed CANBERRA",
-        )
+
         _prune_unchanged_tabs_cell_based(
             template_path=Path(detailed_template_path),
             output_path=Path(res.saved_path),
@@ -648,16 +701,18 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["detailed"],
         )
+
         review_detailed |= set(res.review_codes)
         files["canberra_detailed"] = os.path.basename(str(res.saved_path))
 
     if "REGIONAL" in scope:
+        leads_clean = _deep_strip_banners(merged["REGIONAL"].lead_rows)
+
         res: InjectResult = inject_and_prune(
             template_path=Path(detailed_template_path),
-            out_path=outname("regional_detailed", "Quote_Detailed_Regional_{YYYYMMDD}.xlsm"),
+            out_path=outname("regional_detailed", "Quote_Detailed_Regional_{YYYYMMDD}.xlsx"),
             store_name="REGIONAL",
-            leads_by_code=merged["REGIONAL"].lead_rows,
-            cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
+            leads_by_code=leads_clean,
             insertion_col_letter=ins_cols["detailed"],
             anchor_col_letter=anchor_col_letter,
             anchor_header_row=anchor_header_row,
@@ -666,6 +721,17 @@ def run_publish(
             workbook_kind="Detailed",
             detailed_prefix_template=detailed_prefix_template,
         )
+
+        _normalize_lead_line_spacing_from_template(
+            template_path=Path(detailed_template_path),
+            output_path=Path(res.saved_path),
+            do_not_show_col_letter=anchor_col_letter,
+            header_row_1based=anchor_header_row,
+            target_col_letter=ins_cols["detailed"],  # "B"
+            warnings=warnings,
+            label="Detailed REGIONAL",
+        )
+
         _apply_banners_to_workbook(
             output_path=Path(res.saved_path),
             cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
@@ -676,15 +742,7 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["detailed"],
         )
-        _normalize_lead_line_spacing_from_template(
-            template_path=Path(detailed_template_path),
-            output_path=Path(res.saved_path),
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],  # "B"
-            warnings=warnings,
-            label="Detailed REGIONAL",
-        )
+
         _prune_unchanged_tabs_cell_based(
             template_path=Path(detailed_template_path),
             output_path=Path(res.saved_path),
@@ -694,26 +752,27 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["detailed"],
         )
+
         review_detailed |= set(res.review_codes)
         files["regional_detailed"] = os.path.basename(str(res.saved_path))
 
     # Summary
     if "CANBERRA" in scope:
+        leads_clean = _deep_strip_banners(merged["CANBERRA"].lead_rows)
+
         res: InjectResult = inject_and_prune(
             template_path=Path(summary_template_path),
-            out_path=outname("canberra_summary", "Quote_Summary_Canberra_{YYYYMMDD}.xlsm"),
+            out_path=outname("canberra_summary", "Quote_Summary_Canberra_{YYYYMMDD}.xlsx"),
             store_name="CANBERRA",
-            leads_by_code=merged["CANBERRA"].lead_rows,
-            cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
+            leads_by_code=leads_clean,
             insertion_col_letter=ins_cols["summary"],    # "C"
             anchor_col_letter=anchor_col_letter,         # "F"
             anchor_header_row=anchor_header_row,         # 2
             control_codes=merged["CANBERRA"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",
-            summary_lead_regex=summary_lead_regex.pattern if hasattr(summary_lead_regex,
-                                                                     "pattern") else summary_lead_regex,
         )
+
         _apply_banners_to_workbook(
             output_path=Path(res.saved_path),
             cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
@@ -724,6 +783,7 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["summary"],
         )
+
         _prune_unchanged_tabs_cell_based(
             template_path=Path(summary_template_path),
             output_path=Path(res.saved_path),
@@ -733,25 +793,26 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["summary"],
         )
+
         review_summary |= set(res.review_codes)
         files["canberra_summary"] = os.path.basename(str(res.saved_path))
 
     if "REGIONAL" in scope:
+        leads_clean = _deep_strip_banners(merged["REGIONAL"].lead_rows)
+
         res: InjectResult = inject_and_prune(
             template_path=Path(summary_template_path),
-            out_path=outname("regional_summary", "Quote_Summary_Regional_{YYYYMMDD}.xlsm"),
+            out_path=outname("regional_summary", "Quote_Summary_Regional_{YYYYMMDD}.xlsx"),
             store_name="REGIONAL",
-            leads_by_code=merged["REGIONAL"].lead_rows,
-            cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
+            leads_by_code=leads_clean,
             insertion_col_letter=ins_cols["summary"],
             anchor_col_letter=anchor_col_letter,
             anchor_header_row=anchor_header_row,
             control_codes=merged["REGIONAL"].control_codes,
             warnings=warnings,
             workbook_kind="Summary",
-            summary_lead_regex=summary_lead_regex.pattern if hasattr(summary_lead_regex,
-                                                                     "pattern") else summary_lead_regex,
         )
+
         _apply_banners_to_workbook(
             output_path=Path(res.saved_path),
             cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
@@ -762,6 +823,7 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["summary"],
         )
+
         _prune_unchanged_tabs_cell_based(
             template_path=Path(summary_template_path),
             output_path=Path(res.saved_path),
@@ -771,6 +833,7 @@ def run_publish(
             header_row_1based=anchor_header_row,
             target_col_letter=ins_cols["summary"],
         )
+
         review_summary |= set(res.review_codes)
         files["regional_summary"] = os.path.basename(str(res.saved_path))
 
@@ -779,7 +842,7 @@ def run_publish(
     if review_detailed:
         p = save_review_only_workbook(
             template_path=Path(detailed_template_path),
-            out_path=outname("detailed_review", "Quote_Detailed_REVIEW_{YYYYMMDD}.xlsm"),
+            out_path=outname("detailed_review", "Quote_Detailed_REVIEW_{YYYYMMDD}.xlsx"),
             review_codes=review_detailed,
             warnings=warnings,
         )
@@ -790,7 +853,7 @@ def run_publish(
     if review_summary:
         p = save_review_only_workbook(
             template_path=Path(summary_template_path),
-            out_path=outname("summary_review", "Quote_Summary_REVIEW_{YYYYMMDD}.xlsm"),
+            out_path=outname("summary_review", "Quote_Summary_REVIEW_{YYYYMMDD}.xlsx"),
             review_codes=review_summary,
             warnings=warnings,
         )

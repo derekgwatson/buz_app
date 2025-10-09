@@ -77,7 +77,7 @@ def _compose_html(scope: str, store: str, body_html: str) -> str:
 @lead_times_bp.route("/", methods=["GET", "POST"])
 def start():
     """
-    Lead Times entry point. Accepts two .xlsm uploads and produces HTML + files.
+    Lead Times entry point. Accepts two Excel uploads and produces HTML + files.
     """
     # Pull the whole lead_times dict from file-backed config (preferred),
     # falling back to app.config["lead_times"] if needed.
@@ -96,7 +96,7 @@ def start():
     detailed = request.files.get("detailed_template")
     summary = request.files.get("summary_template")
     if not detailed or not summary:
-        flash("Please upload both Detailed and Summary .xlsm files.")
+        flash("Please upload both Detailed and Summary Excel files.")
         return redirect(request.url)
 
     tmpdir = tempfile.mkdtemp(prefix="lead_times_")
