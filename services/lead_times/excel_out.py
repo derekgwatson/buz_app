@@ -369,10 +369,8 @@ def inject_and_prune(
 
             # Update the lead that follows "Ready in"
             new_text = rewrite_summary_preserving_context(original, lt_text)
-            if new_text == original:
-                _review(review_codes, warnings, store_name, code, "Summary: lead unchanged after 'Ready in'")
-                # don't delete here if pruning is external
-            cell.value = new_text
+            if new_text != original:
+                cell.value = new_text
 
         else:
             # === DETAILED ===
@@ -412,9 +410,8 @@ def inject_and_prune(
 
                 # Replace only the 'Lead Time:' value, then normalize banners for the whole cell
                 new_text = rewrite_detailed_preserving_context(original, lt_text)
-                if new_text == original:
-                    _review(review_codes, warnings, store_name, code, "Detailed: lead unchanged after 'Lead Time:'")
-                cell.value = new_text
+                if new_text != original:
+                    cell.value = new_text
 
     # Keep at least one visible sheet
     if not any(s.sheet_state == "visible" for s in wb.worksheets):
@@ -422,14 +419,7 @@ def inject_and_prune(
         stub["A1"] = f"{store_name} — All tabs unchanged (lead times match current)."
         stub.sheet_state = "visible"
 
-    # Save with .xlsm if workbook has macros
-    final_path = out_path
-    try:
-        has_macros = getattr(wb, "vba_archive", None) is not None
-    except Exception:
-        has_macros = False
-    if has_macros and out_path.suffix.lower() != ".xlsm":
-        final_path = out_path.with_suffix(".xlsm")
+    final_path = out_path.with_suffix(".xlsx")
     wb.save(str(final_path))
     wb.close()
 
@@ -459,14 +449,7 @@ def save_review_only_workbook(
     wb = load_workbook(filename=str(template_path), keep_vba=False, data_only=True)
     _prune_tabs_safe(wb, keep_names=set(review_codes), warnings=warnings)
 
-    final = out_path
-    try:
-        has_macros = getattr(wb, "vba_archive", None) is not None
-    except Exception:
-        has_macros = False
-    if has_macros and out_path.suffix.lower() != ".xlsm":
-        final = out_path.with_suffix(".xlsm")
-
+    final = out_path.with_suffix(".xlsx")
     wb.save(str(final))
     wb.close()
     return final
