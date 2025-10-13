@@ -351,7 +351,7 @@ def inject_and_prune(
 
         if is_summary:
             # --- SUMMARY ---
-            ready_row = _find_summary_ready_row(ws, ins_idx, anchor_header_row, ready_phrase="Ready in")
+            ready_row = _find_summary_ready_row(ws, ins_idx, anchor_header_row)
             if ready_row is None:
                 warnings.append(
                     f"[{store_name}/{code}] Summary: no 'Ready in' in {insertion_col_letter} — needs review."
