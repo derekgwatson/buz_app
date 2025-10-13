@@ -6,15 +6,17 @@ import os
 import shutil
 import tempfile
 from markupsafe import Markup
+from typing import Dict, Tuple, List
+
 from services.google_sheets_service import GoogleSheetsService
 from services.lead_times.links import tab_url
 from services.config_bridge import get_cfg, where_cfg
 from services.lead_times.api import run_publish
 
+
 lead_times_bp = Blueprint("lead_times", __name__, url_prefix="/tools/lead_times")
 
 
-# app/routes/lead_times.py
 def _base_output_dir() -> str:
     """
     Prefer global app config first (these are NOT under lead_times).
@@ -52,13 +54,13 @@ def _compose_html(scope: str, store: str, body_html: str) -> str:
     store_key = (store or "").lower()
 
     parts = [
-        str(store_cfg.get("prefix", "") or ""),           # 0 store prefix (moved earlier)
-        str(prefix_by_scope.get(s, "") or ""),            # 1 scope prefix
-        str(global_prefix or ""),                         # 2 global prefix
-        str(body_html or ""),                             # 3 BODY (unchanged)
-        str(global_suffix or ""),                         # 4 global suffix (moved earlier)
-        str(suffix_by_scope.get(s, "") or ""),            # 5 scope suffix
-        str(store_cfg.get("suffix", "") or ""),           # 6 store suffix (last)
+        str(store_cfg.get("prefix", "") or ""),            # 0 store prefix
+        str(prefix_by_scope.get(s, "") or ""),             # 1 scope prefix
+        str(global_prefix or ""),                          # 2 global prefix
+        str(body_html or ""),                              # 3 BODY (unchanged)
+        str(global_suffix or ""),                          # 4 global suffix
+        str(suffix_by_scope.get(s, "") or ""),             # 5 scope suffix
+        str(store_cfg.get("suffix", "") or ""),            # 6 store suffix
     ]
 
     def _apply_tokens(text: str) -> str:
@@ -68,10 +70,23 @@ def _compose_html(scope: str, store: str, body_html: str) -> str:
                 .replace("{{STORE_UPPER}}", store_key.upper())
         )
 
-    out = []
+    out: List[str] = []
     for i, p in enumerate(parts):
         out.append(_apply_tokens(p) if i != 3 else p)  # don’t touch BODY
     return "".join(out).strip()
+
+
+def _normalise_scopes(raw_list: List[str]) -> Tuple[str, ...]:
+    """
+    Accepts 'CANBERRA'/'REGIONAL' or lower-case variants and returns ('canberra', 'regional') subset.
+    """
+    norm = []
+    for s in raw_list or []:
+        v = (s or "").strip().lower()
+        if v in ("canberra", "regional"):
+            norm.append(v)
+    # default to both if nothing selected
+    return tuple(norm or ("canberra", "regional"))
 
 
 @lead_times_bp.route("/", methods=["GET", "POST"])
@@ -90,7 +105,8 @@ def start():
         )
 
     if request.method == "GET":
-        cutoff_tab = get_cfg("lead_times", "cutoffs", "tab")
+        # FIX: get_cfg is already rooted at lead_times; don't prefix with 'lead_times'
+        cutoff_tab = get_cfg("cutoffs", "tab")
         return render_template("lead_times_start.html", cutoff_tab=cutoff_tab)
 
     detailed = request.files.get("detailed_template")
@@ -101,13 +117,13 @@ def start():
 
     tmpdir = tempfile.mkdtemp(prefix="lead_times_")
     try:
-        d_path = os.path.join(tmpdir, secure_filename(detailed.filename))
-        s_path = os.path.join(tmpdir, secure_filename(summary.filename))
+        d_path = os.path.join(tmpdir, secure_filename(detailed.filename or "detailed.xlsx"))
+        s_path = os.path.join(tmpdir, secure_filename(summary.filename or "summary.xlsx"))
         detailed.save(d_path)
         summary.save(s_path)
 
         svc = GoogleSheetsService()
-        scope = request.form.getlist("scope") or ["CANBERRA", "REGIONAL"]
+        scopes = _normalise_scopes(request.form.getlist("scope"))
 
         res = run_publish(
             gsheets_service=svc,
@@ -115,24 +131,26 @@ def start():
             detailed_template_path=d_path,
             summary_template_path=s_path,
             save_dir=_base_output_dir(),
-            scope=tuple(scope),
+            scope=scopes,
         )
 
-        # Body-only HTML (existing behavior)
+        # Compose per-scope HTML (keep existing Canberra variables for template compatibility)
         body_canberra = res["html"].get("canberra", "")
         body_regional = res["html"].get("regional", "")
 
-        full_canberra = _compose_html("canberra", "canberra", body_canberra)
-        full_regional = _compose_html("regional", "regional", body_regional)
+        full_canberra = _compose_html("canberra", "canberra", body_canberra) if body_canberra else ""
+        # Store name for regional can be chosen later; default to 'regional'
+        full_regional = _compose_html("regional", "regional", body_regional) if body_regional else ""
 
         return render_template(
             "lead_times_result.html",
-            warnings=res["warnings"],
+            warnings=res.get("warnings", []),
             html_canberra=body_canberra,
-            html_regional=body_regional,
             full_html_canberra=full_canberra,
-            full_html_regional=full_regional,
-            files=res["files"],
+            html_regional=body_regional,            # optional; won’t break existing templates
+            full_html_regional=full_regional,       # optional
+            files=res.get("files", []),
+            scopes=scopes,
         )
 
     except ValueError as exc:
@@ -149,19 +167,18 @@ def open_sheet():
     """
     svc = GoogleSheetsService()
 
-    kind = (request.args.get("kind") or "lead").lower()
+    kind = (request.args.get("kind") or "lead").strip().lower()
     tab_param = (request.args.get("tab") or "").strip()
 
     if kind == "cutoff":
-        sheet_id = get_cfg("cutoffs", "sheet_id")
+        sheet_id = get_cfg("cutoffs", "sheet_id")   # FIX: no 'lead_times' prefix
         tab_name = tab_param or get_cfg("cutoffs", "tab")
         return redirect(tab_url(svc, sheet_id, tab_name), code=302)
 
-    # default: lead times (note: config key is 'lead_times_ss')
-    sheet_id = get_cfg("lead_times", "lead_times_ss", "sheet_id")
-    tabs = get_cfg("lead_times", "lead_times_ss", "tabs") or {}
-    if tab_param.lower() in ("canberra", "regional"):
-        tab_name = tabs[tab_param.lower()]
-    else:
-        tab_name = tab_param or tabs["canberra"]
+    # default: lead times (config key is 'lead_times_ss')
+    sheet_id = get_cfg("lead_times_ss", "sheet_id")   # FIX: no 'lead_times' prefix
+    tabs: Dict[str, str] = get_cfg("lead_times_ss", "tabs") or {}
+    # Choose tab: explicit scope in ?tab=canberra|regional, else default to canberra
+    tab_key = (tab_param or "canberra").strip().lower()
+    tab_name = tabs.get(tab_key) or tabs.get("canberra") or next(iter(tabs.values()), "")
     return redirect(tab_url(svc, sheet_id, tab_name), code=302)

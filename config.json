@@ -692,30 +692,30 @@
     },
     "lead_times": {
         "stores": {
-          "canberra":   "canberra",
-          "tweed":      "regional",
-          "bay":        "regional",
-          "shoalhaven": "regional",
-          "wagga":      "regional"
+            "canberra":   "canberra",
+            "tweed":      "regional",
+            "bay":        "regional",
+            "shoalhaven": "regional",
+            "wagga":      "regional"
         },
         "html": {
-          "prefix": "<!-- GLOBAL header for all stores (optional) -->",
-          "suffix": "<!-- GLOBAL footer for all stores (optional) -->",
-          "prefix_by_scope": {
-            "canberra": "<!-- header for Canberra scope (optional) -->",
-            "regional": "<!-- header for Regional scope (optional) -->"
-          },
-          "suffix_by_scope": {
-            "canberra": "<!-- footer for Canberra scope (optional) -->",
-            "regional": "<!-- footer for Regional scope (optional) -->"
-          },
-          "store_overrides": {
-            "canberra":   { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
-            "tweed":      { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
-            "bay":        { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
-            "shoalhaven": { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
-            "wagga":      { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" }
-          }
+            "prefix": "<!-- GLOBAL header for all stores (optional) -->",
+            "suffix": "<!-- GLOBAL footer for all stores (optional) -->",
+            "prefix_by_scope": {
+                "canberra": "<!-- header for Canberra scope (optional) -->",
+                "regional": "<!-- header for Regional scope (optional) -->"
+            },
+            "suffix_by_scope": {
+                "canberra": "<!-- footer for Canberra scope (optional) -->",
+                "regional": "<!-- footer for Regional scope (optional) -->"
+            },
+            "store_overrides": {
+                "canberra":   { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+                "tweed":      { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+                "bay":        { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+                "shoalhaven": { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" },
+                "wagga":      { "prefix": "<p><b>Welcome to Watson Blinds – {{STORE}}</b></p>" }
+            }
         },
        "timezone": "Australia/Sydney",
         "lead_times_ss": {
@@ -753,8 +753,6 @@
         "filename_patterns": {
             "canberra_detailed": "Quote_Detailed_Canberra_{YYYYMMDD}_{HHMMSS}.xlsx",
             "canberra_summary": "Quote_Summary_Canberra_{YYYYMMDD}_{HHMMSS}.xlsx",
-            "regional_detailed": "Quote_Detailed_Regional_{YYYYMMDD}_{HHMMSS}.xlsx",
-            "regional_summary": "Quote_Summary_Regional_{YYYYMMDD}_{HHMMSS}.xlsx",
             "detailed_review": "Quote_Detailed_REVIEW_{YYYYMMDD}_{HHMMSS}.xlsm",
             "summary_review":  "Quote_Summary_REVIEW_{YYYYMMDD}_{HHMMSS}.xlsm"
         },
