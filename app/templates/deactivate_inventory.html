@@ -1,0 +1,41 @@
+{% extends "layout.html" %}
+{% block title %}Deactivate Inventory Items — Build Upload{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 720px;">
+  <h2>Deactivate Inventory Items — Build Upload</h2>
+  <p class="text-muted">
+    Upload a Buz inventory/pricing workbook (.xlsx or .xlsm). Macros are ignored.
+    For each tab: rows with <code>deprecated</code> in <strong>AK</strong> and a Last Edit Date in
+    <strong>AN</strong> older than the cutoff are retained; their Operation <strong>AO</strong> is set to <code>D</code>.
+    Only header rows 1–2 plus matching rows are kept. Tabs with no matches are omitted.
+  </p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="mt-2">
+        {% for category, message in messages %}
+          <div class="alert alert-{{ 'warning' if category=='warning' else category }} flash-compact">
+            {{ message|safe }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <form action="{{ url_for('excel_tools.deactivate_deprecated_run') }}" method="post" enctype="multipart/form-data" class="mt-3">
+    <div class="mb-3">
+      <label for="workbook" class="form-label">Workbook (.xlsx or .xlsm)</label>
+      <input required class="form-control" type="file" id="workbook" name="workbook" accept=".xlsx,.xlsm">
+    </div>
+
+    <div class="mb-3">
+      <label for="cutoff_days" class="form-label">Cutoff (days)</label>
+      <input class="form-control" type="number" id="cutoff_days" name="cutoff_days" value="40" min="0" step="1">
+      <div class="form-text">Rows with Last Edit &gt; this many days ago match.</div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Generate Upload</button>
+  </form>
+</div>
+{% endblock %}

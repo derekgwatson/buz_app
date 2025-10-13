@@ -6,7 +6,6 @@ import re
 import time
 import uuid
 import tempfile
-from datetime import datetime
 from io import BytesIO
 from typing import Iterable, List, Tuple, Dict, Any
 
@@ -20,8 +19,13 @@ from flask import (
     url_for,
     after_this_request,
 )
+from datetime import datetime, timezone
+from pathlib import Path
+
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter, column_index_from_string
+from services.deactivate_inventory import generate_deactivation_workbook
+
 
 excel_tools_bp = Blueprint("excel_tools", __name__, url_prefix="/excel")
 
@@ -428,4 +432,62 @@ def download_filtered(token: str):
         as_attachment=True,
         download_name=download_name,
         mimetype=mimetype,
+    )
+
+
+@excel_tools_bp.get("/deactivate-deprecated")
+def deactivate_deprecated() -> str:
+    return render_template("deactivate_inventory.html")
+
+
+@excel_tools_bp.post("/deactivate-deprecated/run")
+def deactivate_deprecated_run():
+    upload = request.files.get("workbook")
+    if not upload or not upload.filename:
+        flash("Please choose a workbook (.xlsx or .xlsm). Macros will be ignored.", "danger")
+        return render_template("deactivate_inventory.html"), 400
+
+    try:
+        cutoff_days = int((request.form.get("cutoff_days") or "60").strip())
+        if cutoff_days < 0:
+            raise ValueError
+    except Exception:
+        flash("Cutoff days must be a non-negative integer.", "danger")
+        return render_template("deactivate_inventory.html"), 400
+
+    data = upload.read()
+    if not data:
+        flash("Uploaded file is empty.", "danger")
+        return render_template("deactivate_inventory.html"), 400
+
+    try:
+        out_buf, matched_stats = generate_deactivation_workbook(
+            input_bytes=data,
+            cutoff_days=cutoff_days,
+            now_utc=datetime.now(timezone.utc),
+        )
+    except Exception as exc:
+        flash(f"Failed to process workbook: {exc}", "danger")
+        return render_template("deactivate_inventory.html"), 400
+
+    stem = Path(upload.filename).stem or "inventory_items"
+    out_name = f"{stem}__deactivate_{cutoff_days}d.xlsx"
+
+    if not matched_stats:
+        flash("No rows matched. No sheets created in the output.", "warning")
+    else:
+        total_rows = sum(matched_stats.values())
+        flash(
+            f"Matched {total_rows} rows across {len(matched_stats)} sheet(s): "
+            + ", ".join(f"{k}: {v}" for k, v in matched_stats.items()),
+            "success",
+        )
+
+    out_buf.seek(0)
+    return send_file(
+        out_buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=out_name,
+        max_age=0,
     )
