@@ -443,8 +443,9 @@ def deactivate_deprecated() -> str:
 @excel_tools_bp.post("/deactivate-deprecated/run")
 def deactivate_deprecated_run():
     upload = request.files.get("workbook")
-    if not upload or not upload.filename:
-        flash("Please choose a workbook (.xlsx or .xlsm). Macros will be ignored.", "danger")
+    lower = (upload.filename or "").lower()
+    if not (lower.endswith(".xlsx") or lower.endswith(".xlsm")):
+        flash("Please upload an .xlsx or .xlsm workbook.", "danger")
         return render_template("deactivate_inventory.html"), 400
 
     try:
@@ -484,10 +485,12 @@ def deactivate_deprecated_run():
         )
 
     out_buf.seek(0)
-    return send_file(
+    resp = send_file(
         out_buf,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=out_name,
         max_age=0,
     )
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
