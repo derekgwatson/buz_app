@@ -7,13 +7,12 @@ import os
 import time
 
 from openpyxl import load_workbook
-from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 
 # ---- Lead-time rewrites that preserve all surrounding text exactly ----
 import re
 
-_LEAD_HEADER_RE = re.compile(r'(?i)lead\s*time\s*:\s*')
+_LEAD_HEADER_RE = re.compile(r'(?i)\blead\s*time\s*:\s*')
 _READY_IN_RE = re.compile(r'(?i)\bready\s*in\b')
 
 
@@ -46,16 +45,12 @@ def _tab_is_reddish(ws: Worksheet) -> bool:
     return r >= 180 and (r - max(g, b)) >= 40  # clearly red-dominant
 
 
-_READY_IN_CELL_RE = re.compile(r'(?i)\bready\s*in\b')
-_LEAD_HEADER_CELL_RE = re.compile(r'(?i)\blead\s*time\s*:\s*')
-
-
-def _find_summary_ready_row(ws: Worksheet, ins_idx: int, header_row: int, ready_phrase: str = "Ready in") -> Optional[int]:
+def _find_summary_ready_row(ws: Worksheet, ins_idx: int, header_row: int) -> Optional[int]:
     start = max(1, int(header_row)) + 1
     max_row = ws.max_row or start
     for r in range(start, max_row + 1):
         v = ws.cell(row=r, column=ins_idx).value
-        if isinstance(v, str) and _READY_IN_CELL_RE.search(v):
+        if isinstance(v, str) and _READY_IN_RE.search(v):
             return r
     return None
 
@@ -65,7 +60,7 @@ def _find_detailed_lead_row(ws: Worksheet, ins_idx: int, header_row: int) -> Opt
     max_row = ws.max_row or start
     for r in range(start, max_row + 1):
         v = ws.cell(row=r, column=ins_idx).value
-        if isinstance(v, str) and _LEAD_HEADER_CELL_RE.search(v):
+        if isinstance(v, str) and _LEAD_HEADER_RE.search(v):
             return r
     return None
 

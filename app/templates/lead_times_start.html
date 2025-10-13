@@ -2,144 +2,154 @@
 {% block title %}Lead Times Updater{% endblock %}
 {% block head %}
 <style>
-  .quick-links-inline { margin: 8px 0 12px; }
-  .quick-links-inline li { margin: 0 8px 6px 0; }
-  .quick-links-inline .link-pill {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: rgba(255,255,255,.08); /* works on light/dark themes */
-    text-decoration: none;
-  }
-  .quick-links-inline .link-pill:hover {
-    text-decoration: none;
-    background: rgba(255,255,255,.15);
-  }
-  .quick-links-inline .link-pill--accent { background: rgba(91,192,222,.2); }
-  .quick-links-inline .glyphicon { top: 2px; margin-right: 4px; }
+    .quick-links-inline { margin: 8px 0 12px; }
+    .quick-links-inline li { margin: 0 8px 6px 0; }
+    .quick-links-inline .link-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: rgba(255,255,255,.08);
+        text-decoration: none;
+    }
+    .quick-links-inline .link-pill:hover {
+        text-decoration: none;
+        background: rgba(255,255,255,.15);
+    }
+    .quick-links-inline .link-pill--accent { background: rgba(91,192,222,.2); }
+    .quick-links-inline .glyphicon { top: 2px; margin-right: 4px; }
 
-  .flash-compact code { white-space: nowrap; }
-  .flash-compact details { margin-top: 4px; }
-  .flash-compact summary { cursor: pointer; }
+    .flash-compact code { white-space: nowrap; }
+    .flash-compact details { margin-top: 4px; }
+    .flash-compact summary { cursor: pointer; }
+
+    .hint { color: #888; font-size: 12px; margin-top: 4px; }
 </style>
 {% endblock %}
 
-
 {% block content %}
 <div class="container">
-  <h3>Lead Times Publisher</h3>
+    <h3>Lead Times Publisher</h3>
 
-  <div class="panel panel-default">
-
-    <div class="panel-heading"><strong>Lead Times & Christmas Cutoff Publisher — What happens when you press <em>Go</em></strong></div>
-      <div class="panel-body">
-        <p>This reads our Google Sheets, validates them, and publishes:</p>
-        <ul>
-          <li><strong>2 HTML snippets</strong> (Canberra + Regional) for the Buz home page.</li>
-          <li><strong>4 Excel quote files</strong> (Canberra/Regional × Detailed/Summary) where we update each product tab’s text and <em>keep only tabs that actually change</em>. Macros are preserved.</li>
-        </ul>
-
-        <h5>Inputs (on this page)</h5>
-        <ul>
-          <li>Upload current <em>Detailed</em> and <em>Summary</em> layout files (.xlsm)</li>
-          <li>Uses configured Google Sheets:</li>
-        </ul>
-        <ul style="margin-left:20px">
-          <li><strong>Lead Times</strong>:
+    <div class="panel panel-default">
+        <div class="panel-heading">
+            <strong>Lead Times &amp; Christmas Cutoff Publisher — What happens when you press <em>Go</em></strong>
+        </div>
+        <div class="panel-body">
+            <p>This reads our Google Sheets, validates them, and publishes:</p>
             <ul>
-              <li><code>Canberra Retail Production Lead Times</code> — A: Product, <strong>B: Buz inventory code(s)</strong>, <strong>C: Lead time text</strong></li>
-              <li><code>Wholesale/Regional Store Lead Times</code> — same columns</li>
+                <li><strong>2 HTML snippets</strong> (Canberra + Regional) for the Buz home page.</li>
+                <li><strong>4 Excel quote files</strong> (Canberra/Regional × Detailed/Summary) where we update each product tab’s text and <em>keep only tabs that actually change</em>. Macros are preserved.</li>
             </ul>
-          </li>
-          <li><strong>Cutoffs</strong> — tab <code>2025</code>: <strong>B: Product</strong>, <strong>C: Buz inventory code(s)</strong>, <strong>G: Last Date for Deposits</strong></li>
-        </ul>
 
-        <h5>Rules</h5>
-        <ul>
-          <li><strong>Fail-fast validation</strong> per store: the set of Buz codes in Lead Times must match the set in Cutoffs. If not, we stop and show a diff.</li>
-
-          <li><strong>Duplicate mapping</strong>: we parse all ranges (weeks/days) in the lead-time text and pick the row with the <em>largest upper bound</em>. Display text stays as-is.</li>
-
-          <li><strong>Change-only output (new)</strong>:
+            <h5>Inputs (on this page)</h5>
             <ul>
-              <li>We compare the <em>current</em> tab text to the <em>proposed</em> values.</li>
-              <li>Normalisation handles tiny format differences (e.g. <code>2–3 weeks</code> vs <code>2 to 3 wks</code>, case/spacing/dashes, and “no cutoff” synonyms).</li>
-              <li>If both the lead time and the Christmas cutoff are unchanged, that tab is <strong>dropped</strong> from the output workbook.</li>
-              <li>If <em>all</em> tabs are unchanged, we create a single <strong>“NO CHANGES”</strong> sheet so the file still opens cleanly.</li>
+                <li>Upload current <em>Detailed</em> and <em>Summary</em> layout files (.xlsm)</li>
+                <li>Uses configured Google Sheets:</li>
             </ul>
-          </li>
+            <ul style="margin-left:20px">
+                <li><strong>Lead Times</strong>:
+                    <ul>
+                        <li><code>Canberra Retail Production Lead Times</code> — A: Product, <strong>B: Buz inventory code(s)</strong>, <strong>C: Lead time text</strong></li>
+                        <li><code>Wholesale/Regional Store Lead Times</code> — same columns</li>
+                    </ul>
+                </li>
+                <li><strong>Cutoffs</strong> — tab <code>{{ cutoff_tab }}</code>: <strong>B: Product</strong>, <strong>C: Buz inventory code(s)</strong>, <strong>G: Last Date for Deposits</strong></li>
+            </ul>
 
-          <li><strong>How we edit each workbook</strong>:
+            <h5>Rules</h5>
             <ul>
-              <li><em>Summary</em> — in <strong>Column C</strong>, we find the first cell containing <code>Ready in …</code> and <em>replace the lead-time phrase after it</em> using the configured regex. We then append <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> when applicable.</li>
-              <li><em>Detailed</em> — in <strong>Column B</strong>, we replace the value after <code>Lead Time:</code>. If no <code>Lead Time:</code> line exists, we prefix a new one at the first <code>FALSE</code> under the <strong>Do Not Show?</strong> column (F), then append the optional cutoff tag.</li>
+                <li><strong>Fail-fast validation</strong> per store: the set of Buz codes in Lead Times must match the set in Cutoffs. If not, we stop and show a diff.</li>
+                <li><strong>Duplicate mapping</strong>: we parse all ranges (weeks/days) in the lead-time text and pick the row with the <em>largest upper bound</em>. Display text stays as-is.</li>
+                <li><strong>Change-only output</strong>:
+                    <ul>
+                        <li>We compare the <em>current</em> tab text to the <em>proposed</em> values.</li>
+                        <li>Normalisation handles tiny format differences (e.g. <code>2–3 weeks</code> vs <code>2 to 3 wks</code>, case/spacing/dashes, and “no cutoff” synonyms).</li>
+                        <li>If both the lead time and the Christmas cutoff are unchanged, that tab is <strong>dropped</strong> from the output workbook.</li>
+                        <li>If <em>all</em> tabs are unchanged, we create a single <strong>“NO CHANGES”</strong> sheet so the file still opens cleanly.</li>
+                    </ul>
+                </li>
+                <li><strong>How we edit each workbook</strong>:
+                    <ul>
+                        <li><em>Summary</em> — in <strong>Column C</strong>, we find the first cell containing <code>Ready in …</code> and <em>replace the lead-time phrase after it</em>. Then we append <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> when applicable.</li>
+                        <li><em>Detailed</em> — in <strong>Column B</strong>, we replace the value after <code>Lead Time:</code>. If not found, we prefix a new line at the first <code>FALSE</code> (or blank) under the <strong>Do Not Show?</strong> column (F), then append the optional cutoff tag.</li>
+                    </ul>
+                </li>
+                <li><strong>Safety rails</strong>:
+                    <ul>
+                        <li>Tabs with a <em>red sheet tab colour</em> are flagged for review and left untouched.</li>
+                        <li>Heading-only tabs (no meaningful rows under the header) are removed.</li>
+                        <li>If anchors/markers are missing (e.g. no <code>Ready in</code>, no <code>Lead Time:</code>, or no <code>FALSE</code> under column F), we warn and skip that tab for manual review.</li>
+                    </ul>
+                </li>
+                <li><strong>HTML snippets</strong>:
+                    <ul>
+                        <li>Format: <code>Product: &lt;lead time text&gt;</code> (+ <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> if set).</li>
+                        <li>Sorted A→Z by Product; one snippet for Canberra, one for Regional.</li>
+                    </ul>
+                </li>
             </ul>
-          </li>
 
-          <li><strong>Safety rails</strong>:
-            <ul>
-              <li>Tabs with a <em>red sheet tab colour</em> are flagged for review and left untouched.</li>
-              <li>Heading-only tabs (no meaningful rows under the header) are silently removed.</li>
-              <li>If required anchors or markers are missing (e.g. no <code>Ready in</code>, no <code>Lead Time:</code>, or no <code>FALSE</code> under column F), we warn and skip that edit for manual review.</li>
-            </ul>
-          </li>
+            <h5>Results</h5>
+            <p>After you press <strong>Go</strong>, download links for the 4 Excel files (changed tabs only) and the 2 HTML snippets appear here. If we hit shape or data issues, a <code>warnings.txt</code> link is shown with details (e.g. missing anchors, red-tab skips, validation diffs).</p>
 
-          <li><strong>HTML snippets</strong>:
-            <ul>
-              <li>Format: <code>Product: &lt;lead time text&gt;</code> (+ <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> when set).</li>
-              <li>Sorted A→Z by Product; one snippet for Canberra, one for Regional.</li>
-            </ul>
-          </li>
-        </ul>
-
-        <h5>Results</h5>
-        <p>After you press <strong>Go</strong>, download links for the 4 Excel files (changed tabs only) and the 2 HTML snippets appear here. If we hit shape or data issues, a <code>warnings.txt</code> link is shown with details (e.g. missing anchors, red-tab skips, validation diffs).</p>
-
-        <h5>Troubleshooting</h5>
-        <ul>
-          <li><strong>Validation failed</strong> → fix missing/extra codes in the Google Sheets and re-run.</li>
-          <li><strong>No changes everywhere</strong> → expect a single <code>NO CHANGES</code> sheet in each workbook.</li>
-          <li><strong>Red-tab left untouched</strong> → clear the red tab colour or edit manually.</li>
-          <li><strong>“Ready in” / “Lead Time:” not found</strong> → check the Summary/Detailed templates match the expected layout and column letters.</li>
-          <li><strong>Nothing appended on a tab</strong> → that Buz code likely wasn’t in the Lead Times mapping.</li>
-        </ul>
-      </div>
-
-  </div>
-
-<ul class="list-inline quick-links-inline">
-  <li class="text-muted">Quick links:</li>
-
-  <li>
-    <a class="link-pill" target="_blank" rel="noopener"
-       href="{{ url_for('lead_times.open_sheet', kind='lead', tab='canberra') }}">
-      <span class="glyphicon glyphicon-list-alt"></span> Lead Times
-    </a>
-  </li>
-
-  <li>
-    <a class="link-pill link-pill--accent" target="_blank" rel="noopener"
-       href="{{ url_for('lead_times.open_sheet', kind='cutoff', tab=cutoff_tab) }}">
-      <span class="glyphicon glyphicon-time"></span> Christmas Cutoffs
-    </a>
-  </li>
-</ul>
-
-  <form method="post" enctype="multipart/form-data">
-    <div class="form-group">
-      <label>Detailed template (.xlsm)</label>
-      <input type="file" name="detailed_template" accept=".xlsm" required>
+            <details class="hint">
+                <summary>Notes for reviewers</summary>
+                <ul>
+                    <li>“Do Not Show?” blank cells are treated like <code>FALSE</code> (visible).</li>
+                    <li>Macros (.xlsm) are preserved in outputs if present in the templates.</li>
+                </ul>
+            </details>
+        </div>
     </div>
-    <div class="form-group">
-      <label>Summary template (.xlsm)</label>
-      <input type="file" name="summary_template" accept=".xlsm" required>
-    </div>
-    <!-- Optional store scope toggles -->
-    <label><input type="checkbox" name="scope" value="CANBERRA" checked> Canberra</label>
-    <label><input type="checkbox" name="scope" value="REGIONAL" checked> Regional</label>
 
-    <button type="submit" class="btn btn-primary">Go</button>
-  </form>
+    <ul class="list-inline quick-links-inline">
+        <li class="text-muted">Quick links:</li>
 
+        <li>
+            <a class="link-pill" target="_blank" rel="noopener"
+               href="{{ url_for('lead_times.open_sheet', kind='lead', tab='canberra') }}">
+                <span class="glyphicon glyphicon-list-alt"></span> Lead Times — Canberra
+            </a>
+        </li>
+
+        <li>
+            <a class="link-pill" target="_blank" rel="noopener"
+               href="{{ url_for('lead_times.open_sheet', kind='lead', tab='regional') }}">
+                <span class="glyphicon glyphicon-list-alt"></span> Lead Times — Regional
+            </a>
+        </li>
+
+        <li>
+            <a class="link-pill link-pill--accent" target="_blank" rel="noopener"
+               href="{{ url_for('lead_times.open_sheet', kind='cutoff', tab=cutoff_tab) }}">
+                <span class="glyphicon glyphicon-time"></span> Christmas Cutoffs ({{ cutoff_tab }})
+            </a>
+        </li>
+    </ul>
+
+    <form method="post" enctype="multipart/form-data">
+        <div class="form-group">
+            <label>Detailed template (.xlsm)</label>
+            <input type="file" name="detailed_template" accept=".xlsm" required>
+        </div>
+        <div class="form-group">
+            <label>Summary template (.xlsm)</label>
+            <input type="file" name="summary_template" accept=".xlsm" required>
+        </div>
+
+        <!-- Choose ONE store scope -->
+        <div class="form-group">
+            <label class="control-label">Scope</label>
+            <div class="radio">
+                <label><input type="radio" name="scope" value="canberra" checked> Canberra</label>
+            </div>
+            <div class="radio">
+                <label><input type="radio" name="scope" value="regional"> Regional</label>
+            </div>
+            <div class="hint">Pick one. You can run this tool again for the other scope.</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Go</button>
+    </form>
 </div>
 {% endblock %}

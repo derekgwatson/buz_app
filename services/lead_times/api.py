@@ -16,7 +16,10 @@ from .sheets import import_and_merge, codes_from_rows
 
 
 import re
+from typing import Dict, Tuple, List, Iterable
 
+_CAN = "CANBERRA"
+_REG = "REGIONAL"
 
 # replace the existing _LEAD_LINE_RE with this
 # If you also parse/insert cutoffs, re-use your cutoff detector here.
@@ -28,28 +31,6 @@ _CUTOFF_WORD_RE = re.compile(r"cut\s*off", re.I)
 # Exactly: optional leading \n or real newline, then ***CHRISTMAS CUTOFF d/m/yy ***
 _CUTOFF_BANNER_RE = re.compile(
     r'(?:\\n|[\r\n])?\*{3}CHRISTMAS CUTOFF\s+\d{1,2}/\d{1,2}/\d{2}\s*\*{3}'
-)
-
-
-# Also catch plain text forms like "Christmas cutoff: 6/11/25" or "Xmas cut-off 6/11"
-_CUTOFF_PLAIN_RE = re.compile(
-    r"(?is)\b(?:christmas|xmas)\s*cut[\s-]*off\s*[:\-]?\s*.*?(?=(?:\\n|[\r\n])|$)"
-)
-
-
-# Summary "ready in ..." block:
-# - optional leading comma/space captured in (?P<punc>)
-# - main weeks value: single or range
-# - zero or more " ( ... )" tails captured in (?P<brackets>)
-# Keep this near your other regexes
-_SUMMARY_READY_BLOCK_RE = re.compile(
-    r'''(?ix)
-        (,\s*)?                 # optional leading comma/space
-        ready \s* in \s*
-        (?: \d+(?:\.\d+)? \s* (?:-|–|to) \s* \d+(?:\.\d+)? | \d+(?:\.\d+)? )
-        \s* (?:weeks?|days?)
-        (?: \s* \([^)]*\) )*    # zero or more bracket tails, part of the same block
-    '''
 )
 
 
@@ -176,11 +157,8 @@ def _normalize_lead_line_spacing_from_template(
 
         span_tpl = _find_lead_line_span(s_tpl)
 
-        # --- header: prefer template spacing; else keep output header
+        # --- header: keep output header
         header_use = header_out
-
-        # --- prefix: ALWAYS from the uploaded Detailed input; but preserve any injected banner
-        pre_out = s_out[:start]
 
         # prefix: take it from template up to its Lead Time, but ensure it's banner-free
         pre_tpl = s_tpl[:span_tpl[0]] if span_tpl else ""  # input’s prefix up to its Lead Time:
@@ -436,7 +414,7 @@ def _valid_codes_from_templates(*paths: str) -> set[str]:
     """Union of sheet names from the uploaded templates (exact, case-sensitive)."""
     codes: set[str] = set()
     for p in paths:
-        wb = load_workbook(filename=p, keep_vba=False, data_only=True)
+        wb = load_workbook(filename=p, keep_vba=False, read_only=True, data_only=True)
         codes.update(wb.sheetnames)
     return codes
 
@@ -495,6 +473,17 @@ def _cutoff_attach_note(
                 )
 
 
+def _norm_scopes(scopes: Iterable[str] | None) -> Tuple[str, ...]:
+    if not scopes:
+        return (_CAN, _REG)
+    out: List[str] = []
+    for s in scopes:
+        v = (s or "").strip().lower()
+        if v in ("canberra", "regional"):
+            out.append(_CAN if v == "canberra" else _REG)
+    return tuple(out or (_CAN, _REG))
+
+
 def run_publish(
     *,
     gsheets_service,
@@ -505,6 +494,8 @@ def run_publish(
     scope: Tuple[str, ...] = ("CANBERRA", "REGIONAL"),
 ) -> dict:
     """Read Sheets, validate/merge, generate HTML + Excel files (or review-only)."""
+
+    scope = _norm_scopes(scope)
 
     if not isinstance(lead_times_cfg, dict) or "lead_times_ss" not in lead_times_cfg:
         raise ValueError("Missing or invalid config: get_cfg('lead_times') did not return expected structure")
@@ -599,7 +590,7 @@ def run_publish(
             cutoffs_by_code=ir.cutoff_rows,
         )
 
-    if "CANBERRA" in scope:
+    if _CAN in scope:
         _cutoff_attach_note(
             warnings,
             "CANBERRA",
@@ -607,7 +598,7 @@ def run_publish(
             merged["CANBERRA"].product_to_codes,
             merged["CANBERRA"].cutoff_rows,
         )
-    if "REGIONAL" in scope:
+    if _REG in scope:
         _cutoff_attach_note(
             warnings,
             "REGIONAL",
@@ -654,7 +645,7 @@ def run_publish(
     review_summary: set[str] = set()
 
     # Detailed
-    if "CANBERRA" in scope:
+    if _CAN in scope:
         leads_clean = _deep_strip_banners(merged["CANBERRA"].lead_rows)
 
         res: InjectResult = inject_and_prune(
@@ -705,7 +696,7 @@ def run_publish(
         review_detailed |= set(res.review_codes)
         files["canberra_detailed"] = os.path.basename(str(res.saved_path))
 
-    if "REGIONAL" in scope:
+    if _REG in scope:
         leads_clean = _deep_strip_banners(merged["REGIONAL"].lead_rows)
 
         res: InjectResult = inject_and_prune(
@@ -757,7 +748,7 @@ def run_publish(
         files["regional_detailed"] = os.path.basename(str(res.saved_path))
 
     # Summary
-    if "CANBERRA" in scope:
+    if _CAN in scope:
         leads_clean = _deep_strip_banners(merged["CANBERRA"].lead_rows)
 
         res: InjectResult = inject_and_prune(
@@ -797,7 +788,7 @@ def run_publish(
         review_summary |= set(res.review_codes)
         files["canberra_summary"] = os.path.basename(str(res.saved_path))
 
-    if "REGIONAL" in scope:
+    if _REG in scope:
         leads_clean = _deep_strip_banners(merged["REGIONAL"].lead_rows)
 
         res: InjectResult = inject_and_prune(
