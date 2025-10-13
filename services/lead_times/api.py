@@ -554,19 +554,56 @@ def run_publish(
     unknown_can = can_codes - valid_tabs
     unknown_reg = reg_codes - valid_tabs
     unknown_cut = cut_codes - valid_tabs
-    if unknown_can or unknown_reg or unknown_cut:
-        def pv(s: set[str]) -> str:
-            return "—" if not s else (
-                ", ".join(sorted(s)[:12]) + (f", +{len(s) - 12} more" if len(s) > 12 else "")
-            )
-        from markupsafe import Markup
-        raise ValueError(Markup(
+
+    def _pv(s: set[str]) -> str:
+        return "—" if not s else (", ".join(sorted(s)[:12]) + (f", +{len(s) - 12} more" if len(s) > 12 else ""))
+
+    # Determine which scope(s) are in this run and the codes that matter for them
+    show_can = (_CAN in scope)
+    show_reg = (_REG in scope)
+    scope_codes: set[str] = set()
+    if show_can and not show_reg:
+        scope_codes = set(can_codes)
+    elif show_reg and not show_can:
+        scope_codes = set(reg_codes)
+    else:
+        scope_codes = set(can_codes) | set(reg_codes)  # both, or fallback
+
+    # Only consider cutoff unknowns that belong to THIS run's scope
+    unknown_cut_scoped = set(unknown_cut) & scope_codes
+
+    # If any relevant unknowns exist, raise with scope-aware sections
+    has_any = (show_can and bool(unknown_can)) or (show_reg and bool(unknown_reg)) or bool(unknown_cut_scoped)
+    if has_any:
+        parts: list[str] = [
             "<strong>Unknown codes</strong> — present in Google Sheets but not found as tabs "
             "in the uploaded templates (tabs define the valid list)."
-            f"<div class='mt-1'><small><strong>Canberra:</strong> <code>{pv(unknown_can)}</code></small></div>"
-            f"<div class='mt-1'><small><strong>Regional:</strong> <code>{pv(unknown_reg)}</code></small></div>"
-            f"<div class='mt-1'><small><strong>Cutoffs:</strong> <code>{pv(unknown_cut)}</code></small></div>"
-        ))
+        ]
+        if show_can and unknown_can:
+            parts.append(
+                f"<div class='mt-1'><small><strong>Canberra:</strong> <code>{_pv(unknown_can)}</code></small></div>"
+            )
+        if show_reg and unknown_reg:
+            parts.append(
+                f"<div class='mt-1'><small><strong>Regional:</strong> <code>{_pv(unknown_reg)}</code></small></div>"
+            )
+        if unknown_cut_scoped:
+            parts.append(
+                f"<div class='mt-1'><small><strong>Cutoffs:</strong> <code>{_pv(unknown_cut_scoped)}</code></small></div>"
+            )
+
+        from markupsafe import Markup
+        raise ValueError(Markup("".join(parts)))
+
+    # (Optional) If you still want visibility on out-of-scope cutoffs, add a soft warning:
+    other_scope_cutoffs = set(unknown_cut) - scope_codes
+
+    warnings: list[str] = []
+
+    if other_scope_cutoffs:
+        warnings.append(
+            f"[NOTE] Ignoring {len(other_scope_cutoffs)} unknown cutoff code(s) not used in this scope."
+        )
 
     # 2) Merge + HTML
     merged = import_and_merge(
@@ -575,9 +612,9 @@ def run_publish(
         cutoff_rows=cut_rows,
         lead_cols=lead_cols,
         cutoff_cols=cut_cols,
+        scope=_CAN if (_CAN in scope) else _REG,  # pass exactly one
     )
 
-    warnings: list[str] = []
     html_out: Dict[str, str] = {}
     for store in scope:
         ir = merged[store]

@@ -98,55 +98,42 @@ def _preview(items: set[str], limit: int = 12) -> str:
     return (", ".join(s[:limit]) + f", +{len(s) - limit} more") if len(s) > limit else ", ".join(s)
 
 
-def _validate_three_way_sets_or_die(
+def _validate_scope_sets_or_die(
     *,
+    scope: str,                         # "CANBERRA" or "REGIONAL"
     can_codes: set[str],
     reg_codes: set[str],
     cut_codes: set[str],
-    lead_mapping_col_letter: str,     # e.g. 'B'
-    cutoff_mapping_col_letter: str,   # e.g. 'C'
+    lead_mapping_col_letter: str,       # e.g. 'B'
+    cutoff_mapping_col_letter: str,     # e.g. 'C'
 ) -> None:
     """
-    Enforce equality across the three code sets. We report any code that exists
-    in some sources but not the others, including the 'only in one place' case.
+    Single-scope validation for the new either/or flow.
+
+    - Only compare the selected scope's Lead set against Cutoffs.
+    - Extra codes in the shared Cutoffs sheet (belonging to the other scope) do NOT block the run.
+    - We fail only when this scope has leads that are missing in Cutoffs.
     """
-    can_only = can_codes - (reg_codes | cut_codes)
-    reg_only = reg_codes - (can_codes | cut_codes)
-    cut_only = cut_codes - (can_codes | reg_codes)
+    def preview(items: set[str], limit: int = 12) -> str:
+        if not items:
+            return "—"
+        s = sorted(items)
+        return ", ".join(s[:limit]) + (f", +{len(items)-limit} more" if len(items) > limit else "")
 
-    lead_union = can_codes | reg_codes
-    missing_in_cutoffs = lead_union - cut_codes
-    missing_in_leads = cut_codes - lead_union
+    lead = can_codes if scope == "CANBERRA" else reg_codes
 
-    can_not_reg = can_codes - reg_codes
-    reg_not_can = reg_codes - can_codes
+    missing_in_cutoffs = lead - cut_codes          # present in this scope's leads, missing in Cutoffs
+    # Note: cutoffs_not_in_scope = cut_codes - lead  # allowed (shared sheet); do not block
 
-    if any([can_only, reg_only, cut_only, missing_in_cutoffs, missing_in_leads, can_not_reg, reg_not_can]):
-        def preview(items: set[str], limit: int = 12) -> str:
-            if not items:
-                return "—"
-            s = sorted(items)
-            return ", ".join(s[:limit]) + (f", +{len(s)-limit} more" if len(s) > limit else "")
-
+    if missing_in_cutoffs:
         msg = (
             "<div class='flash-compact'>"
             "<strong>Lead Times validation failed — code sets differ</strong> "
             f"(Lead mapping col <code>{lead_mapping_col_letter}</code>, "
             f"Cutoffs mapping col <code>{cutoff_mapping_col_letter}</code>)."
             "<ul style='margin-top:6px'>"
-            f"<li><small><strong>Cutoffs-only:</strong> <code>{preview(cut_only)}</code></small></li>"
-            f"<li><small><strong>Missing in Cutoffs (present in leads):</strong> "
+            f"<li><small><strong>Missing in Cutoffs (present in {scope.title()} leads):</strong> "
             f"<code>{preview(missing_in_cutoffs)}</code></small></li>"
-            f"<li><small><strong>Missing in Leads (present in Cutoffs):</strong> "
-            f"<code>{preview(missing_in_leads)}</code></small></li>"
-            f"<li><small><strong>Canberra-only (not in Regional/Cutoffs):</strong> "
-            f"<code>{preview(can_only)}</code></small></li>"
-            f"<li><small><strong>Regional-only (not in Canberra/Cutoffs):</strong> "
-            f"<code>{preview(reg_only)}</code></small></li>"
-            f"<li><small><strong>Lead tabs disagree — in Canberra not Regional:</strong> "
-            f"<code>{preview(can_not_reg)}</code></small></li>"
-            f"<li><small><strong>Lead tabs disagree — in Regional not Canberra:</strong> "
-            f"<code>{preview(reg_not_can)}</code></small></li>"
             "</ul>"
             "</div>"
         )
@@ -165,6 +152,7 @@ def import_and_merge(
     cutoff_rows: List[List[str]],
     lead_cols: Dict[str, str],   # {"product":"A","mapping":"B","lead_time":"C"}
     cutoff_cols: Dict[str, str], # {"product":"B","mapping":"C","cutoff_date":"G"}
+    scope: str,
 ) -> Dict[str, ImportResultStore]:
     """
     Build the structures needed by excel/html steps.
@@ -201,7 +189,8 @@ def import_and_merge(
     reg_codes = codes_from_triples(reg_triples, 1)
     cut_codes = codes_from_triples(cut_triples, 1)
 
-    _validate_three_way_sets_or_die(
+    _validate_scope_sets_or_die(
+        scope=scope,
         can_codes=can_codes,
         reg_codes=reg_codes,
         cut_codes=cut_codes,
