@@ -6,6 +6,7 @@ import openpyxl
 import pytest
 
 from services.lead_times import api
+from services.excel_safety import save_workbook_gracefully
 
 # --- lightweight helpers ------------------------------------------------
 
@@ -24,8 +25,9 @@ def _new_book_with_sheet(path: Path, name: str, *, detailed_b=None, summary_c=No
     if summary_c is not None:
         ws.cell(row=r, column=3, value=summary_c)
     path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(str(path))
+    save_workbook_gracefully(wb, str(path))
     wb.close()
+
 
 class DummySheets:
     def service_account_email(self):

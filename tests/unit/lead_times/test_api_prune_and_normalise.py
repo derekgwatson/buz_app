@@ -2,7 +2,9 @@
 from pathlib import Path
 import openpyxl
 
+from services.excel_safety import save_workbook_gracefully
 from services.lead_times import api
+
 
 def _mk_book(path: Path, sheets: dict[str, str], *, col_letter="B", row=3):
     wb = openpyxl.Workbook()
@@ -18,8 +20,9 @@ def _mk_book(path: Path, sheets: dict[str, str], *, col_letter="B", row=3):
         idx = (ord(col_letter.upper()) - 64)
         ws.cell(row=row, column=idx, value=text)
         ws.cell(row=row, column=6, value=False)  # F=FALSE ensures the row is "visible"
-    wb.save(str(path))
+    save_workbook_gracefully(wb, str(path))
     wb.close()
+
 
 def test_prune_unchanged_tabs_cell_based(tmp_path: Path):
     # SAME tab has identical text; DIFF differs in output.
@@ -48,6 +51,7 @@ def test_prune_unchanged_tabs_cell_based(tmp_path: Path):
         wb.close()
     assert "DIFF" in names and "SAME" not in names
 
+
 def test_normalize_lead_line_spacing_from_template(tmp_path: Path):
     """
     Ensure the normalizer converts real newlines into literal '\\n' and preserves
@@ -61,14 +65,16 @@ def test_normalize_lead_line_spacing_from_template(tmp_path: Path):
     ws = wb.active
     ws.title = "ABC"
     ws.cell(row=3, column=2, value="\n       -       Lead Time:  4 - 5 Weeks \n       -       Tail")
-    wb.save(str(tpl)); wb.close()
+    save_workbook_gracefully(wb, str(tpl))
+    wb.close()
 
     # out: same sheet, but any value; the normalizer will align to template spacing
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "ABC"
     ws.cell(row=3, column=2, value="\n       -       Lead Time:  6–8 Weeks \n       -       Tail")
-    wb.save(str(out)); wb.close()
+    save_workbook_gracefully(wb,str(out))
+    wb.close()
 
     api._normalize_lead_line_spacing_from_template(
         template_path=tpl,

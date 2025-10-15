@@ -1,9 +1,9 @@
 # tests/test_inject_and_prune.py
 from pathlib import Path
 import openpyxl
-import pytest
 
 from services.lead_times.excel_out import inject_and_prune, InjectResult
+from services.excel_safety import save_workbook_gracefully
 
 # helpers -------------------------------------------------------------
 
@@ -31,7 +31,7 @@ def _new_book_with_sheet(path: Path, name: str, header_row: int, *,
         ws.cell(row=anchor_false_row, column=6, value=False)  # F = Do Not Show? FALSE
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(str(path))
+    save_workbook_gracefully(wb,str(path))
     wb.close()
 
 

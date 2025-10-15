@@ -8,6 +8,7 @@ import time
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
+from services.excel_safety import save_workbook_gracefully
 
 # ---- Lead-time rewrites that preserve all surrounding text exactly ----
 import re
@@ -415,7 +416,9 @@ def inject_and_prune(
         stub.sheet_state = "visible"
 
     final_path = out_path.with_suffix(".xlsx")
-    wb.save(str(final_path))
+    has_real_data = save_workbook_gracefully(wb, str(final_path))
+    if not has_real_data:
+        warnings.append("No data matched your filters — exported a placeholder workbook.")
     wb.close()
 
     try:
@@ -445,6 +448,8 @@ def save_review_only_workbook(
     _prune_tabs_safe(wb, keep_names=set(review_codes), warnings=warnings)
 
     final = out_path.with_suffix(".xlsx")
-    wb.save(str(final))
+    has_real_data = save_workbook_gracefully(wb, str(final))
+    if not has_real_data:
+        warnings.append("No data matched your filters — exported a placeholder workbook.")
     wb.close()
     return final
