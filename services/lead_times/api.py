@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Tuple
+from services.excel_safety import save_workbook_gracefully
 from openpyxl import load_workbook
 
 from .excel_out import (
@@ -13,7 +13,7 @@ from .excel_out import (
     InjectResult,
 )
 from .sheets import import_and_merge, codes_from_rows
-
+from services.excel_safety import save_workbook_gracefully
 
 import re
 from typing import Dict, Tuple, List, Iterable
@@ -179,7 +179,10 @@ def _normalize_lead_line_spacing_from_template(
             changed += 1
 
     if changed:
-        wb_out.save(str(output_path))
+        has_real_data = save_workbook_gracefully(wb_out, str(output_path))
+        if not has_real_data:
+            warnings.append("No data matched your filters — exported a placeholder workbook.")
+
         warnings.append(f"[FORMAT] {label}: normalized Lead Time line spacing on {changed} tab(s).")
     return changed
 
@@ -218,42 +221,6 @@ def _first_row_do_not_show_false(ws, do_not_show_col_letter: str, header_row_1ba
         if not _is_trueish(val):
             return r
     return -1
-
-
-def _strip_banners_in_workbook(
-        *,
-        output_path: Path,
-        do_not_show_col_letter: str,
-        header_row_1based: int,
-        target_col_letter: str,
-) -> int:
-    """
-    For each sheet, remove ONLY the banner from the target cell of the first visible row.
-    Returns count of tabs changed.
-    """
-    if not output_path.exists():
-        return 0
-
-    wb = load_workbook(filename=str(output_path), keep_vba=False, data_only=True)
-    changed = 0
-    col = _col1(target_col_letter)
-
-    for code in list(wb.sheetnames):
-        ws = wb[code]
-        r = _first_row_do_not_show_false(ws, do_not_show_col_letter, header_row_1based)
-        if r == -1:
-            continue
-
-        cell = ws.cell(row=r, column=col)
-        before = "" if cell.value is None else str(cell.value)
-        after = _strip_only_banner(before)
-        if after != before:
-            cell.value = after
-            changed += 1
-
-    if changed:
-        wb.save(str(output_path))
-    return changed
 
 
 def _apply_banner_detailed_text(old: str, cutoff: str | None) -> str:
@@ -337,7 +304,10 @@ def _apply_banners_to_workbook(
             changed += 1
 
     if changed:
-        wb.save(str(output_path))
+        has_real_data = save_workbook_gracefully(wb, str(output_path))
+        if not has_real_data:
+            warnings.append("No data matched your filters — exported a placeholder workbook.")
+
         warnings.append(f"[CUTOFF] {label}: normalized banner on {changed} tab(s).")
 
     return changed

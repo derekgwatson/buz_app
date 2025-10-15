@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from collections import Counter
 from openpyxl import Workbook
 from typing import Any, Mapping
+from services.excel_safety import save_workbook_gracefully
 
 # Title case known uppers
 KNOWN_ACRONYMS = {
@@ -681,9 +682,11 @@ def generate_uploads_from_db(
             ws.append(list(r.values) + [""])  # trailing blank cell (Buz quirk)
 
     items_path = os.path.join(output_dir, "items_upload.xlsx")
-    items_wb.save(items_path)
-
-    _ping("Writing pricing workbook…", 85)
+    has_real_data = save_workbook_gracefully(items_wb, items_path)
+    if has_real_data:
+        _ping("Writing item workbook…", 85)
+    else:
+        _ping("No item data — exported a placeholder workbook.", 85)
 
     # --- Write pricing upload from CONFIG (preserve order per config)
     pricing_headers = _headers_from_config(headers_cfg, "buz_pricing_file")
@@ -707,7 +710,11 @@ def generate_uploads_from_db(
             ws.append(row_out)
 
     pricing_path = os.path.join(output_dir, "pricing_upload.xlsx")
-    pwb.save(pricing_path)
+    has_real_data = save_workbook_gracefully(pwb, pricing_path)
+    if has_real_data:
+        _ping("Writing pricing workbook.", 87)
+    else:
+        _ping("No pricing data — exported a placeholder workbook.", 87)
 
     # --- (Optional) write change log CSV only if requested
     if write_change_log and change_log:

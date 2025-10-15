@@ -3,6 +3,7 @@ from services.database import DatabaseManager
 from openpyxl import Workbook
 from datetime import datetime
 import logging
+from services.excel_safety import save_workbook_gracefully
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +275,9 @@ def create_workbook(headers_config, additions, deletions, output_path):
             ws.append(row)
 
     # Save workbook
-    wb.save(output_path)
+    has_real_data = save_workbook_gracefully(wb, output_path)
+    if not has_real_data:
+        print("No data matched your filters — exported a placeholder workbook.")
 
 
 def process_data(fabrics, inventory_items, inventory_groups):

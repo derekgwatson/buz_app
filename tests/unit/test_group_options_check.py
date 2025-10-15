@@ -3,6 +3,7 @@ from services.excel import OpenPyXLFileHandler
 from services.group_options_check import extract_codes_from_excel_flat_dedup
 from openpyxl import Workbook
 from tempfile import NamedTemporaryFile
+from services.excel_safety import save_workbook_gracefully
 
 
 @pytest.fixture
@@ -16,7 +17,7 @@ def create_test_excel_file():
                 for col_idx, value in enumerate(row, start=1):
                     ws.cell(row=row_idx, column=col_idx, value=value)
         temp_file = NamedTemporaryFile(delete=False, suffix=".xlsx")
-        wb.save(temp_file.name)
+        save_workbook_gracefully(wb, temp_file.name)
         return temp_file.name
 
     return _create_test_file

@@ -13,6 +13,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from services.google_sheets_service import GoogleSheetsService  # adjust import path if needed
 from services.config_service import ConfigManager
+from services.excel_safety import save_workbook_gracefully
 
 import logging
 from dataclasses import fields, MISSING
@@ -366,7 +367,9 @@ class DiscountGroupsSync:
             })
 
         # --- 7) Save new copy (preserving macros)
-        wb.save(output_xlsm_path)
+        has_real_data = save_workbook_gracefully(wb, output_xlsm_path)
+        if not has_real_data:
+            logger.warning("No data matched your filters — exported a placeholder workbook.")
 
         return {
             "output_file": output_xlsm_path,

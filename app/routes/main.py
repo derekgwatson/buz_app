@@ -22,6 +22,7 @@ import pytz
 import sys
 import re
 from services.job_service import create_job, update_job, get_job, make_progress
+from services.excel_safety import save_workbook_gracefully
 
 
 # Create Blueprint
@@ -314,8 +315,12 @@ def generate_backorder_file():
         upload_filename = 'upload_file.xlsx'
 
         out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
-        upload_wb.save(os.path.join(out_dir, upload_filename))
-        original_wb.save(os.path.join(out_dir, original_filename))
+
+        if not save_workbook_gracefully(upload_wb, os.path.join(out_dir, upload_filename)):
+            flash("Upload workbook: No data matched your filters — exported a placeholder workbook.")
+
+        if not save_workbook_gracefully(original_wb, os.path.join(out_dir, original_filename)):
+            flash("Original workbook: No data matched your filters — exported a placeholder workbook.")
 
         return render_template(
             'generate_backorder_file.html',
