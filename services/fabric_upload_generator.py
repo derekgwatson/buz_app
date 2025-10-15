@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta
 from openpyxl import Workbook
 import logging
+from services.excel_safety import save_workbook_gracefully
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,9 @@ def update_fabric_mappings_from_report(db_manager, report: list, config_path="co
     try:
         output_dir_abs = _resolve_output_dir(output_dir)
         file_path = os.path.join(output_dir_abs, f"buz_fabric_upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-        wb.save(file_path)
+        has_real_data = save_workbook_gracefully(wb, file_path)
+        if not has_real_data:
+            logger.warning("No data matched your filters — exported a placeholder workbook.")
         logger.info(f"📦 Upload file saved to {file_path}")
         return file_path
     except Exception as e:

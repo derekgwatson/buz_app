@@ -6,7 +6,7 @@ import re
 import time
 import uuid
 import tempfile
-from io import BytesIO
+from services.excel_safety import build_excel_stream
 from typing import Iterable, List, Tuple, Dict, Any
 
 from flask import (
@@ -383,10 +383,9 @@ def filter_tabs():
         )
 
     # Build file in memory
-    out = BytesIO()
-    wb.save(out)
-    wb.close()
-    out.seek(0)
+    has_real, stream = build_excel_stream(wb)
+    if not has_real:
+        flash("No data matched your filters — exported a placeholder workbook.")
 
     base = uploaded.filename.rsplit(".", 1)[0]
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -397,7 +396,7 @@ def filter_tabs():
         download_name = f"{base}.filtered.{ts}.xlsx"
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-    token = _cache_file(out.getvalue(), download_name, mimetype)
+    token = _cache_file(stream.getvalue(), download_name, mimetype)
 
     return render_template(
         "filter_tabs.html",

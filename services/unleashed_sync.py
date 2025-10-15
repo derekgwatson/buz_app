@@ -5,6 +5,7 @@ from openpyxl import Workbook
 import logging
 from typing import Any
 import re
+from services.excel_safety import save_workbook_gracefully
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,9 @@ def _save_workbook_atomically(wb, final_path: str):
     On Windows, fsync can be finicky; we treat it as best-effort.
     """
     tmp_path = f"{final_path}.tmp"
-    wb.save(tmp_path)
+    has_real_data = save_workbook_gracefully(wb, tmp_path)
+    if not has_real_data:
+        logger.warning("No data matched your filters — exported a placeholder workbook.")
     try:
         wb.close()
     except Exception:
