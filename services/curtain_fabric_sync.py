@@ -575,8 +575,25 @@ def generate_uploads_from_db(
                         PRICE_COL_SELL_H: f"{sheet_sell_q2:.2f}",
                         PRICE_COL_COST_W: f"{sheet_cost_q2:.2f}",
                         PRICE_COL_COST_H: f"{sheet_cost_q2:.2f}",
-                        PRICE_COL_OP:   "A",
+                        PRICE_COL_OP: "A",
                         PKID_COL: ""
+                    })
+
+                    # NEW: reflect this in the UI change log
+                    def fmt(x): return "—" if x is None else f"{x:.2f}"
+
+                    change_log.append({
+                        "Tab": grp,
+                        # Keep using E so it fits the existing UI table; summary counts won’t be affected,
+                        # because those come from the item DataFrames not this list.
+                        "Operation": "P",
+                        "Code": code,
+                        "Description": new_desc or old_desc,
+                        "Reason": (
+                            f"Pricing changed "
+                            f"(SellW {fmt(last_sell_q2)}→{sheet_sell_q2:.2f}, "
+                            f"CostW {fmt(last_cost_q2)}→{sheet_cost_q2:.2f})"
+                        )
                     })
 
             if (i + 1) % PROG_EVERY == 0:

@@ -22,6 +22,7 @@ import pytz
 import sys
 import re
 from services.job_service import create_job, update_job, get_job, make_progress
+from services.google_sheets_service import GoogleSheetsService
 from services.excel_safety import save_workbook_gracefully
 
 
@@ -283,7 +284,6 @@ def generate_codes():
 @main_routes_bp.route('/generate_backorder_file', methods=["GET", "POST"])
 @auth.login_required
 def generate_backorder_file():
-    from services.google_sheets_service import GoogleSheetsService
     from services.config_service import SpreadsheetConfigUpdater
 
     if request.method == "POST":
@@ -580,7 +580,6 @@ def check_inventory_groups():
 def pricing_update():
     if request.method == 'POST':
         from services.update_pricing import generate_pricing_upload_from_unleashed
-        from services.google_sheets_service import GoogleSheetsService
 
         credentials_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
@@ -1095,9 +1094,6 @@ def curtain_sync_landing():
         stale_threshold_hours=6,
         job_id=None,     # NEW: allow template to show a "Run" button or progress
     )
-
-
-from services.google_sheets_service import GoogleSheetsService
 
 
 @main_routes_bp.route("/curtain-sync/start", methods=["POST"])
