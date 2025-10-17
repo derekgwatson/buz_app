@@ -1,8 +1,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Mapping
 import re
+
+
+def resolve_cutoff_sheet_name(scope: str, cfg: Mapping[str, object]) -> str:
+    """
+    Return the Google Sheets tab name to read cutoffs from, based on scope.
+    Falls back to legacy 'cutoff_sheet' if the new keys are not set.
+    """
+    cut = cfg["lead_times"]["cutoffs"]
+
+    name_can = cut.get("sheet_name_canberra")
+    name_reg = cut.get("sheet_name_regional")
+
+    if scope.lower() == "canberra" and name_can:
+        return name_can
+    if scope.lower() == "regional" and name_reg:
+        return name_reg
+
+    raise KeyError(
+        "No cutoff sheet configured. "
+        "Set google_sheets.cutoffs.sheet_name_canberra / sheet_name_regional."
+    )
 
 
 # ———————————————————————————————————————————————————————————
@@ -101,8 +122,7 @@ def _preview(items: set[str], limit: int = 12) -> str:
 def _validate_scope_sets_or_die(
     *,
     scope: str,                         # "CANBERRA" or "REGIONAL"
-    can_codes: set[str],
-    reg_codes: set[str],
+    lead_codes: set[str],
     cut_codes: set[str],
     lead_mapping_col_letter: str,       # e.g. 'B'
     cutoff_mapping_col_letter: str,     # e.g. 'C'
@@ -120,9 +140,7 @@ def _validate_scope_sets_or_die(
         s = sorted(items)
         return ", ".join(s[:limit]) + (f", +{len(items)-limit} more" if len(items) > limit else "")
 
-    lead = can_codes if scope == "CANBERRA" else reg_codes
-
-    missing_in_cutoffs = lead - cut_codes          # present in this scope's leads, missing in Cutoffs
+    missing_in_cutoffs = lead_codes - cut_codes          # present in this scope's leads, missing in Cutoffs
     # Note: cutoffs_not_in_scope = cut_codes - lead  # allowed (shared sheet); do not block
 
     if missing_in_cutoffs:
@@ -147,13 +165,12 @@ def _validate_scope_sets_or_die(
 
 def import_and_merge(
     *,
-    canberra_rows: List[List[str]],
-    regional_rows: List[List[str]],
+    lead_rows: List[List[str]],
     cutoff_rows: List[List[str]],
     lead_cols: Dict[str, str],   # {"product":"A","mapping":"B","lead_time":"C"}
     cutoff_cols: Dict[str, str], # {"product":"B","mapping":"C","cutoff_date":"G"}
     scope: str,
-) -> Dict[str, ImportResultStore]:
+) -> ImportResultStore:
     """
     Build the structures needed by excel/html steps.
     IMPORTANT: control_codes are derived solely from the mapping columns (no filtering).
@@ -170,29 +187,22 @@ def import_and_merge(
     can_prod_i = idx(lead_cols["product"])
     can_lt_i   = idx(lead_cols["lead_time"])
 
-    reg_map_i = can_map_i
-    reg_prod_i = can_prod_i
-    reg_lt_i   = can_lt_i
-
     cut_map_i = idx(cutoff_cols["mapping"])
     cut_prod_i = idx(cutoff_cols["product"])
     cut_dt_i   = idx(cutoff_cols["cutoff_date"])
 
     # Build padded triples so missing cells don't explode downstream
     _noop_warnings: list[str] = []
-    can_triples = _triples(canberra_rows, can_prod_i, can_map_i, can_lt_i, label="CANBERRA", warnings=_noop_warnings)
-    reg_triples = _triples(regional_rows, reg_prod_i, reg_map_i, reg_lt_i, label="REGIONAL", warnings=_noop_warnings)
+    lead_triples = _triples(lead_rows, can_prod_i, can_map_i, can_lt_i, label="LEADTIMES", warnings=_noop_warnings)
     cut_triples = _triples(cutoff_rows,   cut_prod_i, cut_map_i, cut_dt_i,  label="CUTOFFS",  warnings=_noop_warnings)
 
     # Control sets from mapping column (triple[1])
-    can_codes = codes_from_triples(can_triples, 1)
-    reg_codes = codes_from_triples(reg_triples, 1)
+    lead_codes = codes_from_triples(lead_triples, 1)
     cut_codes = codes_from_triples(cut_triples, 1)
 
     _validate_scope_sets_or_die(
         scope=scope,
-        can_codes=can_codes,
-        reg_codes=reg_codes,
+        lead_codes=lead_codes,
         cut_codes=cut_codes,
         lead_mapping_col_letter=lead_cols["mapping"],
         cutoff_mapping_col_letter=cutoff_cols["mapping"],
@@ -251,8 +261,7 @@ def import_and_merge(
 
         return per_code, by_product, product_to_codes
 
-    can_leads, can_html, can_prod2codes = make_lead_rows(can_triples)
-    reg_leads, reg_html, reg_prod2codes = make_lead_rows(reg_triples)
+    lead_rows, cut_html, lead_prod2codes = make_lead_rows(lead_triples)
 
     # Cutoff per-code rows
     def make_cutoff_rows(triples: List[Tuple[str, str, str]]) -> Dict[str, Dict]:
@@ -268,19 +277,10 @@ def import_and_merge(
 
     cut_by_code = make_cutoff_rows(cut_triples)
 
-    return {
-        "CANBERRA": ImportResultStore(
-            lead_rows=can_leads,
+    return ImportResultStore(
+            lead_rows=lead_rows,
             cutoff_rows=cut_by_code,
-            control_codes=can_codes,
-            by_product_html=sorted(can_html, key=lambda t: t[0].casefold()),
-            product_to_codes=can_prod2codes,
-        ),
-        "REGIONAL": ImportResultStore(
-            lead_rows=reg_leads,
-            cutoff_rows=cut_by_code,
-            control_codes=reg_codes,
-            by_product_html=sorted(reg_html, key=lambda t: t[0].casefold()),
-            product_to_codes=reg_prod2codes,
-        ),
-    }
+            control_codes=lead_codes,
+            by_product_html=sorted(cut_html, key=lambda t: t[0].casefold()),
+            product_to_codes=lead_prod2codes,
+        )

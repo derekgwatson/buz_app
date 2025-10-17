@@ -37,8 +37,8 @@
         <div class="panel-body">
             <p>This reads our Google Sheets, validates them, and publishes:</p>
             <ul>
-                <li><strong>2 HTML snippets</strong> (Canberra + Regional) for the Buz home page.</li>
-                <li><strong>4 Excel quote files</strong> (Canberra/Regional × Detailed/Summary) where we update each product tab’s text and <em>keep only tabs that actually change</em>. Macros are preserved.</li>
+                <li><strong>1 HTML snippet</strong> for the Buz home page.</li>
+                <li><strong>2 Excel quote files</strong> (Detailed/Summary) where we update each product tab’s text and <em>keep only tabs that actually change</em>.</li>
             </ul>
 
             <h5>Inputs (on this page)</h5>
@@ -49,11 +49,10 @@
             <ul style="margin-left:20px">
                 <li><strong>Lead Times</strong>:
                     <ul>
-                        <li><code>Canberra Retail Production Lead Times</code> — A: Product, <strong>B: Buz inventory code(s)</strong>, <strong>C: Lead time text</strong></li>
-                        <li><code>Wholesale/Regional Store Lead Times</code> — same columns</li>
+                        <li><code>Production Lead Times</code> — A: Product, <strong>B: Buz inventory code(s)</strong>, <strong>C: Lead time text</strong></li>
                     </ul>
                 </li>
-                <li><strong>Cutoffs</strong> — tab <code>{{ cutoff_tab }}</code>: <strong>B: Product</strong>, <strong>C: Buz inventory code(s)</strong>, <strong>G: Last Date for Deposits</strong></li>
+                <li><strong>Cutoffs</strong>: <strong>B: Product</strong>, <strong>C: Buz inventory code(s)</strong>, <strong>G: Last Date for Deposits</strong></li>
             </ul>
 
             <h5>Rules</h5>
@@ -84,13 +83,13 @@
                 <li><strong>HTML snippets</strong>:
                     <ul>
                         <li>Format: <code>Product: &lt;lead time text&gt;</code> (+ <code>***CHRISTMAS CUTOFF dd/mm/yy***</code> if set).</li>
-                        <li>Sorted A→Z by Product; one snippet for Canberra, one for Regional.</li>
+                        <li>Sorted A→Z by Product.</li>
                     </ul>
                 </li>
             </ul>
 
             <h5>Results</h5>
-            <p>After you press <strong>Go</strong>, download links for the 4 Excel files (changed tabs only) and the 2 HTML snippets appear here. If we hit shape or data issues, a <code>warnings.txt</code> link is shown with details (e.g. missing anchors, red-tab skips, validation diffs).</p>
+            <p>After you press <strong>Go</strong>, download links for the 2 Excel files (changed tabs only) and the HTML snippet appears here. If we hit shape or data issues, a <code>warnings.txt</code> link is shown with details (e.g. missing anchors, red-tab skips, validation diffs).</p>
 
             <details class="hint">
                 <summary>Notes for reviewers</summary>
@@ -107,24 +106,18 @@
 
         <li>
             <a class="link-pill" target="_blank" rel="noopener"
-               href="{{ url_for('lead_times.open_sheet', kind='lead', tab='canberra') }}">
-                <span class="glyphicon glyphicon-list-alt"></span> Lead Times — Canberra
-            </a>
-        </li>
-
-        <li>
-            <a class="link-pill" target="_blank" rel="noopener"
-               href="{{ url_for('lead_times.open_sheet', kind='lead', tab='regional') }}">
-                <span class="glyphicon glyphicon-list-alt"></span> Lead Times — Regional
+               href="{{ url_for('lead_times.open_sheet', kind='lead') }}">
+                <span class="glyphicon glyphicon-list-alt"></span> Lead Times
             </a>
         </li>
 
         <li>
             <a class="link-pill link-pill--accent" target="_blank" rel="noopener"
-               href="{{ url_for('lead_times.open_sheet', kind='cutoff', tab=cutoff_tab) }}">
-                <span class="glyphicon glyphicon-time"></span> Christmas Cutoffs ({{ cutoff_tab }})
+               href="{{ url_for('lead_times.open_sheet', kind='cutoff') }}">
+                <span class="glyphicon glyphicon-time"></span> Christmas Cutoffs
             </a>
         </li>
+
     </ul>
 
     <form method="post" enctype="multipart/form-data">

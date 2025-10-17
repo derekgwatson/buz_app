@@ -125,7 +125,7 @@ def test_run_publish_applies_banner_and_updates_values(tmp_path: Path):
         detailed_template_path=str(detailed_tmpl),
         summary_template_path=str(summary_tmpl),
         save_dir=str(out_dir),
-        scope=("CANBERRA",),  # keep the integration tight
+        scope="CANBERRA",  # keep the integration tight
     )
 
     # Files were emitted

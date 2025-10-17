@@ -18,9 +18,6 @@ from services.excel_safety import save_workbook_gracefully
 import re
 from typing import Dict, Tuple, List, Iterable
 
-_CAN = "CANBERRA"
-_REG = "REGIONAL"
-
 # replace the existing _LEAD_LINE_RE with this
 # If you also parse/insert cutoffs, re-use your cutoff detector here.
 # Kept simple: looks for "cutoff" word in the entire cell (case-insensitive).
@@ -443,17 +440,6 @@ def _cutoff_attach_note(
                 )
 
 
-def _norm_scopes(scopes: Iterable[str] | None) -> Tuple[str, ...]:
-    if not scopes:
-        return (_CAN, _REG)
-    out: List[str] = []
-    for s in scopes:
-        v = (s or "").strip().lower()
-        if v in ("canberra", "regional"):
-            out.append(_CAN if v == "canberra" else _REG)
-    return tuple(out or (_CAN, _REG))
-
-
 def run_publish(
     *,
     gsheets_service,
@@ -461,36 +447,32 @@ def run_publish(
     detailed_template_path: str,
     summary_template_path: str,
     save_dir: str,
-    scope: Tuple[str, ...] = ("CANBERRA", "REGIONAL"),
+    scope: str,
 ) -> dict:
     """Read Sheets, validate/merge, generate HTML + Excel files (or review-only)."""
-
-    scope = _norm_scopes(scope)
 
     if not isinstance(lead_times_cfg, dict) or "lead_times_ss" not in lead_times_cfg:
         raise ValueError("Missing or invalid config: get_cfg('lead_times') did not return expected structure")
 
     # 1) Read Sheets
     lt_block = lead_times_cfg["lead_times_ss"]
-    lt_id = lt_block["sheet_id"]
-    t_can = lt_block["tabs"]["canberra"]
-    t_reg = lt_block["tabs"]["regional"]
-    lt_hdr = int(lt_block.get("header_row", 1))  # 1-based
-
     co_block = lead_times_cfg["cutoffs"]
+    lt_id = lt_block["sheet_id"]
     co_id = co_block["sheet_id"]
-    t_cut = co_block["tab"]
+    lt_hdr = int(lt_block.get("header_row", 1))  # 1-based
     co_hdr = int(co_block.get("header_row", 1))  # 1-based
+
+    t_lead = lt_block["tabs"][scope]
+    t_cut = co_block["tabs"][scope]
 
     def a1(tab: str, cols: str = "A:Z") -> str:
         return f"{tab}!{cols}"
 
-    can_rows = gsheets_service.fetch_sheet_data(lt_id, a1(t_can))
-    reg_rows = gsheets_service.fetch_sheet_data(lt_id, a1(t_reg))
+    lead_rows = gsheets_service.fetch_sheet_data(lt_id, a1(t_lead))
     cut_rows = gsheets_service.fetch_sheet_data(co_id, a1(t_cut))
 
     sa_email = getattr(gsheets_service, "service_account_email", lambda: "<unknown>")()
-    if not can_rows or not reg_rows:
+    if not lead_rows:
         raise ValueError(
             f"Could not read Lead Times sheet(s). Share {lt_id} with {sa_email} and re-run."
         )
@@ -503,8 +485,7 @@ def run_publish(
             return rows
         return rows[header_row_1based:]
 
-    can_rows = strip_headers(can_rows, lt_hdr)
-    reg_rows = strip_headers(reg_rows, lt_hdr)
+    lead_rows = strip_headers(lead_rows, lt_hdr)
     cut_rows = strip_headers(cut_rows, co_hdr)
 
     # Columns
@@ -517,102 +498,62 @@ def run_publish(
     valid_tabs = _valid_codes_from_templates(
         detailed_template_path, summary_template_path
     )
-    can_codes = codes_from_rows(can_rows, map_i)
-    reg_codes = codes_from_rows(reg_rows, map_i)
+    lead_codes = codes_from_rows(lead_rows, map_i)
     cut_codes = codes_from_rows(cut_rows, cut_map_i)
 
-    unknown_can = can_codes - valid_tabs
-    unknown_reg = reg_codes - valid_tabs
+    unknown_lead = lead_codes - valid_tabs
     unknown_cut = cut_codes - valid_tabs
 
     def _pv(s: set[str]) -> str:
         return "—" if not s else (", ".join(sorted(s)[:12]) + (f", +{len(s) - 12} more" if len(s) > 12 else ""))
 
-    # Determine which scope(s) are in this run and the codes that matter for them
-    show_can = (_CAN in scope)
-    show_reg = (_REG in scope)
-    scope_codes: set[str] = set()
-    if show_can and not show_reg:
-        scope_codes = set(can_codes)
-    elif show_reg and not show_can:
-        scope_codes = set(reg_codes)
-    else:
-        scope_codes = set(can_codes) | set(reg_codes)  # both, or fallback
-
-    # Only consider cutoff unknowns that belong to THIS run's scope
-    unknown_cut_scoped = set(unknown_cut) & scope_codes
+    scope_codes = set(lead_codes)
 
     # If any relevant unknowns exist, raise with scope-aware sections
-    has_any = (show_can and bool(unknown_can)) or (show_reg and bool(unknown_reg)) or bool(unknown_cut_scoped)
+    has_any = bool(unknown_lead) or bool(unknown_cut)
     if has_any:
         parts: list[str] = [
             "<strong>Unknown codes</strong> — present in Google Sheets but not found as tabs "
             "in the uploaded templates (tabs define the valid list)."
         ]
-        if show_can and unknown_can:
+        if unknown_lead:
             parts.append(
-                f"<div class='mt-1'><small><strong>Canberra:</strong> <code>{_pv(unknown_can)}</code></small></div>"
+                f"<div class='mt-1'><small><strong>Leads:</strong> <code>{_pv(unknown_lead)}</code></small></div>"
             )
-        if show_reg and unknown_reg:
+        if unknown_cut:
             parts.append(
-                f"<div class='mt-1'><small><strong>Regional:</strong> <code>{_pv(unknown_reg)}</code></small></div>"
-            )
-        if unknown_cut_scoped:
-            parts.append(
-                f"<div class='mt-1'><small><strong>Cutoffs:</strong> <code>{_pv(unknown_cut_scoped)}</code></small></div>"
+                f"<div class='mt-1'><small><strong>Cutoffs:</strong> <code>{_pv(unknown_cut)}</code></small></div>"
             )
 
         from markupsafe import Markup
         raise ValueError(Markup("".join(parts)))
 
-    # (Optional) If you still want visibility on out-of-scope cutoffs, add a soft warning:
-    other_scope_cutoffs = set(unknown_cut) - scope_codes
-
     warnings: list[str] = []
 
-    if other_scope_cutoffs:
-        warnings.append(
-            f"[NOTE] Ignoring {len(other_scope_cutoffs)} unknown cutoff code(s) not used in this scope."
-        )
-
     # 2) Merge + HTML
-    merged = import_and_merge(
-        canberra_rows=can_rows,
-        regional_rows=reg_rows,
+    ir = import_and_merge(
+        lead_rows=lead_rows,
         cutoff_rows=cut_rows,
         lead_cols=lead_cols,
         cutoff_cols=cut_cols,
-        scope=_CAN if (_CAN in scope) else _REG,  # pass exactly one
+        scope=scope
     )
 
-    html_out: Dict[str, str] = {}
-    for store in scope:
-        ir = merged[store]
+    from services.lead_times.html_out import build_pasteable_html
 
-        from services.lead_times.html_out import build_pasteable_html
+    html_out = build_pasteable_html(
+        ir.by_product_html,
+        product_to_codes=ir.product_to_codes,
+        cutoffs_by_code=ir.cutoff_rows,
+    )
 
-        html_out[store.lower()] = build_pasteable_html(
-            ir.by_product_html,
-            product_to_codes=ir.product_to_codes,
-            cutoffs_by_code=ir.cutoff_rows,
-        )
-
-    if _CAN in scope:
-        _cutoff_attach_note(
-            warnings,
-            "CANBERRA",
-            merged["CANBERRA"].by_product_html,
-            merged["CANBERRA"].product_to_codes,
-            merged["CANBERRA"].cutoff_rows,
-        )
-    if _REG in scope:
-        _cutoff_attach_note(
-            warnings,
-            "REGIONAL",
-            merged["REGIONAL"].by_product_html,
-            merged["REGIONAL"].product_to_codes,
-            merged["REGIONAL"].cutoff_rows,
-        )
+    _cutoff_attach_note(
+        warnings,
+        scope,
+        ir.by_product_html,
+        ir.product_to_codes,
+        ir.cutoff_rows,
+    )
 
     # 3) Excel generation
     outdir = Path(save_dir)
@@ -652,188 +593,95 @@ def run_publish(
     review_summary: set[str] = set()
 
     # Detailed
-    if _CAN in scope:
-        leads_clean = _deep_strip_banners(merged["CANBERRA"].lead_rows)
+    leads_clean = _deep_strip_banners(ir.lead_rows)
 
-        res: InjectResult = inject_and_prune(
-            template_path=Path(detailed_template_path),
-            out_path=outname("canberra_detailed", "Quote_Detailed_Canberra_{YYYYMMDD}.xlsx"),
-            store_name="CANBERRA",
-            leads_by_code=leads_clean,
-            insertion_col_letter=ins_cols["detailed"],   # "B"
-            anchor_col_letter=anchor_col_letter,         # "F"
-            anchor_header_row=anchor_header_row,         # 2
-            control_codes=merged["CANBERRA"].control_codes,
-            warnings=warnings,
-            workbook_kind="Detailed",
-            detailed_prefix_template=detailed_prefix_template,
-        )
+    res: InjectResult = inject_and_prune(
+        template_path=Path(detailed_template_path),
+        out_path=outname("detailed", "Quote_Detailed_{YYYYMMDD}.xlsx"),
+        store_name=scope,
+        leads_by_code=leads_clean,
+        insertion_col_letter=ins_cols["detailed"],   # "B"
+        anchor_col_letter=anchor_col_letter,         # "F"
+        anchor_header_row=anchor_header_row,         # 2
+        control_codes=ir.control_codes,
+        warnings=warnings,
+        workbook_kind="Detailed",
+        detailed_prefix_template=detailed_prefix_template,
+    )
 
-        _normalize_lead_line_spacing_from_template(
-            template_path=Path(detailed_template_path),
-            output_path=Path(res.saved_path),
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],  # "B"
-            warnings=warnings,
-            label="Detailed CANBERRA",
-        )
+    _normalize_lead_line_spacing_from_template(
+        template_path=Path(detailed_template_path),
+        output_path=Path(res.saved_path),
+        do_not_show_col_letter=anchor_col_letter,
+        header_row_1based=anchor_header_row,
+        target_col_letter=ins_cols["detailed"],  # "B"
+        warnings=warnings,
+        label="Detailed",
+    )
 
-        _apply_banners_to_workbook(
-            output_path=Path(res.saved_path),
-            cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
-            warnings=warnings,
-            label="Detailed CANBERRA",
-            kind="detailed",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],
-        )
+    _apply_banners_to_workbook(
+        output_path=Path(res.saved_path),
+        cutoffs_by_code=ir.cutoff_rows,
+        warnings=warnings,
+        label="Detailed",
+        kind="detailed",
+        do_not_show_col_letter=anchor_col_letter,
+        header_row_1based=anchor_header_row,
+        target_col_letter=ins_cols["detailed"],
+    )
 
-        _prune_unchanged_tabs_cell_based(
-            template_path=Path(detailed_template_path),
-            output_path=Path(res.saved_path),
-            warnings=warnings,
-            label="Detailed CANBERRA",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],
-        )
+    _prune_unchanged_tabs_cell_based(
+        template_path=Path(detailed_template_path),
+        output_path=Path(res.saved_path),
+        warnings=warnings,
+        label="Detailed",
+        do_not_show_col_letter=anchor_col_letter,
+        header_row_1based=anchor_header_row,
+        target_col_letter=ins_cols["detailed"],
+    )
 
-        review_detailed |= set(res.review_codes)
-        files["canberra_detailed"] = os.path.basename(str(res.saved_path))
-
-    if _REG in scope:
-        leads_clean = _deep_strip_banners(merged["REGIONAL"].lead_rows)
-
-        res: InjectResult = inject_and_prune(
-            template_path=Path(detailed_template_path),
-            out_path=outname("regional_detailed", "Quote_Detailed_Regional_{YYYYMMDD}.xlsx"),
-            store_name="REGIONAL",
-            leads_by_code=leads_clean,
-            insertion_col_letter=ins_cols["detailed"],
-            anchor_col_letter=anchor_col_letter,
-            anchor_header_row=anchor_header_row,
-            control_codes=merged["REGIONAL"].control_codes,
-            warnings=warnings,
-            workbook_kind="Detailed",
-            detailed_prefix_template=detailed_prefix_template,
-        )
-
-        _normalize_lead_line_spacing_from_template(
-            template_path=Path(detailed_template_path),
-            output_path=Path(res.saved_path),
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],  # "B"
-            warnings=warnings,
-            label="Detailed REGIONAL",
-        )
-
-        _apply_banners_to_workbook(
-            output_path=Path(res.saved_path),
-            cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
-            warnings=warnings,
-            label="Detailed REGIONAL",
-            kind="detailed",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],
-        )
-
-        _prune_unchanged_tabs_cell_based(
-            template_path=Path(detailed_template_path),
-            output_path=Path(res.saved_path),
-            warnings=warnings,
-            label="Detailed REGIONAL",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["detailed"],
-        )
-
-        review_detailed |= set(res.review_codes)
-        files["regional_detailed"] = os.path.basename(str(res.saved_path))
+    review_detailed |= set(res.review_codes)
+    files["detailed"] = os.path.basename(str(res.saved_path))
 
     # Summary
-    if _CAN in scope:
-        leads_clean = _deep_strip_banners(merged["CANBERRA"].lead_rows)
+    leads_clean = _deep_strip_banners(ir.lead_rows)
 
-        res: InjectResult = inject_and_prune(
-            template_path=Path(summary_template_path),
-            out_path=outname("canberra_summary", "Quote_Summary_Canberra_{YYYYMMDD}.xlsx"),
-            store_name="CANBERRA",
-            leads_by_code=leads_clean,
-            insertion_col_letter=ins_cols["summary"],    # "C"
-            anchor_col_letter=anchor_col_letter,         # "F"
-            anchor_header_row=anchor_header_row,         # 2
-            control_codes=merged["CANBERRA"].control_codes,
-            warnings=warnings,
-            workbook_kind="Summary",
-        )
+    res: InjectResult = inject_and_prune(
+        template_path=Path(summary_template_path),
+        out_path=outname("summary", "Quote_Summary_{YYYYMMDD}.xlsx"),
+        store_name=scope,
+        leads_by_code=leads_clean,
+        insertion_col_letter=ins_cols["summary"],    # "C"
+        anchor_col_letter=anchor_col_letter,         # "F"
+        anchor_header_row=anchor_header_row,         # 2
+        control_codes=ir.control_codes,
+        warnings=warnings,
+        workbook_kind="Summary",
+    )
 
-        _apply_banners_to_workbook(
-            output_path=Path(res.saved_path),
-            cutoffs_by_code=merged["CANBERRA"].cutoff_rows,
-            warnings=warnings,
-            label="Summary CANBERRA",
-            kind="summary",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["summary"],
-        )
+    _apply_banners_to_workbook(
+        output_path=Path(res.saved_path),
+        cutoffs_by_code=ir.cutoff_rows,
+        warnings=warnings,
+        label="Summary",
+        kind="summary",
+        do_not_show_col_letter=anchor_col_letter,
+        header_row_1based=anchor_header_row,
+        target_col_letter=ins_cols["summary"],
+    )
 
-        _prune_unchanged_tabs_cell_based(
-            template_path=Path(summary_template_path),
-            output_path=Path(res.saved_path),
-            warnings=warnings,
-            label="Summary CANBERRA",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["summary"],
-        )
+    _prune_unchanged_tabs_cell_based(
+        template_path=Path(summary_template_path),
+        output_path=Path(res.saved_path),
+        warnings=warnings,
+        label="Summary",
+        do_not_show_col_letter=anchor_col_letter,
+        header_row_1based=anchor_header_row,
+        target_col_letter=ins_cols["summary"],
+    )
 
-        review_summary |= set(res.review_codes)
-        files["canberra_summary"] = os.path.basename(str(res.saved_path))
-
-    if _REG in scope:
-        leads_clean = _deep_strip_banners(merged["REGIONAL"].lead_rows)
-
-        res: InjectResult = inject_and_prune(
-            template_path=Path(summary_template_path),
-            out_path=outname("regional_summary", "Quote_Summary_Regional_{YYYYMMDD}.xlsx"),
-            store_name="REGIONAL",
-            leads_by_code=leads_clean,
-            insertion_col_letter=ins_cols["summary"],
-            anchor_col_letter=anchor_col_letter,
-            anchor_header_row=anchor_header_row,
-            control_codes=merged["REGIONAL"].control_codes,
-            warnings=warnings,
-            workbook_kind="Summary",
-        )
-
-        _apply_banners_to_workbook(
-            output_path=Path(res.saved_path),
-            cutoffs_by_code=merged["REGIONAL"].cutoff_rows,
-            warnings=warnings,
-            label="Summary REGIONAL",
-            kind="summary",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["summary"],
-        )
-
-        _prune_unchanged_tabs_cell_based(
-            template_path=Path(summary_template_path),
-            output_path=Path(res.saved_path),
-            warnings=warnings,
-            label="Summary REGIONAL",
-            do_not_show_col_letter=anchor_col_letter,
-            header_row_1based=anchor_header_row,
-            target_col_letter=ins_cols["summary"],
-        )
-
-        review_summary |= set(res.review_codes)
-        files["regional_summary"] = os.path.basename(str(res.saved_path))
+    review_summary |= set(res.review_codes)
+    files["summary"] = os.path.basename(str(res.saved_path))
 
     # If anything needs review, emit consolidated review-only workbooks and suppress the 4 normal links.
     review_files: Dict[str, str] = {}
@@ -865,6 +713,6 @@ def run_publish(
 
     return {
         "warnings": warnings,
-        "html": html_out,   # {"canberra": "<p>..</p>", "regional": "<p>..</p>"}
+        "html": html_out,
         "files": final_files,  # basenames; your download route serves from save_dir
     }

@@ -9,7 +9,7 @@ from markupsafe import Markup
 from typing import Dict, Tuple, List
 
 from services.google_sheets_service import GoogleSheetsService
-from services.lead_times.links import tab_url
+from services.lead_times.links import sheet_url
 from services.config_bridge import get_cfg, where_cfg
 from services.lead_times.api import run_publish
 
@@ -76,19 +76,6 @@ def _compose_html(scope: str, store: str, body_html: str) -> str:
     return "".join(out).strip()
 
 
-def _normalise_scopes(raw_list: List[str]) -> Tuple[str, ...]:
-    """
-    Accepts 'CANBERRA'/'REGIONAL' or lower-case variants and returns ('canberra', 'regional') subset.
-    """
-    norm = []
-    for s in raw_list or []:
-        v = (s or "").strip().lower()
-        if v in ("canberra", "regional"):
-            norm.append(v)
-    # default to both if nothing selected
-    return tuple(norm or ("canberra", "regional"))
-
-
 @lead_times_bp.route("/", methods=["GET", "POST"])
 def start():
     """
@@ -105,9 +92,12 @@ def start():
         )
 
     if request.method == "GET":
-        # FIX: get_cfg is already rooted at lead_times; don't prefix with 'lead_times'
-        cutoff_tab = get_cfg("cutoffs", "tab")
-        return render_template("lead_times_start.html", cutoff_tab=cutoff_tab)
+        cutoff_tab_canberra = get_cfg("cutoffs", "tabs", "canberra")
+        cutoff_tab_regional = get_cfg("cutoffs", "tabs", "regional")
+        return render_template(
+            "lead_times_start.html",
+            cutoff_tab_canberra=cutoff_tab_canberra,
+            cutoff_tab_regional=cutoff_tab_regional)
 
     detailed = request.files.get("detailed_template")
     summary = request.files.get("summary_template")
@@ -123,7 +113,7 @@ def start():
         summary.save(s_path)
 
         svc = GoogleSheetsService()
-        scopes = _normalise_scopes(request.form.getlist("scope"))
+        scope = request.form.get("scope")
 
         res = run_publish(
             gsheets_service=svc,
@@ -131,26 +121,15 @@ def start():
             detailed_template_path=d_path,
             summary_template_path=s_path,
             save_dir=_base_output_dir(),
-            scope=scopes,
+            scope=scope,
         )
-
-        # Compose per-scope HTML (keep existing Canberra variables for template compatibility)
-        body_canberra = res["html"].get("canberra", "")
-        body_regional = res["html"].get("regional", "")
-
-        full_canberra = _compose_html("canberra", "canberra", body_canberra) if body_canberra else ""
-        # Store name for regional can be chosen later; default to 'regional'
-        full_regional = _compose_html("regional", "regional", body_regional) if body_regional else ""
 
         return render_template(
             "lead_times_result.html",
             warnings=res.get("warnings", []),
-            html_canberra=body_canberra,
-            full_html_canberra=full_canberra,
-            html_regional=body_regional,            # optional; won’t break existing templates
-            full_html_regional=full_regional,       # optional
+            html=res["html"],
             files=res.get("files", []),
-            scopes=scopes,
+            scopes=scope,
         )
 
     except ValueError as exc:
@@ -162,23 +141,12 @@ def start():
 
 @lead_times_bp.get("/open")
 def open_sheet():
-    """
-    302 to the correct Google Sheet tab using your config shape.
-    """
-    svc = GoogleSheetsService()
-
     kind = (request.args.get("kind") or "lead").strip().lower()
-    tab_param = (request.args.get("tab") or "").strip()
 
     if kind == "cutoff":
-        sheet_id = get_cfg("cutoffs", "sheet_id")   # FIX: no 'lead_times' prefix
-        tab_name = tab_param or get_cfg("cutoffs", "tab")
-        return redirect(tab_url(svc, sheet_id, tab_name), code=302)
+        sheet_id = get_cfg("cutoffs", "sheet_id")
+        return redirect(sheet_url(sheet_id), code=302)
 
     # default: lead times (config key is 'lead_times_ss')
-    sheet_id = get_cfg("lead_times_ss", "sheet_id")   # FIX: no 'lead_times' prefix
-    tabs: Dict[str, str] = get_cfg("lead_times_ss", "tabs") or {}
-    # Choose tab: explicit scope in ?tab=canberra|regional, else default to canberra
-    tab_key = (tab_param or "canberra").strip().lower()
-    tab_name = tabs.get(tab_key) or tabs.get("canberra") or next(iter(tabs.values()), "")
-    return redirect(tab_url(svc, sheet_id, tab_name), code=302)
+    sheet_id = get_cfg("lead_times_ss", "sheet_id")
+    return redirect(sheet_url(sheet_id), code=302)
