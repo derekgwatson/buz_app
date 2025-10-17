@@ -1,46 +1,205 @@
 {% extends "layout.html" %}
-
-{% block title %}Home - Buz Application{% endblock %}
+{% block title %}Duplicated Group Options — Matrix{% endblock %}
 
 {% block content %}
+<h1>Get Duplicated Group Options Codes</h1>
 
-    <h1>Get Duplicated Group Options Codes</h1>
-    
-    {% if codes %}
-        <ul>
-            <div class="container mt-4">
-                <h1 class="mb-4">Inventory Table</h1>
-                <table class="table table-bordered table-striped">
-                    <thead>
-                        <tr>
-                            <th>Group</th>
-                            <th>Inventory Item Code</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in codes %}
-                        <tr>
-                            <td>{{ row[0] }}</td>
-                            <td>{{ row[1] }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </ul>
+<h3>Group overview</h3>
+<select id="groupSelect" class="form-control">
+  {% for g in all_groups %}
+    <option value="{{ g }}">{{ g }}</option>
+  {% endfor %}
+</select>
 
-	{% else %}
-        {% if request.method == 'POST' %}
-            <p class="alert alert-info">No duplicated group options codes found. Please upload a file to search for duplicates.</p>
-        {% endif %}
-        <form action="{{ url_for('main_routes.get_duplicate_codes') }}" method="POST" enctype="multipart/form-data">
-            <div class="mb-3">
-                <label for="group_options_file" class="form-label">Group Options File:</label>
-                <input type="file" name="group_options_file" id="group_options_file" class="form-control">
-            </div>
-            <button type="submit" class="btn btn-primary">Go</button>
-        </form>
+<div id="groupCodes" class="mt-2"></div>
 
-    {% endif %}
-	
+<div class="row">
+  <div class="col-sm-8">
+    <div class="well well-sm" style="margin-bottom:10px">
+      <strong>Total codes:</strong> {{ code_to_groups|length }} ·
+      <strong>Total groups:</strong> {{ all_groups|length }}
+    </div>
+    <!-- Top affected groups -->
+    {% for g, cnt in (group_counts|dictsort(by='value', reverse=True))[:10] %}
+      <span class="label label-info" style="margin:2px">{{ g }}: {{ cnt }}</span>
+    {% endfor %}
+  </div>
+  <div class="col-sm-4 text-right">
+    <input id="search" class="form-control input-sm" placeholder="Search code…">
+  </div>
+</div>
+
+<div class="well well-sm filters">
+  <div class="pull-right">
+    <div class="btn-group" data-toggle="buttons">
+      <label class="btn btn-default btn-xs active"><input type="radio" name="mode" value="any" checked> Any</label>
+      <label class="btn btn-default btn-xs"><input type="radio" name="mode" value="all"> All</label>
+      <label class="checkbox-inline" style="margin-left:10px;">
+        <input type="checkbox" id="onlySelectedCols"> Show only selected groups
+      </label>
+    </div>
+    <span class="small text-muted">match of selected groups</span>
+  </div>
+
+  {% for g in all_groups %}
+    <label class="chip">
+      <input type="checkbox" class="gfilter" value="{{ g }}">
+      <span>{{ g }}{% if group_counts.get(g) %} ({{ group_counts[g] }}){% endif %}</span>
+    </label>
+  {% endfor %}
+  <div class="clearfix"></div>
+</div>
+
+<div class="matrix-wrap">
+  <table class="table table-condensed table-striped table-hover table-readable table-fixed matrix">
+    <thead>
+      <tr>
+        <th class="sticky-col col-code">Code</th>
+        {% for g in all_groups %}
+          <th class="rotate col-group"><div><span>{{ g }}</span></div></th>
+        {% endfor %}
+        <th class="text-center col-count">#</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for code, groups in code_to_groups.items() %}
+        <tr data-groups="{{ '|'.join(groups) }}" data-code="{{ code|lower }}">
+          <td class="sticky-col"><code>{{ code }}</code></td>
+          {% for g in all_groups %}
+            <td class="hit {% if g in groups %}has{% endif %}" title="{{ g if g in groups }}"></td>
+          {% endfor %}
+          <td class="text-center">{{ groups|length }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block head %}
+<style>
+  .matrix-wrap { background:#0f1114; border:1px solid #222; border-radius:6px; overflow:auto; }
+  .table-readable{ background:#101215!important; color:#e6e6e6!important; }
+  .table-readable thead th{ background:#171a1f!important; color:#fff!important; }
+  .table-readable.table-striped > tbody > tr:nth-of-type(odd){ background:#14171c!important; }
+
+  /* Horizontal scroll + explicit column widths (prevents header collapse) */
+  .table-fixed { table-layout: fixed; width: 100%; }
+  .col-code  { width: 200px; min-width: 200px; }   /* show full code */
+  .col-group { width: 28px;  min-width: 28px; }    /* one “dot” wide */
+  .col-count { width: 40px;  min-width: 40px; }    /* rightmost count */
+  thead th, tbody td { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Sticky first column (header + body) */
+  .sticky-col { position: sticky; left: 0; background:#101215; z-index: 3; box-shadow: 2px 0 0 #171a1f; }
+  thead .sticky-col { z-index: 4; } /* keep above body cells */
+
+  /* Compact rotated headers (uses writing-mode for reliability) */
+  .rotate { vertical-align: bottom; text-align:center; }
+  .rotate > div { height: 140px; display:flex; align-items:flex-end; justify-content:center; }
+  .rotate span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; }
+
+  /* Visual hits (no text to wrap) */
+  .hit { text-align:center; vertical-align: middle; }
+  .hit.has { background: rgba(0, 180, 255, .18); }
+  .hit.has::after { content: '•'; display:block; line-height:1; font-size:16px; color:#8ee3ff; }
+
+  /* Filter panel readability */
+  .filters { background:#161b22; border:1px solid #2b313a; border-radius:8px; }
+  .chip {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:6px 10px; margin:4px; border-radius:9999px;
+    background:#232a33; color:#e6edf3; font-weight:500; cursor:pointer;
+    border:1px solid transparent;
+  }
+  .chip input { accent-color:#0dcaf0; }
+  .chip:hover { border-color:#3a424d; }
+  .chip input:checked + span {
+    background:#0b7aa5; color:#fff; padding:2px 6px; border-radius:9999px;
+  }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  // --- Group overview dropdown (Option 3) ---
+  $('#groupSelect').change(function(){
+    var g = $(this).val();
+    var codes = {{ group_to_codes|tojson }};
+    $('#groupCodes').html(
+      (codes[g] || []).map(function(c){
+        return '<span class="label label-default" style="margin:2px">'+c+'</span>';
+      }).join(' ')
+    );
+  }).change();
+
+  // --- Matrix filters (search, ANY/ALL, show selected cols) ---
+  var selected = new Set();
+
+  // Map group name -> ABSOLUTE column index in the table (1-based)
+  // Col 1 = "Code", then groups start at 2, then last col = "#"
+  var colIndexByGroup = {};
+  $('table.matrix thead th.rotate').each(function(i){
+    var g = $(this).text().trim();
+    colIndexByGroup[g] = 2 + i; // <-- correct absolute index
+  });
+
+  function applyFilter(){
+    var mode = $('input[name=mode]:checked').val(); // any | all
+    var q = ($('#search').val() || '').toLowerCase();
+
+    // Row visibility
+    $('table.matrix tbody tr').each(function(){
+      var $tr = $(this);
+      var code = String($tr.data('code') || '');
+      var groups = String($tr.data('groups') || '').split('|').filter(Boolean);
+
+      var matchText = !q || code.indexOf(q) !== -1;
+      var matchGroups = selected.size === 0;
+      if (!matchGroups) {
+        var arr = Array.from(selected);
+        matchGroups = (mode === 'any')
+          ? arr.some(function(g){ return groups.indexOf(g) !== -1; })
+          : arr.every(function(g){ return groups.indexOf(g) !== -1; });
+      }
+      $tr.toggle(matchText && matchGroups);
+    });
+
+    // Column visibility (Show only selected groups)
+    if ($('#onlySelectedCols').prop('checked') && selected.size > 0) {
+      // Hide all first
+      $('table.matrix thead th, table.matrix tbody td').hide();
+
+      // Always show first ("Code") and last ("#")
+      $('table.matrix thead th:first-child, table.matrix tbody td:first-child').show();
+      $('table.matrix thead th:last-child,  table.matrix tbody td:last-child').show();
+
+      // Show selected group columns
+      selected.forEach(function(g){
+        var idx = colIndexByGroup[g];
+        if (idx != null) {
+          $('table.matrix thead th:nth-child(' + idx + '), table.matrix tbody td:nth-child(' + idx + ')').show();
+        }
+      });
+    } else {
+      $('table.matrix thead th, table.matrix tbody td').show();
+    }
+  }
+
+  // Events
+  $('.gfilter').on('change', function(){
+    selected = new Set($('.gfilter:checked').map(function(){ return this.value; }).get());
+    applyFilter();
+  });
+  $('input[name=mode]').on('change', applyFilter);
+  $('#search, #onlySelectedCols').on('input change', applyFilter);
+
+  // Initial render
+  applyFilter();
+})();
+
+</script>
 {% endblock %}

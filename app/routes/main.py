@@ -248,16 +248,33 @@ def get_group_option_codes():
 def get_duplicate_codes():
     if request.method == 'POST':
         from services.group_options_check import extract_duplicate_codes_with_locations
+        from services.group_options_check import build_views  # the helper we added
 
-        # Initialize the file handler for the input workbook
-        g_file_handler = OpenPyXLFileHandler.from_file_like(file=request.files.get('group_options_file'))
-        items = extract_codes_from_excel_flat_dedup(g_file_handler)
-        items = extract_duplicate_codes_with_locations(items)
+        fh = OpenPyXLFileHandler.from_file_like(file=request.files.get('group_options_file'))
 
-        return render_template('get_duplicate_codes.html', codes=items)
+        # 1) Scan all (tab, code) pairs from the workbook
+        flat_pairs = extract_codes_from_excel_flat_dedup(fh)  # [(tab, code)]
+        total_scanned_codes = len(flat_pairs)
 
-    else:
-        return render_template('get_duplicate_codes.html')
+        # 2) Keep only codes that appear in more than one tab
+        dupes = extract_duplicate_codes_with_locations(flat_pairs)  # [(code, [tabs])]
+        duplicate_only_count = len(dupes)
+
+        # 3) Shape for UI
+        code_to_groups, all_groups, group_counts, degree_counts, group_to_codes = build_views(dupes)
+
+        return render_template(
+            'get_duplicate_codes.html',
+            code_to_groups=code_to_groups,
+            all_groups=all_groups,
+            group_counts=group_counts,
+            degree_counts=degree_counts,
+            group_to_codes=group_to_codes,
+            total_scanned_codes=total_scanned_codes,
+            duplicate_only_count=duplicate_only_count,
+        )
+
+    return render_template('get_duplicate_codes.html')
 
 
 @main_routes_bp.route('/generate_codes', methods=["GET", "POST"])

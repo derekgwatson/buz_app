@@ -2,9 +2,33 @@ from collections import defaultdict
 from services.excel import OpenPyXLFileHandler
 from typing import List, Tuple
 import logging
+from collections import Counter
 
 
 logger = logging.getLogger(__name__)
+
+
+def build_views(dupes: list[tuple[str, list[str]]]):
+    """
+    dupes = [(code, ['GROUPA','GROUPB', ...]), ...]
+    """
+    # Normalise and sort
+    code_to_groups = {code: sorted(set(groups)) for code, groups in dupes}
+    all_groups = sorted({g for gs in code_to_groups.values() for g in gs})
+
+    # Overview stats
+    group_counts = {g: sum(1 for gs in code_to_groups.values() if g in gs) for g in all_groups}
+    degree_counts = Counter(len(gs) for gs in code_to_groups.values())
+
+    # Optional: group-centric view
+    group_to_codes = {g: [] for g in all_groups}
+    for code, gs in code_to_groups.items():
+        for g in gs:
+            group_to_codes[g].append(code)
+    for g in all_groups:
+        group_to_codes[g].sort()
+
+    return code_to_groups, all_groups, group_counts, degree_counts, group_to_codes
 
 
 def extract_codes_from_excel_flat_dedup(file_handler: OpenPyXLFileHandler) -> List[Tuple[str, str]]:
