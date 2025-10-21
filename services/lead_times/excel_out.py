@@ -290,14 +290,16 @@ def rewrite_summary_preserving_context(cell_text: str, new_lead: str) -> str:
     # Build bracket chunk and after
     if delim_kind == "paren":
         bracket_end = _scan_paren_span(s, delim_idx)
-        bracket_chunk = s[delim_idx:bracket_end]
         after = s[bracket_end:]
     else:
-        bracket_chunk = ""
         after = s[delim_idx:]
 
     prefix = s[:phrase_end] + ws_after_phrase
-    return prefix + new_lead + pre_delim_ws + bracket_chunk + after
+
+    if delim_kind == "paren":
+        return prefix + new_lead + after
+    else:
+        return prefix + new_lead + pre_delim_ws + after
 
 
 def inject_and_prune(
