@@ -3,6 +3,7 @@
 credentials/service_account.json
 credentials/dummy_service_account.json
 credentials/unleashed.json
+.secrets/
 
 # Python prod Virtual Environment
 venv/

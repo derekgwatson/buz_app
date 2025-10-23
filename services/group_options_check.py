@@ -71,7 +71,7 @@ def extract_codes_from_excel_flat_dedup(file_handler: OpenPyXLFileHandler) -> Li
         for row in sheet.iter_rows(min_row=17, min_col=2):
             for cell in row:
                 cell_value = cell.value
-                if cell_value:
+                if isinstance(cell_value, str) and cell_value.strip():
                     # Check the rule for row 6
                     col_letter = cell.column_letter
                     row_6_value = sheet[f"{col_letter}6"].value if sheet.max_row >= 6 else None

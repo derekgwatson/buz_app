@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from pathlib import Path
-from services.excel_safety import save_workbook_gracefully
 from openpyxl import load_workbook
 
 from .excel_out import (
@@ -352,7 +351,10 @@ def _prune_unchanged_tabs_cell_based(
             pruned.append(code)
 
     if pruned:
-        wb_out.save(str(output_path))
+        has_real_data = save_workbook_gracefully(wb_out, str(output_path))
+        if not has_real_data:
+            warnings.append("No data matched your filters — exported a placeholder workbook.")
+
         samp = ", ".join(sorted(pruned)[:5]) + ("…" if len(pruned) > 5 else "")
         warnings.append(f"[PRUNE] {label}: removed {len(pruned)} unchanged tab(s) (e.g., {samp}).")
 

@@ -6,12 +6,13 @@ import os
 import shutil
 import tempfile
 from markupsafe import Markup
-from typing import Dict, Tuple, List
+from typing import List
 
 from services.google_sheets_service import GoogleSheetsService
 from services.lead_times.links import sheet_url
 from services.config_bridge import get_cfg, where_cfg
 from services.lead_times.api import run_publish
+from services.excel_safety import save_workbook_gracefully
 
 
 lead_times_bp = Blueprint("lead_times", __name__, url_prefix="/tools/lead_times")
