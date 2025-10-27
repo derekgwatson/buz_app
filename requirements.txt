@@ -65,3 +65,4 @@ python-dotenv~=1.0.1
 flask_httpauth
 pytest~=7.2.0
 playwright~=1.55.0
+sentry-sdk[flask]>=2.0.0

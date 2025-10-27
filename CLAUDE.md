@@ -53,6 +53,9 @@ Environment variables:
 - `USERS` - JSON string of authorized users for basic auth
 - `BUZ_LOGIN_BASE` - Buz Manager login endpoint (default: https://login.buzmanager.com)
 - `GSHEETS_CREDENTIALS` or `GOOGLE_APPLICATION_CREDENTIALS` - Path to Google service account JSON
+- `SENTRY_DSN` - Sentry error tracking DSN (optional, enables error tracking if set)
+- `SENTRY_TRACES_SAMPLE_RATE` - Sentry performance monitoring sample rate (default: 0.1 = 10%)
+- `FLASK_ENV` or `ENV` - Environment name for Sentry (development/staging/production)
 
 ### Database
 
@@ -223,6 +226,20 @@ Services raise custom exceptions (see `services/exceptions.py`). Routes catch th
 - `conftest.py` provides fixtures for app context, database manager, and auth headers
 - Mock external APIs (Unleashed, Buz, Google Sheets) in unit tests
 - Integration tests in `tests/integration/` may require credentials
+
+## Error Monitoring
+
+The app uses Sentry for error tracking and performance monitoring:
+- Sentry is initialized in `app/__init__.py` via `init_sentry()`
+- Only enabled if `SENTRY_DSN` environment variable is set
+- Automatically captures unhandled exceptions, logs, and request context
+- Performance monitoring sample rate controlled by `SENTRY_TRACES_SAMPLE_RATE` (default 10%)
+- Environment tagging via `FLASK_ENV` or `ENV` helps filter errors by deployment
+
+To enable Sentry:
+1. Create a project at https://sentry.io
+2. Add `SENTRY_DSN=https://...@sentry.io/...` to your `.env` file
+3. Optionally set `ENV=production` or `ENV=staging`
 
 ## Code Style Notes
 

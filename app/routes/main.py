@@ -1114,6 +1114,21 @@ def curtain_sync_start():
         logger = logging.getLogger("curtain_sync")
         db = create_db_manager(db_path)  # don't use g.db in threads
 
+        # Ensure Sentry captures this background job's context
+        try:
+            import sentry_sdk
+            with sentry_sdk.start_transaction(op="task", name="curtain_sync_job"):
+                _run_curtain_sync(job_id, db, out_dir, headers_cfg, curtain_fabric_groups, spreadsheet_id, worksheet_tab, logger)
+        except ImportError:
+            # Sentry not installed, run without transaction
+            _run_curtain_sync(job_id, db, out_dir, headers_cfg, curtain_fabric_groups, spreadsheet_id, worksheet_tab, logger)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    def _run_curtain_sync(job_id, db, out_dir, headers_cfg, curtain_fabric_groups, spreadsheet_id, worksheet_tab, logger):
         try:
             progress = make_progress(job_id, db)
             progress("Starting…", 1)
@@ -1161,11 +1176,6 @@ def curtain_sync_start():
         except Exception as e:
             logger.exception("Curtain sync failed")
             update_job(job_id, pct=0, message=f"Error: {str(e)}", error=str(e), db=db, done=True)
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
 
     threading.Thread(
         target=curtain_sync_runner,
@@ -1235,3 +1245,5 @@ def curtain_sync_status(job_id):
 @auth.login_required
 def lead_times_start():
     return render_template('lead_times.html')
+
+

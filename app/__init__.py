@@ -14,6 +14,50 @@ from app.routes import main_routes_bp, fabrics_bp, discount_groups_bp, lead_time
 load_dotenv()
 
 
+def init_sentry():
+    """Initialize Sentry error tracking if SENTRY_DSN is configured."""
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    if not sentry_dsn:
+        return
+
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+
+        # Determine environment from ENV variable or default to development
+        environment = os.getenv("FLASK_ENV") or os.getenv("ENV") or "development"
+
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            environment=environment,
+            integrations=[
+                FlaskIntegration(),
+                LoggingIntegration(
+                    level=logging.INFO,       # Capture info and above as breadcrumbs
+                    event_level=logging.ERROR  # Send errors and above as events
+                ),
+            ],
+            # Set traces_sample_rate to 1.0 to capture 100% of transactions for performance monitoring.
+            # Adjust this value in production (e.g., 0.1 for 10%)
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+
+            # Send default PII (Personally Identifiable Information) like user IP, etc.
+            send_default_pii=True,
+
+            # Attach stack traces to all messages
+            attach_stacktrace=True,
+
+            # In development, still send errors even when Flask debug=True
+            debug=environment == "development",
+        )
+        logging.info(f"Sentry initialized for environment: {environment}")
+    except ImportError:
+        logging.warning("sentry-sdk not installed, error tracking disabled")
+    except Exception as e:
+        logging.error(f"Failed to initialize Sentry: {e}")
+
+
 # call this during app startup
 def cleanup_stale_jobs(db):
     db.execute_query(
@@ -25,6 +69,9 @@ def cleanup_stale_jobs(db):
 def create_app(config_name: str = ""):
     import time
     from flask import g
+
+    # Initialize Sentry before creating app to catch initialization errors
+    init_sentry()
 
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(ProductionConfig)
