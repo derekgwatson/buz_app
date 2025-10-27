@@ -6,17 +6,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_current_buz_fabrics(db_manager):
+def get_current_buz_fabrics(db_manager, curtain_groups=None):
     """
-    Fetch current fabrics from the inventory_items table, filtering only CRTWT and CRTNT groups.
+    Fetch current fabrics from the inventory_items table, filtering by curtain fabric groups.
 
     Args:
         db_manager: DatabaseManager instance.
+        curtain_groups: List/tuple of curtain group codes. Defaults to ['CRTWT', 'CRTNT', 'ROMNDC'].
 
     Returns:
         list: List of row dictionaries (sqlite3.Row objects).
     """
-    cursor = db_manager.execute_query("SELECT * FROM inventory_items WHERE inventory_group_code IN ('CRTWT', 'CRTNT')")
+    if curtain_groups is None:
+        curtain_groups = ['CRTWT', 'CRTNT', 'ROMNDC']
+
+    placeholders = ','.join('?' * len(curtain_groups))
+    query = f"SELECT * FROM inventory_items WHERE inventory_group_code IN ({placeholders})"
+    cursor = db_manager.execute_query(query, params=list(curtain_groups))
     rows = cursor.fetchall()
     return rows
 

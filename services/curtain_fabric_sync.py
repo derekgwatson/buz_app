@@ -20,12 +20,15 @@ KNOWN_ACRONYMS = {
 }
 
 # =========================
-# Config: fixed curtain tabs + product names
+# Config: curtain tabs + product names (loaded from config)
 # =========================
-CURTAIN_TABS = ["CRTWT", "CRTNT"]
+# These will be initialized from config in generate_uploads_from_db
+# For backwards compatibility with CLI usage, we provide defaults
+CURTAIN_TABS = ["CRTWT", "CRTNT", "ROMNDC"]  # default fallback
 PRODUCT_NAME_BY_TAB = {
     "CRTWT": "Curtain and Track",
     "CRTNT": "Curtain Only",
+    "ROMNDC": "Decorative Romans",
 }
 
 # Google sheet settings
@@ -265,12 +268,17 @@ def _safe_boolish(s):
     return str(s).strip().upper() in ("TRUE","YES","1","Y","T")
 
 
-def load_inventory_by_group(db):
+def load_inventory_by_group(db, curtain_tabs=None):
     """
     Returns dict[group_code] -> DataFrame mapped to export column names.
     Uses DatabaseManager exclusively.
     """
-    q = """
+    if curtain_tabs is None:
+        curtain_tabs = CURTAIN_TABS
+
+    # Build SQL IN clause dynamically
+    placeholders = ','.join('?' * len(curtain_tabs))
+    q = f"""
       SELECT
         Pkid            AS pkid,
         Code            AS code,
@@ -285,11 +293,11 @@ def load_inventory_by_group(db):
         CustomVar3      AS custom_var_3,   -- direction
         inventory_group_code
       FROM inventory_items
-      WHERE inventory_group_code IN ('CRTWT','CRTNT');
+      WHERE inventory_group_code IN ({placeholders});
     """
-    df = _df(db, q).fillna("")
+    df = _df(db, q, params=list(curtain_tabs)).fillna("")
     if df.empty:
-        return {g: pd.DataFrame(columns=list(INV_DB_TO_EXPORT.values()) + ["_group","_key", INV_COL_OP]) for g in CURTAIN_TABS}
+        return {g: pd.DataFrame(columns=list(INV_DB_TO_EXPORT.values()) + ["_group","_key", INV_COL_OP]) for g in curtain_tabs}
 
     df_ren = df.rename(columns=INV_DB_TO_EXPORT)
     df_ren["_group"] = df["inventory_group_code"].astype(str).str.strip()
@@ -305,7 +313,7 @@ def load_inventory_by_group(db):
             df_ren[c] = ""
 
     out = {}
-    for g in CURTAIN_TABS:
+    for g in curtain_tabs:
         out[g] = df_ren[df_ren["_group"] == g].copy().reset_index(drop=True)
     return out
 
@@ -338,10 +346,19 @@ def generate_uploads_from_db(
     output_dir: str = ".",
     write_change_log: bool = False,
     headers_cfg: dict | None = None,
+    curtain_fabric_groups: dict | None = None,
     progress=None,
 ):
     if headers_cfg is None or "buz_inventory_item_file" not in headers_cfg or "buz_pricing_file" not in headers_cfg:
         raise RuntimeError("headers config is required (buz_inventory_item_file and buz_pricing_file).")
+
+    # Extract curtain groups config (use module defaults if not provided)
+    if curtain_fabric_groups:
+        curtain_tabs = list(curtain_fabric_groups.keys())
+        product_name_by_tab = curtain_fabric_groups
+    else:
+        curtain_tabs = CURTAIN_TABS
+        product_name_by_tab = PRODUCT_NAME_BY_TAB
 
     def _ping(msg: str, pct: int | None = None):
         if callable(progress):
@@ -439,10 +456,10 @@ def generate_uploads_from_db(
 
     # --- Load Inventory (from DB)
     _ping("Loading inventory from DB…", 12)
-    inv_by_group = load_inventory_by_group(db)
+    inv_by_group = load_inventory_by_group(db, curtain_tabs=curtain_tabs)
     _ping("Inventory loaded", 18)
 
-    for sheet in CURTAIN_TABS:
+    for sheet in curtain_tabs:
         df = inv_by_group.get(sheet, pd.DataFrame())
         if df.empty:
             log(f"[2/5] Inventory tab {sheet}: 0 rows")
@@ -502,13 +519,13 @@ def generate_uploads_from_db(
 
     _ping(f"Pricing codes: {len(last_price_map)}", 25)
 
-    pricing_to_append = {s: [] for s in CURTAIN_TABS}
+    pricing_to_append = {s: [] for s in curtain_tabs}
     change_log = []
 
     # --- Process existing rows (D/E/reactivate/desc) and queue pricing if 2dp changed
     for grp, df in inv_by_group.items():
         _ping(f"Processing existing rows in {grp}…", 30)
-        product_name = PRODUCT_NAME_BY_TAB[grp]
+        product_name = product_name_by_tab[grp]
         log(f"[4/5] Processing existing rows in {grp} …")
         for i, row in df.iterrows():
             key = row["_key"]
@@ -608,7 +625,7 @@ def generate_uploads_from_db(
     _ping(f"Scanning for new fabrics: {len(new_keys)} fabrics", 56)
     for idx, key in enumerate(new_keys, 1):
         grow = g.loc[key]
-        for grp in CURTAIN_TABS:
+        for grp in curtain_tabs:
             df = inv_by_group[grp]
             keys_by_group = {grp: set(df["_key"]) for grp, df in inv_by_group.items()}
             if key in keys_by_group[grp]:
@@ -616,7 +633,7 @@ def generate_uploads_from_db(
 
             code = next_code_for_group(codes_by_group[grp], grp, start=10000)
             codes_by_group[grp].add(code)
-            product_name = PRODUCT_NAME_BY_TAB[grp]
+            product_name = product_name_by_tab[grp]
             new_desc = rebuild_description(product_name, grow[COL_BRAND], grow[COL_FABRIC], grow[COL_COLOUR])
 
             new_row = {col: "" for col in df.columns}
@@ -657,13 +674,13 @@ def generate_uploads_from_db(
 
     # --- Summarise changes
     summary = {"A":0,"E":0,"D":0}
-    per_tab = {t:{"A":0,"E":0,"D":0} for t in CURTAIN_TABS}
+    per_tab = {t:{"A":0,"E":0,"D":0} for t in curtain_tabs}
     for grp, df in inv_by_group.items():
         vc = df[df[INV_COL_OP].isin(["A","E","D"])][INV_COL_OP].value_counts().to_dict()
         for k,v in vc.items(): summary[k]+=v; per_tab[grp][k]=v
     log("Changes summary")
     log(f"  Total  A:{summary['A']:>6}  E:{summary['E']:>6}  D:{summary['D']:>6}")
-    for grp in CURTAIN_TABS:
+    for grp in curtain_tabs:
         a,e,d = per_tab[grp].get("A",0), per_tab[grp].get("E",0), per_tab[grp].get("D",0)
         log(f"  {grp:5} A:{a:>6}  E:{e:>6}  D:{d:>6}")
 
@@ -709,7 +726,7 @@ def generate_uploads_from_db(
     pricing_headers = _headers_from_config(headers_cfg, "buz_pricing_file")
 
     pwb = Workbook(); pwb.remove(pwb.active)
-    for grp in CURTAIN_TABS:
+    for grp in curtain_tabs:
         ws = pwb.create_sheet(title=grp)
         ws.append(pricing_headers)
 

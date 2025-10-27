@@ -1101,13 +1101,14 @@ def curtain_sync_start():
 
     out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
     headers_cfg = current_app.config["headers"]
+    curtain_fabric_groups = current_app.config.get("curtain_fabric_groups")
     db_path = current_app.config["database"]
     spreadsheet_id = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["id"]
     worksheet_tab = current_app.config["spreadsheets"]["master_curtain_fabric_list"]["tab"]
 
     os.makedirs(out_dir, exist_ok=True)
 
-    def curtain_sync_runner(job_id, db_path, out_dir, headers_cfg, spreadsheet_id, worksheet_tab):
+    def curtain_sync_runner(job_id, db_path, out_dir, headers_cfg, curtain_fabric_groups, spreadsheet_id, worksheet_tab):
         # No Flask globals in here.
         import logging
         logger = logging.getLogger("curtain_sync")
@@ -1129,6 +1130,7 @@ def curtain_sync_start():
                 db,
                 output_dir=out_dir,
                 headers_cfg=headers_cfg,
+                curtain_fabric_groups=curtain_fabric_groups,
                 progress=progress,
             )
 
@@ -1167,7 +1169,7 @@ def curtain_sync_start():
 
     threading.Thread(
         target=curtain_sync_runner,
-        args=(job_id, db_path, out_dir, headers_cfg, spreadsheet_id, worksheet_tab),
+        args=(job_id, db_path, out_dir, headers_cfg, curtain_fabric_groups, spreadsheet_id, worksheet_tab),
         daemon=True,
     ).start()
 

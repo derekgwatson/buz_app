@@ -489,7 +489,8 @@
     "unleashed_group_to_inventory_groups": {
         "DD- Curtain Fabric": [
             "CRTWT",
-            "CRTNT"
+            "CRTNT",
+            "ROMNDC"
         ],
         "Fabric - Awning": [
             "ALPHAV2",
@@ -656,6 +657,11 @@
         "pattern_repeat": "Vertical Pattern Repeat Size (cm)",
         "cost_sqm": "Cost to DD per metre CUT (ex GST)",
         "sell_sqm": "Current Buz Sell Price (ex GST)"
+    },
+    "curtain_fabric_groups": {
+        "CRTWT": "Curtain and Track",
+        "CRTNT": "Curtain Only",
+        "ROMNDC": "Decorative Romans"
     },
     "discount_grid": {
         "google_sheet_id": "1lm_VvI2ad3-F_OoHWq5jAAz92hLgrUVyF-6DWryurAI",

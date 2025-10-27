@@ -6,7 +6,7 @@ from flask import g
 
 logger = logging.getLogger(__name__)
 
-CURTAIN_TABS = ("CRTWT", "CRTNT")
+CURTAIN_TABS = ("CRTWT", "CRTNT", "ROMNDC")
 NEW_FABRIC_EFF_DATE_STR = "01/01/2020"
 
 # ---------- helpers ----------
@@ -105,7 +105,7 @@ def fetch_master_from_db(db=None):
 # ---------- BUZ sources ----------
 def fetch_buz_items(db):
     from services.buz_inventory_items import get_current_buz_fabrics
-    rows = get_current_buz_fabrics(db)  # rows from inventory_items for CRTWT/CRTNT
+    rows = get_current_buz_fabrics(db, curtain_groups=CURTAIN_TABS)  # rows from inventory_items for curtain groups
     # group by (brand,fabric,colour); remember a preferred code per desc
     from collections import defaultdict
     by_desc, preferred_code = defaultdict(list), {}
@@ -119,7 +119,7 @@ def fetch_buz_items(db):
 
 def fetch_buz_pricing(db):
     from services.buz_inventory_pricing import get_current_buz_pricing
-    return get_current_buz_pricing(db)  # {InventoryCode: row}
+    return get_current_buz_pricing(db, curtain_groups=CURTAIN_TABS)  # {InventoryCode: row}
 
 
 # ---------- compare ----------
@@ -151,7 +151,7 @@ def build_item_changes(new_descs, updated_descs, removed_rows):
     changes = {}
     def group_for(item):
         g = _norm(item.get("inventory_group_code"))
-        return g if g in CURTAIN_TABS else "CRTNT"
+        return g if g in CURTAIN_TABS else CURTAIN_TABS[1]  # default to CRTNT
 
     # Adds
     for m in new_descs:
@@ -185,7 +185,7 @@ def build_item_changes(new_descs, updated_descs, removed_rows):
 
     # Deletes
     for b in removed_rows:
-        grp = _norm(b.get("inventory_group_code") or "CRTNT")
+        grp = _norm(b.get("inventory_group_code") or CURTAIN_TABS[1])  # default to CRTNT
         row = dict(b); row["Operation"] = "D"
         changes.setdefault(grp, []).append(row)
 
@@ -208,7 +208,7 @@ def build_pricing_changes(master_by_desc, buz_pricing_by_code, desc_to_code):
             changed = True
         if not changed:
             continue
-        grp = _norm(m.get("inventory_group_code") or "CRTNT")
+        grp = _norm(m.get("inventory_group_code") or CURTAIN_TABS[1])  # default to CRTNT
         changes.setdefault(grp, []).append({
             "PkId": "", "Operation": "A",
             "InventoryCode": code,

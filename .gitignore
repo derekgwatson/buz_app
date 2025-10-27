@@ -25,6 +25,7 @@ ownership_change.sh
 uploads/
 buz_data.db
 buz_data.db.backup
+.claude/settings.local.json
 
 # Ignore everything in instance (runtime data)
 instance/

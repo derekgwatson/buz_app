@@ -7,17 +7,23 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_current_buz_pricing(db):
+def get_current_buz_pricing(db, curtain_groups=None):
     """
     Fetch current pricing records from the pricing_data table.
 
     Args:
         db: Database connection or DatabaseManager instance.
+        curtain_groups: List/tuple of curtain group codes. Defaults to ['CRTWT', 'CRTNT', 'ROMNDC'].
 
     Returns:
         dict: Mapping InventoryCode → row dictionary.
     """
-    cursor = db.execute_query("SELECT * FROM pricing_data WHERE inventory_group_code IN ('CRTWT', 'CRTNT')")
+    if curtain_groups is None:
+        curtain_groups = ['CRTWT', 'CRTNT', 'ROMNDC']
+
+    placeholders = ','.join('?' * len(curtain_groups))
+    query = f"SELECT * FROM pricing_data WHERE inventory_group_code IN ({placeholders})"
+    cursor = db.execute_query(query, params=list(curtain_groups))
     rows = cursor.fetchall()
     pricing = {}
     for row in rows:
