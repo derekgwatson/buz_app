@@ -197,3 +197,69 @@ def build_pasteable_html(
     )
     text = "\n".join(lines)
     return to_pasteable_html_bold_cutoff_suffix(text, collapse_blank_lines=collapse_blank_lines)
+
+
+def build_html_lines_direct_cutoffs(
+    by_product: Iterable[tuple],
+    *,
+    product_to_cutoff: Dict[str, str],
+    placeholder: str = "TBC",
+) -> List[str]:
+    """
+    Build display lines from (product, lead_time_text) pairs and append cutoff
+    by looking up directly in product_to_cutoff mapping (no code-based lookup).
+
+    - product_to_cutoff: direct mapping from product name to cutoff date (from cutoff sheet)
+    - If lead_time_text is blank, uses `placeholder` (default 'TBC').
+    - Output is sorted by product name (case-insensitive).
+    """
+    lines: List[str] = []
+    seen_products: set[str] = set()
+
+    for row in by_product:
+        if not row:
+            continue
+
+        product = str(row[0]).strip()
+        if not product or product in seen_products:
+            continue
+        seen_products.add(product)
+
+        lead_text = str(row[1]).strip() if len(row) > 1 else ""
+        if not lead_text:
+            lead_text = placeholder
+
+        # Tidy to avoid '::' and trailing colons/dashes from source text
+        display_product = _tidy_product(product).replace("::", ":")
+
+        line = f"{display_product}: {lead_text}"
+
+        # Look up cutoff directly by product name
+        cutoff = product_to_cutoff.get(product, "").strip()
+        if cutoff:
+            line += f" ***CHRISTMAS CUTOFF {cutoff}***"
+
+        lines.append(line)
+
+    lines.sort(key=lambda s: s.split(":", 1)[0].casefold())
+    return lines
+
+
+def build_pasteable_html_direct_cutoffs(
+    by_product: Iterable[tuple],
+    *,
+    product_to_cutoff: Dict[str, str],
+    placeholder: str = "TBC",
+    collapse_blank_lines: bool = True,
+) -> str:
+    """
+    Build HTML with lead times and cutoffs, using direct product->cutoff mapping
+    instead of code-based lookup.
+    """
+    lines = build_html_lines_direct_cutoffs(
+        by_product,
+        product_to_cutoff=product_to_cutoff,
+        placeholder=placeholder,
+    )
+    text = "\n".join(lines)
+    return to_pasteable_html_bold_cutoff_suffix(text, collapse_blank_lines=collapse_blank_lines)

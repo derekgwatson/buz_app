@@ -541,12 +541,11 @@ def run_publish(
         scope=scope
     )
 
-    from services.lead_times.html_out import build_pasteable_html
+    from services.lead_times.html_out import build_pasteable_html_direct_cutoffs
 
-    html_out = build_pasteable_html(
+    html_out = build_pasteable_html_direct_cutoffs(
         ir.by_product_html,
-        product_to_codes=ir.product_to_codes,
-        cutoffs_by_code=ir.cutoff_rows,
+        product_to_cutoff=ir.product_to_cutoff,
     )
 
     _cutoff_attach_note(

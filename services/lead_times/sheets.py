@@ -106,6 +106,8 @@ class ImportResultStore:
     by_product_html: List[Tuple[str, str]]  # (product_name, lead_time_text)
     # NEW: product -> set(codes) for code-based joins to Cutoffs
     product_to_codes: Dict[str, Set[str]]
+    # Direct product -> cutoff mapping from cutoff sheet (for HTML, no code merging)
+    product_to_cutoff: Dict[str, str]  # product_name -> cutoff_date
 
 
 # ———————————————————————————————————————————————————————————
@@ -263,19 +265,27 @@ def import_and_merge(
 
     lead_rows, cut_html, lead_prod2codes = make_lead_rows(lead_triples)
 
-    # Cutoff per-code rows
-    def make_cutoff_rows(triples: List[Tuple[str, str, str]]) -> Dict[str, Dict]:
+    # Cutoff per-code rows and direct product->cutoff mapping
+    def make_cutoff_rows(triples: List[Tuple[str, str, str]]) -> Tuple[Dict[str, Dict], Dict[str, str]]:
         out: Dict[str, Dict] = {}
+        product_to_cutoff: Dict[str, str] = {}
+
         for product, mapping_cell, cutoff in triples:
             product = (product or "").strip()
             cutoff = (cutoff or "").strip()
             if not product:
                 continue
+
+            # Direct product->cutoff mapping (first occurrence wins for HTML)
+            if product not in product_to_cutoff:
+                product_to_cutoff[product] = cutoff
+
+            # Per-code dict for Excel generation
             for code in parse_mapping_codes(mapping_cell or ""):
                 out[code] = {"product": product, "cutoff": cutoff}
-        return out
+        return out, product_to_cutoff
 
-    cut_by_code = make_cutoff_rows(cut_triples)
+    cut_by_code, prod_to_cutoff = make_cutoff_rows(cut_triples)
 
     return ImportResultStore(
             lead_rows=lead_rows,
@@ -283,4 +293,5 @@ def import_and_merge(
             control_codes=lead_codes,
             by_product_html=sorted(cut_html, key=lambda t: t[0].casefold()),
             product_to_codes=lead_prod2codes,
+            product_to_cutoff=prod_to_cutoff,
         )
