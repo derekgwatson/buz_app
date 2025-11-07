@@ -994,7 +994,13 @@ def apply_changes_to_database(items_changes: Dict[str, List[Dict]], pricing_chan
         for row in rows:
             inventory_code = row.get("Inventory Code")
 
-            # Insert pricing record
+            # Delete old pricing records for this inventory code
+            db.execute_query("""
+                DELETE FROM pricing_data
+                WHERE InventoryCode = ?
+            """, (inventory_code,))
+
+            # Insert new pricing record
             db.execute_query("""
                 INSERT INTO pricing_data (
                     inventory_group_code, InventoryCode, Description,
