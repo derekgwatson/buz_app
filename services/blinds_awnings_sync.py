@@ -215,6 +215,14 @@ def load_groups_config_from_sheet(
         }
 
     _p(f"Loaded configuration for {len(groups_config)} groups", 3)
+
+    # Log wastage values for debugging
+    wastage_groups = {code: cfg.get("wastage_pct") for code, cfg in groups_config.items() if cfg.get("wastage_pct")}
+    if wastage_groups:
+        logger.info(f"Loaded wastage for {len(wastage_groups)} groups: {wastage_groups}")
+    else:
+        logger.warning("No wastage values found in Buz template configuration")
+
     return groups_config
 
 
@@ -498,6 +506,12 @@ def compute_changes(
         markup_override = group_cfg.get("markup_override")
         wastage_pct = group_cfg.get("wastage_pct")  # e.g., 0.20 for 20%
         is_wholesale = _is_wholesale_group(group_code)
+
+        # Debug logging for wastage
+        if wastage_pct:
+            logger.info(f"Group {group_code}: Using wastage {wastage_pct} ({float(wastage_pct)*100:.1f}%)")
+        else:
+            logger.debug(f"Group {group_code}: No wastage configured")
 
         # Calculate average markup from existing items in this group (retail only)
         avg_markup = None
