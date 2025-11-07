@@ -141,6 +141,7 @@ def load_groups_config_from_sheet(
         - Discount Group Code
         - Category
         - Markup (optional - pricing markup multiplier)
+        - Wastage (optional - wastage percentage, e.g. 20 for 20%)
 
     Returns dict mapping group code to configuration.
     """
@@ -193,13 +194,24 @@ def load_groups_config_from_sheet(
             except (InvalidOperation, ValueError):
                 pass  # Ignore invalid markup values
 
+        # Parse optional wastage percentage
+        wastage_pct = None
+        wastage_str = row_dict.get("Wastage", "")
+        if wastage_str:
+            try:
+                # Convert percentage to decimal (e.g., 20 -> 0.20)
+                wastage_pct = Decimal(wastage_str) / Decimal("100")
+            except (InvalidOperation, ValueError):
+                pass  # Ignore invalid wastage values
+
         groups_config[code] = {
             "description_prefix": row_dict.get("Description", ""),
             "price_grid_code": price_grid_code,
             "cost_grid_code": cost_grid_code,
             "discount_group_code": row_dict.get("Discount Group Code", ""),
             "category": row_dict.get("Category", ""),
-            "markup_override": markup_override
+            "markup_override": markup_override,
+            "wastage_pct": wastage_pct
         }
 
     _p(f"Loaded configuration for {len(groups_config)} groups", 3)
@@ -484,6 +496,7 @@ def compute_changes(
         cost_grid_code = group_cfg.get("cost_grid_code")
         discount_code = group_cfg.get("discount_group_code", "")
         markup_override = group_cfg.get("markup_override")
+        wastage_pct = group_cfg.get("wastage_pct")  # e.g., 0.20 for 20%
         is_wholesale = _is_wholesale_group(group_code)
 
         # Calculate average markup from existing items in this group (retail only)
@@ -574,6 +587,9 @@ def compute_changes(
             # Pricing for retail groups only
             if not is_wholesale and markup_used:
                 cost_sqm = _q2(price_value)
+                # Apply wastage adjustment if configured
+                if wastage_pct:
+                    cost_sqm = cost_sqm * (Decimal("1") + wastage_pct)
                 sell_sqm = cost_sqm * markup_used
                 pricing_changes[group_code].append({
                     "PkId": "",
@@ -649,6 +665,9 @@ def compute_changes(
             # Check pricing (retail only)
             if not is_wholesale and markup_used:
                 new_cost = _q2(price_value)
+                # Apply wastage adjustment if configured
+                if wastage_pct:
+                    new_cost = new_cost * (Decimal("1") + wastage_pct)
                 new_sell = new_cost * markup_used
 
                 existing_pricing = pricing_map.get(existing_code, {})
