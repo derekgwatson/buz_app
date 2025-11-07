@@ -661,6 +661,49 @@ def compute_changes(
 
 # ========== Excel Generation ==========
 
+def _format_worksheet(ws, headers: List[str]):
+    """
+    Format worksheet by hiding empty columns and autofitting columns with data.
+
+    Args:
+        ws: openpyxl worksheet
+        headers: List of header column names
+    """
+    from openpyxl.utils import get_column_letter
+
+    # Determine which columns have data (skip first row which is blank for items file)
+    start_row = 3 if ws.max_row > 2 and not any(ws[1]) else 2
+
+    for col_idx, header in enumerate(headers, start=1):
+        col_letter = get_column_letter(col_idx)
+
+        # Check if column has any non-empty data
+        has_data = False
+        for row_idx in range(start_row, ws.max_row + 1):
+            cell_value = ws[f"{col_letter}{row_idx}"].value
+            if cell_value is not None and str(cell_value).strip() != "":
+                has_data = True
+                break
+
+        if has_data:
+            # Autofit column width based on content
+            max_length = 0
+            for row_idx in range(start_row - 1, ws.max_row + 1):  # Include header
+                cell = ws[f"{col_letter}{row_idx}"]
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except:
+                    pass
+
+            # Set column width (add a bit of padding, max 50)
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[col_letter].width = adjusted_width
+        else:
+            # Hide empty columns
+            ws.column_dimensions[col_letter].hidden = True
+
+
 def generate_workbooks(
     items_changes: Dict[str, List[Dict]],
     pricing_changes: Dict[str, List[Dict]],
@@ -705,6 +748,9 @@ def generate_workbooks(
                 row_values.append(row_dict.get(header, ""))
             ws.append(row_values + [""])  # Trailing blank cell
 
+        # Format sheet: autofit columns and hide empty ones
+        _format_worksheet(ws, items_headers)
+
     items_path = os.path.join(output_dir, "blinds_awnings_items_upload.xlsx")
     has_items = save_workbook_gracefully(items_wb, items_path)
 
@@ -735,6 +781,9 @@ def generate_workbooks(
                 else:
                     row_values.append(row_dict.get(header, ""))
             ws.append(row_values)
+
+        # Format sheet: autofit columns and hide empty ones
+        _format_worksheet(ws, pricing_headers)
 
     pricing_path = os.path.join(output_dir, "blinds_awnings_pricing_upload.xlsx")
     has_pricing = save_workbook_gracefully(pricing_wb, pricing_path)
