@@ -211,9 +211,13 @@ def load_groups_config_from_sheet(
                 logger.warning(f"Group {code}: Failed to parse wastage value '{wastage_str}': {e}")
 
         # Parse optional price type (SQM or LM)
-        price_type = row_dict.get("Price Type", "").strip().upper()
+        price_type_raw = row_dict.get("Price Type", "")
+        price_type = price_type_raw.strip().upper() if price_type_raw else ""
         if price_type not in ["SQM", "LM"]:
             price_type = "SQM"  # Default to SQM
+
+        if price_type == "LM":
+            logger.info(f"Group {code}: Price Type = LM (will convert from lineal metre to square metre)")
 
         groups_config[code] = {
             "description_prefix": row_dict.get("Description", ""),
@@ -637,10 +641,12 @@ def compute_changes(
                 price_type = group_cfg.get("price_type", "SQM")
                 if price_type == "LM":
                     width_str = _norm(fabric_row.get("Width", ""))
+                    price_before = cost_sqm
                     try:
                         width_mm = float(width_str) if width_str else 0
                         if width_mm > 0:
                             cost_sqm = cost_sqm / (Decimal(str(width_mm)) / Decimal("1000"))
+                            logger.info(f"Group {group_code} ADD {new_code}: LM→SQM conversion: ${price_before}/LM ÷ ({width_mm}mm/1000) = ${cost_sqm:.2f}/SQM")
                         else:
                             logger.warning(f"Missing/invalid width for vertical blind {new_code}: '{width_str}'")
                     except (ValueError, TypeError) as e:
@@ -734,10 +740,12 @@ def compute_changes(
                 price_type = group_cfg.get("price_type", "SQM")
                 if price_type == "LM":
                     width_str = _norm(fabric_row.get("Width", ""))
+                    price_before = new_cost
                     try:
                         width_mm = float(width_str) if width_str else 0
                         if width_mm > 0:
                             new_cost = new_cost / (Decimal(str(width_mm)) / Decimal("1000"))
+                            logger.info(f"Group {group_code} EDIT {existing_code}: LM→SQM conversion: ${price_before}/LM ÷ ({width_mm}mm/1000) = ${new_cost:.2f}/SQM")
                         else:
                             logger.warning(f"Missing/invalid width for vertical blind {existing_code}: '{width_str}'")
                     except (ValueError, TypeError) as e:
