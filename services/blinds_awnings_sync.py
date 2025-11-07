@@ -613,6 +613,11 @@ def compute_changes(
                 if wastage_pct:
                     cost_sqm = cost_sqm * (Decimal("1") + wastage_pct)
                 sell_sqm = cost_sqm * markup_used
+
+                # Round to 2 decimals
+                cost_sqm = _q2(cost_sqm)
+                sell_sqm = _q2(sell_sqm)
+
                 pricing_changes[group_code].append({
                     "PkId": "",
                     "Inventory Code": new_code,
@@ -692,11 +697,15 @@ def compute_changes(
                     new_cost = new_cost * (Decimal("1") + wastage_pct)
                 new_sell = new_cost * markup_used
 
-                existing_pricing = pricing_map.get(existing_code, {})
-                existing_cost = existing_pricing.get("cost_price", Decimal("0.00"))
-                existing_sell = existing_pricing.get("sell_price", Decimal("0.00"))
+                # Round to 2 decimals for comparison
+                new_cost = _q2(new_cost)
+                new_sell = _q2(new_sell)
 
-                # Check if cost or sell price changed
+                existing_pricing = pricing_map.get(existing_code, {})
+                existing_cost = _q2(existing_pricing.get("cost_price", Decimal("0.00")))
+                existing_sell = _q2(existing_pricing.get("sell_price", Decimal("0.00")))
+
+                # Check if cost or sell price changed (after rounding to 2 decimals)
                 if new_cost != existing_cost or new_sell != existing_sell:
                     description = _build_description(prefix, fd1, fd2, fd3)
                     pricing_changes[group_code].append({
