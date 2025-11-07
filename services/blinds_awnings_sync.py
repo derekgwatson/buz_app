@@ -774,8 +774,8 @@ def compute_changes(
             reasons = []
             needs_edit = False
 
-            # Check if supplier product code changed
-            if unleashed_code != existing_supp_code:
+            # Check if supplier product code changed (case-insensitive comparison)
+            if unleashed_code.lower() != existing_supp_code.lower():
                 needs_edit = True
                 reasons.append(f"Supplier code changed: {existing_supp_code} → {unleashed_code}")
 
