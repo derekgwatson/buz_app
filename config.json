@@ -555,6 +555,9 @@
         ]
     },
     "material_restrictions_by_group": {
+        "FAAWB": [
+            "Acrylic"
+        ],
         "SUND": [
             "Acrylic"
         ],
