@@ -144,9 +144,10 @@
           .group-row {
             cursor: pointer;
             user-select: none;
+            background-color: #ffffff;
           }
           .group-row:hover {
-            background-color: #f5f5f5;
+            background-color: #cfe2ff;
           }
           .group-details {
             display: none;
@@ -159,19 +160,32 @@
             width: 20px;
             text-align: center;
             font-weight: bold;
-            color: #666;
+            color: #0d6efd;
+            font-size: 18px;
           }
           .details-table {
             margin: 0;
             width: 100%;
+            background-color: #ffffff;
+            border: 3px solid #0d6efd;
           }
           .details-table thead {
+            background-color: #cfe2ff;
+          }
+          .details-table tbody tr {
+            background-color: #ffffff;
+          }
+          .details-table tbody tr:nth-child(even) {
             background-color: #f8f9fa;
+          }
+          .group-details-cell {
+            background-color: #e7f1ff !important;
+            border: 3px solid #0d6efd !important;
           }
         </style>
 
         <table class="table table-sm table-bordered">
-          <thead style="position: sticky; top: 0; background-color: white; z-index: 10;">
+          <thead style="position: sticky; top: 0; background-color: #ffffff; z-index: 10; border-bottom: 3px solid #0d6efd;">
             <tr>
               <th style="width: 30px;"></th>
               <th>Group</th>
@@ -208,7 +222,7 @@
               </td>
             </tr>
             <tr class="group-details" id="details-{{ group }}">
-              <td colspan="7" style="padding: 0; background-color: #fafafa;">
+              <td colspan="7" class="group-details-cell">
                 {% if change_log %}
                   {% set group_changes = [] %}
                   {% for row in change_log %}
@@ -218,7 +232,7 @@
                   {% endfor %}
 
                   {% if group_changes %}
-                  <div style="max-height: 400px; overflow: auto; padding: 10px;">
+                  <div style="max-height: 400px; overflow: auto; padding: 15px;">
                     <table class="details-table table table-sm table-bordered">
                       <thead>
                         <tr>
