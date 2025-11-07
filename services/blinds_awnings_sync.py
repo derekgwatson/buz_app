@@ -744,6 +744,10 @@ def compute_changes(
                 fd3 = _norm(inv_row["DescnPart3"])
                 description = _build_description(prefix, fd1, fd2, fd3)
 
+                # Special case: ROMNBQ - don't deprecate items where description starts with "1 "
+                if group_code == "ROMNBQ" and description.startswith("1 "):
+                    continue
+
                 item_row = {
                     "PkId": _norm(inv_row["PkId"]),
                     "Code": existing_code,
