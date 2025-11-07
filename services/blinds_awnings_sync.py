@@ -384,7 +384,8 @@ def load_existing_buz_pricing(db, groups_config: Dict[str, Dict[str, Any]]) -> D
             InventoryCode,
             SellLMWide,
             CostLMWide,
-            DateFrom
+            DateFrom,
+            CustomerPriceGroupCode
         FROM pricing_data
     """
 
@@ -394,6 +395,10 @@ def load_existing_buz_pricing(db, groups_config: Dict[str, Dict[str, Any]]) -> D
         return {}
 
     df = pd.DataFrame([dict(r) for r in rows], dtype=str).fillna("")
+
+    # Filter out rows where CustomerPriceGroupCode is not empty
+    # (these are price group overrides, not base pricing)
+    df = df[df["CustomerPriceGroupCode"].str.strip() == ""].copy()
 
     # Parse dates and sort to get latest per code
     df["_date_dt"] = pd.to_datetime(df["DateFrom"], errors="coerce", dayfirst=True)
