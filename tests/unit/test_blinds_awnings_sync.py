@@ -315,7 +315,8 @@ class TestComputeChanges:
             existing_codes,
             groups_config,
             pricing_map,
-            {"ROLL": set()}
+            {"ROLL": set()},
+            {}
         )
 
         # Check ADD operation
@@ -390,7 +391,8 @@ class TestComputeChanges:
             existing_codes,
             groups_config,
             pricing_map,
-            {"ROLL": set()}
+            {"ROLL": set()},
+            {}
         )
 
         # Check EDIT operation
@@ -449,7 +451,8 @@ class TestComputeChanges:
             existing_codes,
             groups_config,
             pricing_map,
-            {"ROLL": set()}
+            {"ROLL": set()},
+            {}
         )
 
         # Check DEPRECATE operation
@@ -499,7 +502,8 @@ class TestComputeChanges:
             existing_codes,
             groups_config,
             pricing_map,
-            {"ROLL": set()}
+            {"ROLL": set()},
+            {}
         )
 
         # Check items created with grid codes
