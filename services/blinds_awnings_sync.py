@@ -1484,8 +1484,8 @@ def apply_changes_to_database(items_changes: Dict[str, List[Dict]], pricing_chan
                 inventory_code,
                 row.get("Description", ""),
                 row.get("Date From", ""),
-                _q2(row.get("SellSQM", "0.00")),
-                _q2(row.get("CostSQM", "0.00"))
+                float(row.get("SellSQM", "0.00")),
+                float(row.get("CostSQM", "0.00"))
             ))
             pricing_added += 1
 
