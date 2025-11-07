@@ -1359,6 +1359,7 @@ def apply_changes_to_database(items_changes: Dict[str, List[Dict]], pricing_chan
 
             if operation == "A":
                 # ADD: Insert new item
+                logger.info(f"Inserting new item: {group_code}/{code}")
                 db.execute_query("""
                     INSERT INTO inventory_items (
                         inventory_group_code, Code, Description,
@@ -1384,6 +1385,7 @@ def apply_changes_to_database(items_changes: Dict[str, List[Dict]], pricing_chan
                     row.get("Supplier", SUPPLIER_NAME)
                 ))
                 items_added += 1
+                logger.debug(f"Successfully inserted {code}")
 
             elif operation == "E":
                 # EDIT: Update existing item
@@ -1492,6 +1494,9 @@ def apply_changes_to_database(items_changes: Dict[str, List[Dict]], pricing_chan
             processed += 1
             if total_pricing > 0:
                 _p(f"Processing pricing: {processed}/{total_pricing}", 50 + int(50 * processed / total_pricing))
+
+    # Commit all changes
+    db.commit()
 
     _p("Database update complete!", 100)
 
