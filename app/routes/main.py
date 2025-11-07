@@ -29,6 +29,9 @@ from services.excel_safety import save_workbook_gracefully
 # Create Blueprint
 main_routes_bp = Blueprint('main_routes', __name__)
 
+# Get logger
+logger = logging.getLogger(__name__)
+
 
 @auth.verify_password
 def verify_password(username, password):
