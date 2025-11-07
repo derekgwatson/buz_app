@@ -506,10 +506,13 @@ def compute_changes(
 
         if not is_wholesale and not inv_df.empty:
             # Get markups for all existing items in this group
+            # Only include active items with non-zero markup
             markups = []
             for _, row in inv_df.iterrows():
                 code = _norm(row["Code"])
-                if code in pricing_map:
+                is_active = _norm(row.get("Active", "")).upper() in ("TRUE", "YES", "1")
+
+                if is_active and code in pricing_map:
                     item_markup = pricing_map[code].get("markup")
                     if item_markup and item_markup > 0:
                         markups.append(item_markup)
