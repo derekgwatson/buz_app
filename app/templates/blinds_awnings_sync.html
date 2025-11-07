@@ -144,10 +144,15 @@
           .group-row {
             cursor: pointer;
             user-select: none;
-            background-color: #ffffff;
+            background-color: #2d3748;
+            color: #e0e0e0;
           }
           .group-row:hover {
-            background-color: #cfe2ff;
+            background-color: #4a5568;
+          }
+          .group-row td {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
           }
           .group-details {
             display: none;
@@ -160,32 +165,55 @@
             width: 20px;
             text-align: center;
             font-weight: bold;
-            color: #0d6efd;
+            color: #63b3ed;
             font-size: 18px;
           }
           .details-table {
             margin: 0;
             width: 100%;
-            background-color: #ffffff;
-            border: 3px solid #0d6efd;
+            background-color: #1a202c;
+            border: 3px solid #4299e1;
+            color: #e0e0e0;
           }
           .details-table thead {
-            background-color: #cfe2ff;
+            background-color: #2d3748;
+            color: #e0e0e0;
+          }
+          .details-table thead th {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
           }
           .details-table tbody tr {
-            background-color: #ffffff;
+            background-color: #1a202c;
           }
           .details-table tbody tr:nth-child(even) {
-            background-color: #f8f9fa;
+            background-color: #2d3748;
+          }
+          .details-table tbody td {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
           }
           .group-details-cell {
-            background-color: #e7f1ff !important;
-            border: 3px solid #0d6efd !important;
+            background-color: #1a202c !important;
+            border: 3px solid #4299e1 !important;
+            padding: 0 !important;
+          }
+          .summary-table {
+            background-color: #2d3748;
+            color: #e0e0e0;
+          }
+          .summary-table thead {
+            background-color: #1a202c;
+            color: #e0e0e0;
+          }
+          .summary-table thead th {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
           }
         </style>
 
-        <table class="table table-sm table-bordered">
-          <thead style="position: sticky; top: 0; background-color: #ffffff; z-index: 10; border-bottom: 3px solid #0d6efd;">
+        <table class="table table-sm table-bordered summary-table">
+          <thead style="position: sticky; top: 0; background-color: #1a202c; z-index: 10; border-bottom: 3px solid #4299e1;">
             <tr>
               <th style="width: 30px;"></th>
               <th>Group</th>
