@@ -138,21 +138,54 @@
       </p>
 
       {% if summary and summary.by_group %}
-        <h4>By Group</h4>
-        <table class="table table-sm table-bordered" style="max-width: 900px;">
-          <thead>
+        <h4>Changes by Group (click to expand)</h4>
+
+        <style>
+          .group-row {
+            cursor: pointer;
+            user-select: none;
+          }
+          .group-row:hover {
+            background-color: #f5f5f5;
+          }
+          .group-details {
+            display: none;
+          }
+          .group-details.expanded {
+            display: table-row;
+          }
+          .expand-icon {
+            display: inline-block;
+            width: 20px;
+            text-align: center;
+            font-weight: bold;
+            color: #666;
+          }
+          .details-table {
+            margin: 0;
+            width: 100%;
+          }
+          .details-table thead {
+            background-color: #f8f9fa;
+          }
+        </style>
+
+        <table class="table table-sm table-bordered">
+          <thead style="position: sticky; top: 0; background-color: white; z-index: 10;">
             <tr>
+              <th style="width: 30px;"></th>
               <th>Group</th>
-              <th>Adds</th>
-              <th>Edits</th>
-              <th>Deprecations</th>
-              <th>Pricing</th>
-              <th>Markup Used</th>
+              <th style="width: 80px;">Adds</th>
+              <th style="width: 80px;">Edits</th>
+              <th style="width: 100px;">Deprecations</th>
+              <th style="width: 80px;">Pricing</th>
+              <th style="width: 200px;">Markup Used</th>
             </tr>
           </thead>
           <tbody>
-            {% for group, stats in summary.by_group.items() %}
-            <tr>
+            {% for group, stats in summary.by_group.items()|sort %}
+            <tr class="group-row" onclick="toggleGroup('{{ group }}')">
+              <td><span class="expand-icon" id="icon-{{ group }}">+</span></td>
               <td><strong>{{ group }}</strong></td>
               <td>{{ stats.A or 0 }}</td>
               <td>{{ stats.E or 0 }}</td>
@@ -166,9 +199,6 @@
                     <span style="background-color: #ffffcc; padding: 2px 4px;">{{ "%.3f"|format(markup_val) }}x (override)</span>
                   {% elif m.markup_source == 'calculated' %}
                     {{ "%.3f"|format(markup_val) }}x
-                    {% if m.markup_override and m.markup_override != m.markup_used %}
-                      <span style="color: #999;">(existing avg: {{ "%.3f"|format(m.existing_avg_markup|float) }}x)</span>
-                    {% endif %}
                   {% elif m.markup_source == 'default' %}
                     <span style="color: #999;">{{ "%.3f"|format(markup_val) }}x (default)</span>
                   {% endif %}
@@ -177,9 +207,73 @@
                 {% endif %}
               </td>
             </tr>
+            <tr class="group-details" id="details-{{ group }}">
+              <td colspan="7" style="padding: 0; background-color: #fafafa;">
+                {% if change_log %}
+                  {% set group_changes = [] %}
+                  {% for row in change_log %}
+                    {% if row.Group == group %}
+                      {% set _ = group_changes.append(row) %}
+                    {% endif %}
+                  {% endfor %}
+
+                  {% if group_changes %}
+                  <div style="max-height: 400px; overflow: auto; padding: 10px;">
+                    <table class="details-table table table-sm table-bordered">
+                      <thead>
+                        <tr>
+                          <th>Operation</th>
+                          <th>Code</th>
+                          <th>Description</th>
+                          <th>Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for row in group_changes %}
+                        <tr>
+                          <td style="width: 100px;">
+                            {% if row.Operation == 'A' %}
+                              <span class="badge badge-success">ADD</span>
+                            {% elif row.Operation == 'E' %}
+                              <span class="badge badge-warning">EDIT</span>
+                            {% elif row.Operation == 'D' %}
+                              <span class="badge badge-danger">DEPRECATE</span>
+                            {% elif row.Operation == 'P' %}
+                              <span class="badge badge-info">PRICE</span>
+                            {% endif %}
+                          </td>
+                          <td style="width: 120px;"><code>{{ row.Code }}</code></td>
+                          <td>{{ row.Description }}</td>
+                          <td>{{ row.Reason }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% else %}
+                  <p style="padding: 10px; margin: 0; color: #999;">No changes for this group</p>
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
             {% endfor %}
           </tbody>
         </table>
+
+        <script>
+        function toggleGroup(groupCode) {
+          const detailsRow = document.getElementById('details-' + groupCode);
+          const icon = document.getElementById('icon-' + groupCode);
+
+          if (detailsRow.classList.contains('expanded')) {
+            detailsRow.classList.remove('expanded');
+            icon.textContent = '+';
+          } else {
+            detailsRow.classList.add('expanded');
+            icon.textContent = '−';
+          }
+        }
+        </script>
       {% endif %}
 
       {% if files %}
@@ -205,114 +299,6 @@
             <li>The generated files couldn't be saved</li>
           </ul>
         </div>
-      {% endif %}
-
-      {% if change_log and change_log|length > 0 %}
-        <h4>Changes (<span id="visible-count">{{ change_log|length }}</span> of {{ change_log|length }} total)</h4>
-
-        {# Filters #}
-        <div class="row mb-3">
-          <div class="col-md-3">
-            <label for="filter-group">Filter by Group:</label>
-            <select id="filter-group" class="form-control">
-              <option value="">All Groups</option>
-              {% set groups = [] %}
-              {% for row in change_log %}
-                {% if row.Group not in groups %}
-                  {% set _ = groups.append(row.Group) %}
-                {% endif %}
-              {% endfor %}
-              {% for group in groups|sort %}
-                <option value="{{ group }}">{{ group }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-md-3">
-            <label for="filter-operation">Filter by Operation:</label>
-            <select id="filter-operation" class="form-control">
-              <option value="">All Operations</option>
-              <option value="A">ADD</option>
-              <option value="E">EDIT</option>
-              <option value="D">DEPRECATE</option>
-              <option value="P">PRICE</option>
-            </select>
-          </div>
-        </div>
-
-        <div style="max-height: 500px; overflow:auto; position: relative;" id="change-log-container">
-          <table class="table table-condensed table-bordered table-sm">
-            <thead style="position: sticky; top: 0; background-color: white; z-index: 10; box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);">
-              <tr>
-                <th>Group</th>
-                <th>Operation</th>
-                <th>Code</th>
-                <th>Description</th>
-                <th>Reason</th>
-              </tr>
-            </thead>
-            <tbody id="change-log-body">
-              {% for row in change_log %}
-              <tr data-group="{{ row.Group }}" data-operation="{{ row.Operation }}">
-                <td>{{ row.Group }}</td>
-                <td>
-                  {% if row.Operation == 'A' %}
-                    <span class="badge badge-success">ADD</span>
-                  {% elif row.Operation == 'E' %}
-                    <span class="badge badge-warning">EDIT</span>
-                  {% elif row.Operation == 'D' %}
-                    <span class="badge badge-danger">DEPRECATE</span>
-                  {% elif row.Operation == 'P' %}
-                    <span class="badge badge-info">PRICE</span>
-                  {% else %}
-                    {{ row.Operation }}
-                  {% endif %}
-                </td>
-                <td><code>{{ row.Code }}</code></td>
-                <td>{{ row.Description }}</td>
-                <td>{{ row.Reason }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-
-        <script>
-        // Filter change log table
-        const filterGroup = document.getElementById('filter-group');
-        const filterOperation = document.getElementById('filter-operation');
-        const tableBody = document.getElementById('change-log-body');
-        const visibleCount = document.getElementById('visible-count');
-        const allRows = Array.from(tableBody.querySelectorAll('tr'));
-        const totalCount = allRows.length;
-
-        function applyFilters() {
-          const selectedGroup = filterGroup.value;
-          const selectedOperation = filterOperation.value;
-          let visibleRows = 0;
-
-          allRows.forEach(row => {
-            const rowGroup = row.getAttribute('data-group');
-            const rowOperation = row.getAttribute('data-operation');
-
-            const groupMatch = !selectedGroup || rowGroup === selectedGroup;
-            const operationMatch = !selectedOperation || rowOperation === selectedOperation;
-
-            if (groupMatch && operationMatch) {
-              row.style.display = '';
-              visibleRows++;
-            } else {
-              row.style.display = 'none';
-            }
-          });
-
-          visibleCount.textContent = visibleRows;
-        }
-
-        filterGroup.addEventListener('change', applyFilters);
-        filterOperation.addEventListener('change', applyFilters);
-        </script>
-      {% else %}
-        <p>No changes this run.</p>
       {% endif %}
     {% endif %}
 
