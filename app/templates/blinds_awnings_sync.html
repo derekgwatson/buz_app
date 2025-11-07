@@ -208,10 +208,40 @@
       {% endif %}
 
       {% if change_log and change_log|length > 0 %}
-        <h4>Changes ({{ change_log|length }} total)</h4>
-        <div style="max-height: 500px; overflow:auto;">
+        <h4>Changes (<span id="visible-count">{{ change_log|length }}</span> of {{ change_log|length }} total)</h4>
+
+        {# Filters #}
+        <div class="row mb-3">
+          <div class="col-md-3">
+            <label for="filter-group">Filter by Group:</label>
+            <select id="filter-group" class="form-control">
+              <option value="">All Groups</option>
+              {% set groups = [] %}
+              {% for row in change_log %}
+                {% if row.Group not in groups %}
+                  {% set _ = groups.append(row.Group) %}
+                {% endif %}
+              {% endfor %}
+              {% for group in groups|sort %}
+                <option value="{{ group }}">{{ group }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="filter-operation">Filter by Operation:</label>
+            <select id="filter-operation" class="form-control">
+              <option value="">All Operations</option>
+              <option value="A">ADD</option>
+              <option value="E">EDIT</option>
+              <option value="D">DEPRECATE</option>
+              <option value="P">PRICE</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="max-height: 500px; overflow:auto; position: relative;" id="change-log-container">
           <table class="table table-condensed table-bordered table-sm">
-            <thead>
+            <thead style="position: sticky; top: 0; background-color: white; z-index: 10; box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);">
               <tr>
                 <th>Group</th>
                 <th>Operation</th>
@@ -220,9 +250,9 @@
                 <th>Reason</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="change-log-body">
               {% for row in change_log %}
-              <tr>
+              <tr data-group="{{ row.Group }}" data-operation="{{ row.Operation }}">
                 <td>{{ row.Group }}</td>
                 <td>
                   {% if row.Operation == 'A' %}
@@ -245,6 +275,42 @@
             </tbody>
           </table>
         </div>
+
+        <script>
+        // Filter change log table
+        const filterGroup = document.getElementById('filter-group');
+        const filterOperation = document.getElementById('filter-operation');
+        const tableBody = document.getElementById('change-log-body');
+        const visibleCount = document.getElementById('visible-count');
+        const allRows = Array.from(tableBody.querySelectorAll('tr'));
+        const totalCount = allRows.length;
+
+        function applyFilters() {
+          const selectedGroup = filterGroup.value;
+          const selectedOperation = filterOperation.value;
+          let visibleRows = 0;
+
+          allRows.forEach(row => {
+            const rowGroup = row.getAttribute('data-group');
+            const rowOperation = row.getAttribute('data-operation');
+
+            const groupMatch = !selectedGroup || rowGroup === selectedGroup;
+            const operationMatch = !selectedOperation || rowOperation === selectedOperation;
+
+            if (groupMatch && operationMatch) {
+              row.style.display = '';
+              visibleRows++;
+            } else {
+              row.style.display = 'none';
+            }
+          });
+
+          visibleCount.textContent = visibleRows;
+        }
+
+        filterGroup.addEventListener('change', applyFilters);
+        filterOperation.addEventListener('change', applyFilters);
+        </script>
       {% else %}
         <p>No changes this run.</p>
       {% endif %}
