@@ -863,6 +863,11 @@ def generate_workbooks_in_memory(
         # Format sheet: autofit columns and hide empty ones
         _format_worksheet(ws, items_headers)
 
+    # Ensure at least one sheet exists (openpyxl requires this)
+    if len(items_wb.sheetnames) == 0:
+        ws = items_wb.create_sheet(title="No Changes")
+        ws.append(["No changes to upload"])
+
     # Save to BytesIO
     items_stream = BytesIO()
     items_wb.save(items_stream)
@@ -893,6 +898,11 @@ def generate_workbooks_in_memory(
 
         # Format sheet: autofit columns and hide empty ones
         _format_worksheet(ws, pricing_headers)
+
+    # Ensure at least one sheet exists (openpyxl requires this)
+    if len(pricing_wb.sheetnames) == 0:
+        ws = pricing_wb.create_sheet(title="No Changes")
+        ws.append(["No changes to upload"])
 
     # Save to BytesIO
     pricing_stream = BytesIO()

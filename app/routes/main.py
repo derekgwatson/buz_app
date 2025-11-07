@@ -1467,8 +1467,10 @@ def blinds_awnings_download_items(job_id):
     items_changes = result.get("items_changes", {})
     headers_cfg = result.get("headers_cfg", {})
 
-    if not items_changes or not headers_cfg:
-        return "No data available", 404
+    # Check if there are actually any items to download
+    has_items = any(len(rows) > 0 for rows in items_changes.values())
+    if not has_items or not headers_cfg:
+        return "No items to download", 404
 
     # Generate workbook in memory
     try:
@@ -1504,8 +1506,10 @@ def blinds_awnings_download_pricing(job_id):
     pricing_changes = result.get("pricing_changes", {})
     headers_cfg = result.get("headers_cfg", {})
 
-    if not pricing_changes or not headers_cfg:
-        return "No data available", 404
+    # Check if there are actually any pricing changes to download
+    has_pricing = any(len(rows) > 0 for rows in pricing_changes.values())
+    if not has_pricing or not headers_cfg:
+        return "No pricing changes to download", 404
 
     # Generate workbook in memory
     try:
