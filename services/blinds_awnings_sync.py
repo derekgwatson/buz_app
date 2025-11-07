@@ -1050,7 +1050,15 @@ def sync_blinds_awnings_fabrics(
 
             # Add markup info if available
             if group_code in markup_info:
-                groups_summary[group_code]["markup"] = markup_info[group_code]
+                markup_data = markup_info[group_code].copy()
+                # Convert Decimal objects to float for JSON serialization
+                if markup_data.get("markup_used"):
+                    markup_data["markup_used"] = float(markup_data["markup_used"])
+                if markup_data.get("existing_avg_markup"):
+                    markup_data["existing_avg_markup"] = float(markup_data["existing_avg_markup"])
+                if markup_data.get("markup_override"):
+                    markup_data["markup_override"] = float(markup_data["markup_override"])
+                groups_summary[group_code]["markup"] = markup_data
 
     summary = {
         "A": total_adds,
