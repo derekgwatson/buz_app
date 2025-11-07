@@ -106,6 +106,9 @@
   {% else %}
     {% if error %}
       <div class="alert alert-danger">{{ error }}</div>
+      <form method="post" action="{{ url_for('main_routes.blinds_awnings_sync_start') }}">
+        <button class="btn btn-success btn-lg">Try Again</button>
+      </form>
     {% else %}
       <p>
         <strong>Summary:</strong>
