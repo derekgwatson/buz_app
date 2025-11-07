@@ -705,8 +705,10 @@ def compute_changes(
                 existing_cost = _q2(existing_pricing.get("cost_price", Decimal("0.00")))
                 existing_sell = _q2(existing_pricing.get("sell_price", Decimal("0.00")))
 
-                # Check if cost or sell price changed (after rounding to 2 decimals)
-                if new_cost != existing_cost or new_sell != existing_sell:
+                # Check if cost or sell price changed by more than 1 cent (tolerance for rounding)
+                cost_diff = abs(new_cost - existing_cost)
+                sell_diff = abs(new_sell - existing_sell)
+                if cost_diff > Decimal("0.01") or sell_diff > Decimal("0.01"):
                     description = _build_description(prefix, fd1, fd2, fd3)
                     pricing_changes[group_code].append({
                         "PkId": "",
