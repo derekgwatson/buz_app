@@ -22,7 +22,7 @@
     <p><em>No inventory upload timestamp found.</em></p>
   {% endif %}
 
-  {% if job_id %}
+  {% if job_id and not ran %}
     {# --- Progress mode --- #}
     <div class="card">
       <div class="card-body">
