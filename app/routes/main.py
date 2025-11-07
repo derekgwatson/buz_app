@@ -1351,31 +1351,29 @@ def blinds_awnings_sync_progress(job_id):
     # If job is done, show results
     if job.get("done"):
         result = job.get("result", {})
-        items_file = result.get("items_file", "")
-        pricing_file = result.get("pricing_file", "")
         summary = result.get("summary", {})
         change_log = result.get("change_log", [])
         error = job.get("error")
 
-        logger.info(f"Job {job_id} complete. Items file: {items_file}, Pricing file: {pricing_file}")
-        logger.info(f"Items file exists: {os.path.exists(items_file) if items_file else 'N/A'}")
-        logger.info(f"Pricing file exists: {os.path.exists(pricing_file) if pricing_file else 'N/A'}")
+        # Check if there are changes to download
+        items_changes = result.get("items_changes", {})
+        pricing_changes = result.get("pricing_changes", {})
+        has_items = any(len(rows) > 0 for rows in items_changes.values())
+        has_pricing = any(len(rows) > 0 for rows in pricing_changes.values())
 
         files = []
-        if items_file and os.path.exists(items_file):
+        if has_items:
             files.append({
                 "label": "Items Upload",
-                "filename": os.path.basename(items_file),
-                "url": url_for("main_routes.download_file", filename=os.path.basename(items_file))
+                "filename": "blinds_awnings_items_upload.xlsx",
+                "url": url_for("main_routes.blinds_awnings_download_items", job_id=job_id)
             })
-        if pricing_file and os.path.exists(pricing_file):
+        if has_pricing:
             files.append({
                 "label": "Pricing Upload",
-                "filename": os.path.basename(pricing_file),
-                "url": url_for("main_routes.download_file", filename=os.path.basename(pricing_file))
+                "filename": "blinds_awnings_pricing_upload.xlsx",
+                "url": url_for("main_routes.blinds_awnings_download_pricing", job_id=job_id)
             })
-
-        logger.info(f"Files list: {files}")
 
         last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
 
@@ -1452,6 +1450,80 @@ def blinds_awnings_sync_apply_to_db(job_id):
     except Exception as e:
         logger.exception("Failed to apply changes to database")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+@main_routes_bp.route("/blinds-awnings-sync/download/items/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_download_items(job_id):
+    """Generate and download items workbook on-demand."""
+    from services.blinds_awnings_sync import generate_workbooks_in_memory
+    from io import BytesIO
+
+    job = get_job(job_id)
+    if not job or not job.get("done"):
+        return "Job not found or not complete", 404
+
+    result = job.get("result", {})
+    items_changes = result.get("items_changes", {})
+    headers_cfg = result.get("headers_cfg", {})
+
+    if not items_changes or not headers_cfg:
+        return "No data available", 404
+
+    # Generate workbook in memory
+    try:
+        items_stream, _ = generate_workbooks_in_memory(
+            items_changes,
+            {},  # Don't need pricing for items download
+            headers_cfg
+        )
+
+        return send_file(
+            items_stream,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="blinds_awnings_items_upload.xlsx"
+        )
+    except Exception as e:
+        logger.exception("Failed to generate items workbook")
+        return f"Error generating file: {str(e)}", 500
+
+
+@main_routes_bp.route("/blinds-awnings-sync/download/pricing/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_download_pricing(job_id):
+    """Generate and download pricing workbook on-demand."""
+    from services.blinds_awnings_sync import generate_workbooks_in_memory
+    from io import BytesIO
+
+    job = get_job(job_id)
+    if not job or not job.get("done"):
+        return "Job not found or not complete", 404
+
+    result = job.get("result", {})
+    pricing_changes = result.get("pricing_changes", {})
+    headers_cfg = result.get("headers_cfg", {})
+
+    if not pricing_changes or not headers_cfg:
+        return "No data available", 404
+
+    # Generate workbook in memory
+    try:
+        _, pricing_stream = generate_workbooks_in_memory(
+            {},  # Don't need items for pricing download
+            pricing_changes,
+            headers_cfg
+        )
+
+        return send_file(
+            pricing_stream,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="blinds_awnings_pricing_upload.xlsx"
+        )
+    except Exception as e:
+        logger.exception("Failed to generate pricing workbook")
+        return f"Error generating file: {str(e)}", 500
 
 
 @main_routes_bp.route("/lead-times", methods=["GET"])

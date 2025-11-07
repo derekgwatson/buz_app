@@ -704,6 +704,84 @@ def _format_worksheet(ws, headers: List[str]):
             ws.column_dimensions[col_letter].hidden = True
 
 
+def generate_workbooks_in_memory(
+    items_changes: Dict[str, List[Dict]],
+    pricing_changes: Dict[str, List[Dict]],
+    headers_cfg: Dict[str, List[Dict]]
+):
+    """
+    Generate items and pricing upload workbooks in memory.
+
+    Returns (items_stream, pricing_stream) as BytesIO objects
+    """
+    from io import BytesIO
+    from openpyxl.utils import get_column_letter
+
+    # Get headers from config
+    items_headers = [h["spreadsheet_column"] for h in headers_cfg["buz_inventory_item_file"]]
+    pricing_headers = [h["spreadsheet_column"] for h in headers_cfg["buz_pricing_file"]]
+
+    # ===== Items Workbook =====
+    items_wb = Workbook()
+    items_wb.remove(items_wb.active)
+
+    for group_code, rows in items_changes.items():
+        if not rows:
+            continue
+
+        ws = items_wb.create_sheet(title=group_code)
+        ws.append([])  # Row 1 blank
+        ws.append(items_headers + [""])  # Row 2 headers + trailing blank
+
+        for row_dict in rows:
+            row_values = []
+            for header in items_headers:
+                row_values.append(row_dict.get(header, ""))
+            ws.append(row_values + [""])  # Trailing blank cell
+
+        # Format sheet: autofit columns and hide empty ones
+        _format_worksheet(ws, items_headers)
+
+    # Save to BytesIO
+    items_stream = BytesIO()
+    items_wb.save(items_stream)
+    items_stream.seek(0)
+    items_wb.close()
+
+    # ===== Pricing Workbook =====
+    pricing_wb = Workbook()
+    pricing_wb.remove(pricing_wb.active)
+
+    for group_code, rows in pricing_changes.items():
+        if not rows:
+            continue
+
+        ws = pricing_wb.create_sheet(title=group_code)
+        ws.append(pricing_headers)  # Row 1 headers (pricing file format)
+
+        for row_dict in rows:
+            row_values = []
+            for header in pricing_headers:
+                if header == "Operation":
+                    row_values.append("A")
+                elif header == "PkId":
+                    row_values.append("")
+                else:
+                    row_values.append(row_dict.get(header, ""))
+            ws.append(row_values)
+
+        # Format sheet: autofit columns and hide empty ones
+        _format_worksheet(ws, pricing_headers)
+
+    # Save to BytesIO
+    pricing_stream = BytesIO()
+    pricing_wb.save(pricing_stream)
+    pricing_stream.seek(0)
+    pricing_wb.close()
+
+    return items_stream, pricing_stream
+
+
 def generate_workbooks(
     items_changes: Dict[str, List[Dict]],
     pricing_changes: Dict[str, List[Dict]],
@@ -712,7 +790,8 @@ def generate_workbooks(
     progress=None
 ) -> Tuple[str, str]:
     """
-    Generate items and pricing upload workbooks.
+    DEPRECATED: Generate items and pricing upload workbooks to disk.
+    Use generate_workbooks_in_memory() instead.
 
     Returns (items_path, pricing_path)
     """
@@ -877,14 +956,8 @@ def sync_blinds_awnings_fabrics(
         progress=_p
     )
 
-    # Generate workbooks
-    items_path, pricing_path = generate_workbooks(
-        items_changes,
-        pricing_changes,
-        headers_cfg,
-        output_dir,
-        progress=_p
-    )
+    # Note: We don't generate workbooks here anymore - they'll be generated on-demand when downloaded
+    _p("Changes computed, ready for download", 90)
 
     # Compute summary - overall and per-group
     total_adds = sum(len([r for r in rows if r.get("Operation") == "A"]) for rows in items_changes.values())
@@ -923,12 +996,11 @@ def sync_blinds_awnings_fabrics(
     logger.info(f"Blinds/Awnings sync complete: A={total_adds}, E={total_edits}, D={total_deprecates}, P={total_pricing}")
 
     return {
-        "items_file": items_path,
-        "pricing_file": pricing_path,
         "summary": summary,
         "change_log": change_log,
         "items_changes": items_changes,
-        "pricing_changes": pricing_changes
+        "pricing_changes": pricing_changes,
+        "headers_cfg": headers_cfg  # Include headers for on-demand generation
     }
 
 
