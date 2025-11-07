@@ -162,7 +162,10 @@ def load_groups_config_from_sheet(
     # Parse header
     headers = [h.strip() for h in rows[0]]
 
-    # Expected columns (Markup is optional)
+    # Log available columns for debugging
+    logger.info(f"Buz template columns: {headers}")
+
+    # Expected columns (Markup and Wastage are optional)
     required = ["Code", "Description", "Price Grid Code", "Cost Grid Code", "Discount Group Code", "Category"]
     for col in required:
         if col not in headers:
@@ -201,8 +204,9 @@ def load_groups_config_from_sheet(
             try:
                 # Convert percentage to decimal (e.g., 20 -> 0.20)
                 wastage_pct = Decimal(wastage_str) / Decimal("100")
-            except (InvalidOperation, ValueError):
-                pass  # Ignore invalid wastage values
+                logger.debug(f"Group {code}: Parsed wastage '{wastage_str}' -> {wastage_pct}")
+            except (InvalidOperation, ValueError) as e:
+                logger.warning(f"Group {code}: Failed to parse wastage value '{wastage_str}': {e}")
 
         groups_config[code] = {
             "description_prefix": row_dict.get("Description", ""),
