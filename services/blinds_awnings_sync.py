@@ -202,8 +202,9 @@ def load_groups_config_from_sheet(
         wastage_str = row_dict.get("Wastage", "")
         if wastage_str:
             try:
-                # Convert percentage to decimal (e.g., 20 -> 0.20)
-                wastage_pct = Decimal(wastage_str) / Decimal("100")
+                # Strip % sign if present, then convert to decimal (e.g., "20%" or "20" -> 0.20)
+                wastage_cleaned = wastage_str.rstrip('%').strip()
+                wastage_pct = Decimal(wastage_cleaned) / Decimal("100")
                 logger.debug(f"Group {code}: Parsed wastage '{wastage_str}' -> {wastage_pct}")
             except (InvalidOperation, ValueError) as e:
                 logger.warning(f"Group {code}: Failed to parse wastage value '{wastage_str}': {e}")
