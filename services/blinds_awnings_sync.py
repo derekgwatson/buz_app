@@ -123,6 +123,78 @@ def _check_material_restriction(group_code: str, fd2: str, material_restrictions
 
 # ========== Google Sheets Data Loading ==========
 
+def load_groups_config_from_sheet(
+    sheets_service,
+    spreadsheet_id: str,
+    buz_template_tab: str,
+    progress=None
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Load group configuration from 'Buz template' tab in Google Sheets.
+
+    Expected columns:
+        - Product (informational only)
+        - Code (inventory group code)
+        - Description (description prefix)
+        - Price Grid Code
+        - Cost Grid Code
+        - Discount Group Code
+        - Category
+
+    Returns dict mapping group code to configuration.
+    """
+    def _p(msg: str, pct: Optional[int] = None):
+        if callable(progress):
+            try:
+                progress(msg, pct)
+            except Exception:
+                pass
+
+    _p("Loading Buz template configuration from Google Sheets...", 2)
+
+    rows = sheets_service.fetch_sheet_data(spreadsheet_id, f"{buz_template_tab}!A:Z")
+
+    if not rows or len(rows) < 2:
+        raise RuntimeError(f"Buz template tab '{buz_template_tab}' is empty or has no data")
+
+    # Parse header
+    headers = [h.strip() for h in rows[0]]
+
+    # Expected columns
+    required = ["Code", "Description", "Price Grid Code", "Cost Grid Code", "Discount Group Code", "Category"]
+    for col in required:
+        if col not in headers:
+            raise RuntimeError(f"Missing required column '{col}' in Buz template tab")
+
+    # Build config dict
+    groups_config = {}
+
+    for row in rows[1:]:
+        if len(row) < len(headers):
+            row = row + [""] * (len(headers) - len(row))
+
+        row_dict = {headers[i]: _norm(row[i]) for i in range(len(headers))}
+
+        code = row_dict.get("Code", "")
+        if not code:
+            continue  # Skip empty rows
+
+        # Convert empty strings to None for grid codes
+        price_grid_code = row_dict.get("Price Grid Code") or None
+        cost_grid_code = row_dict.get("Cost Grid Code") or None
+
+        groups_config[code] = {
+            "description_prefix": row_dict.get("Description", ""),
+            "price_grid_code": price_grid_code,
+            "cost_grid_code": cost_grid_code,
+            "discount_group_code": row_dict.get("Discount Group Code", ""),
+            "category": row_dict.get("Category", "")
+        }
+
+    _p(f"Loaded configuration for {len(groups_config)} groups", 3)
+    return groups_config
+
+
 def load_fabric_data_from_sheets(
     sheets_service,
     spreadsheet_id: str,
@@ -699,7 +771,6 @@ def sync_blinds_awnings_fabrics(
     _p("Starting blinds/awnings fabric sync...", 1)
 
     # Extract config
-    groups_config = config.get("blinds_awnings_fabric_groups", {})
     material_restrictions = config.get("material_restrictions_by_group", {})
     headers_cfg = config.get("headers", {})
     sheets_cfg = config["spreadsheets"]["blinds_awnings_sync"]
@@ -707,6 +778,15 @@ def sync_blinds_awnings_fabrics(
     spreadsheet_id = sheets_cfg["id"]
     retail_tab = sheets_cfg["retail_tab"]
     wholesale_tab = sheets_cfg["wholesale_tab"]
+    buz_template_tab = sheets_cfg["buz_template_tab"]
+
+    # Load groups configuration from Google Sheets
+    groups_config = load_groups_config_from_sheet(
+        sheets_service,
+        spreadsheet_id,
+        buz_template_tab,
+        progress=_p
+    )
 
     # Load fabric data from Google Sheets
     fabrics_by_group = load_fabric_data_from_sheets(

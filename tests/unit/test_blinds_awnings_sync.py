@@ -15,6 +15,7 @@ from services.blinds_awnings_sync import (
     _build_description,
     _next_code_for_group,
     _check_material_restriction,
+    load_groups_config_from_sheet,
     load_fabric_data_from_sheets,
     load_existing_buz_inventory,
     load_existing_buz_pricing,
@@ -108,6 +109,49 @@ class TestUtilityFunctions:
 
         # No restriction = allowed
         assert _check_material_restriction("ROLL", "Any Material", restrictions) is True
+
+
+class TestLoadGroupsConfig:
+    """Test loading groups configuration from Google Sheets."""
+
+    def test_load_groups_config_from_sheet(self):
+        """Test loading Buz template configuration."""
+        mock_service = Mock()
+
+        # Mock Buz template data
+        template_data = [
+            ["Product", "Code", "Description", "Price Grid Code", "Cost Grid Code", "Discount Group Code", "Category"],
+            ["Roller Blind", "ROLL", "Roller Blind", "", "", "RB", "Fabric - Roller Blind"],
+            ["WS Roller Blind", "WSROLL", "WS Roller Blind", "WSRB", "WSRB_C", "WSRB", "Fabric - Roller Blind"],
+            ["Awning", "AWNGV2", "Awning", "", "", "AWN", "Fabric - Awning"],
+        ]
+
+        mock_service.fetch_sheet_data.return_value = template_data
+
+        result = load_groups_config_from_sheet(
+            mock_service,
+            "sheet_id_123",
+            "Buz template"
+        )
+
+        # Check that all groups are loaded
+        assert "ROLL" in result
+        assert "WSROLL" in result
+        assert "AWNGV2" in result
+
+        # Check ROLL config (retail group, no grid codes)
+        assert result["ROLL"]["description_prefix"] == "Roller Blind"
+        assert result["ROLL"]["price_grid_code"] is None
+        assert result["ROLL"]["cost_grid_code"] is None
+        assert result["ROLL"]["discount_group_code"] == "RB"
+        assert result["ROLL"]["category"] == "Fabric - Roller Blind"
+
+        # Check WSROLL config (wholesale group, has grid codes)
+        assert result["WSROLL"]["description_prefix"] == "WS Roller Blind"
+        assert result["WSROLL"]["price_grid_code"] == "WSRB"
+        assert result["WSROLL"]["cost_grid_code"] == "WSRB_C"
+        assert result["WSROLL"]["discount_group_code"] == "WSRB"
+        assert result["WSROLL"]["category"] == "Fabric - Roller Blind"
 
 
 class TestLoadFabricData:
