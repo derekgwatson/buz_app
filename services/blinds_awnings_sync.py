@@ -140,6 +140,7 @@ def load_groups_config_from_sheet(
         - Cost Grid Code
         - Discount Group Code
         - Category
+        - Markup (optional - pricing markup multiplier)
 
     Returns dict mapping group code to configuration.
     """
@@ -160,7 +161,7 @@ def load_groups_config_from_sheet(
     # Parse header
     headers = [h.strip() for h in rows[0]]
 
-    # Expected columns
+    # Expected columns (Markup is optional)
     required = ["Code", "Description", "Price Grid Code", "Cost Grid Code", "Discount Group Code", "Category"]
     for col in required:
         if col not in headers:
@@ -183,12 +184,22 @@ def load_groups_config_from_sheet(
         price_grid_code = row_dict.get("Price Grid Code") or None
         cost_grid_code = row_dict.get("Cost Grid Code") or None
 
+        # Parse optional markup
+        markup_override = None
+        markup_str = row_dict.get("Markup", "")
+        if markup_str:
+            try:
+                markup_override = Decimal(markup_str)
+            except (InvalidOperation, ValueError):
+                pass  # Ignore invalid markup values
+
         groups_config[code] = {
             "description_prefix": row_dict.get("Description", ""),
             "price_grid_code": price_grid_code,
             "cost_grid_code": cost_grid_code,
             "discount_group_code": row_dict.get("Discount Group Code", ""),
-            "category": row_dict.get("Category", "")
+            "category": row_dict.get("Category", ""),
+            "markup_override": markup_override
         }
 
     _p(f"Loaded configuration for {len(groups_config)} groups", 3)
@@ -377,13 +388,13 @@ def load_existing_buz_pricing(db, groups_config: Dict[str, Dict[str, Any]]) -> D
     """
     Load latest pricing for all inventory codes (retail groups only).
 
-    Returns dict: inventory_code → {sell_price, cost_price, date_from}
+    Returns dict: inventory_code → {sell_price, cost_price, markup, date_from}
     """
     query = """
         SELECT
             InventoryCode,
-            SellLMWide,
-            CostLMWide,
+            SellSQM,
+            CostSQM,
             DateFrom,
             CustomerPriceGroupCode
         FROM pricing_data
@@ -410,9 +421,18 @@ def load_existing_buz_pricing(db, groups_config: Dict[str, Dict[str, Any]]) -> D
     pricing_map = {}
     for _, row in latest.iterrows():
         code = _norm(row["InventoryCode"])
+        sell = _q2(row["SellSQM"])
+        cost = _q2(row["CostSQM"])
+
+        # Calculate markup (sell / cost)
+        markup = None
+        if cost > 0:
+            markup = sell / cost
+
         pricing_map[code] = {
-            "sell_price": _q2(row["SellLMWide"]),
-            "cost_price": _q2(row["CostLMWide"]),
+            "sell_price": sell,
+            "cost_price": cost,
+            "markup": markup,
             "date_from": _norm(row["DateFrom"])
         }
 
@@ -428,7 +448,7 @@ def compute_changes(
     groups_config: Dict[str, Dict[str, Any]],
     pricing_map: Dict[str, Dict[str, Any]],
     progress=None
-) -> Tuple[Dict[str, List[Dict]], Dict[str, List[Dict]], List[Dict]]:
+) -> Tuple[Dict[str, List[Dict]], Dict[str, List[Dict]], List[Dict], Dict[str, Dict]]:
     """
     Compute ADD, EDIT, and DEPRECATE operations.
 
@@ -436,6 +456,7 @@ def compute_changes(
         - items_changes: dict[group_code] → list of item rows to write
         - pricing_changes: dict[group_code] → list of pricing rows to write (retail only)
         - change_log: list of change descriptions for UI
+        - markup_info: dict[group_code] → {markup_used, markup_source, existing_avg_markup}
     """
     def _p(msg: str, pct: Optional[int] = None):
         if callable(progress):
@@ -447,6 +468,7 @@ def compute_changes(
     items_changes = defaultdict(list)
     pricing_changes = defaultdict(list)
     change_log = []
+    markup_info = {}
 
     _p("Computing changes for each group...", 35)
 
@@ -461,7 +483,44 @@ def compute_changes(
         price_grid_code = group_cfg.get("price_grid_code")
         cost_grid_code = group_cfg.get("cost_grid_code")
         discount_code = group_cfg.get("discount_group_code", "")
+        markup_override = group_cfg.get("markup_override")
         is_wholesale = _is_wholesale_group(group_code)
+
+        # Calculate average markup from existing items in this group (retail only)
+        avg_markup = None
+        markup_used = None
+        markup_source = None
+
+        if not is_wholesale and not inv_df.empty:
+            # Get markups for all existing items in this group
+            markups = []
+            for _, row in inv_df.iterrows():
+                code = _norm(row["Code"])
+                if code in pricing_map:
+                    item_markup = pricing_map[code].get("markup")
+                    if item_markup and item_markup > 0:
+                        markups.append(item_markup)
+
+            if markups:
+                avg_markup = sum(markups) / len(markups)
+
+            # Determine which markup to use
+            if markup_override:
+                markup_used = markup_override
+                markup_source = "override"
+            elif avg_markup:
+                markup_used = avg_markup
+                markup_source = "calculated"
+            else:
+                markup_used = Decimal("2.0")  # Default 2x markup
+                markup_source = "default"
+
+            markup_info[group_code] = {
+                "markup_used": markup_used,
+                "markup_source": markup_source,
+                "existing_avg_markup": avg_markup,
+                "markup_override": markup_override
+            }
 
         # Build sets of keys
         fabric_keys = set(fabrics_df["_key"].tolist()) if not fabrics_df.empty else set()
@@ -513,17 +572,16 @@ def compute_changes(
             })
 
             # Pricing for retail groups only
-            if not is_wholesale:
-                price_sqm = _q2(price_value)
+            if not is_wholesale and markup_used:
+                cost_sqm = _q2(price_value)
+                sell_sqm = cost_sqm * markup_used
                 pricing_changes[group_code].append({
                     "PkId": "",
                     "Inventory Code": new_code,
                     "Description": description,
                     "Date From": "01/01/2020",  # New fabric date
-                    "SellLMWide": f"{price_sqm:.2f}",
-                    "SellLMHeight": f"{price_sqm:.2f}",
-                    "CostLMWide": "0.00",  # No cost for new fabrics
-                    "CostLMHeight": "0.00",
+                    "CostSQM": f"{cost_sqm:.2f}",
+                    "SellSQM": f"{sell_sqm:.2f}",
                     "Operation": "A"
                 })
 
@@ -589,22 +647,24 @@ def compute_changes(
                 })
 
             # Check pricing (retail only)
-            if not is_wholesale:
-                new_price = _q2(price_value)
-                existing_pricing = pricing_map.get(existing_code, {})
-                existing_price = existing_pricing.get("sell_price", Decimal("0.00"))
+            if not is_wholesale and markup_used:
+                new_cost = _q2(price_value)
+                new_sell = new_cost * markup_used
 
-                if new_price != existing_price:
+                existing_pricing = pricing_map.get(existing_code, {})
+                existing_cost = existing_pricing.get("cost_price", Decimal("0.00"))
+                existing_sell = existing_pricing.get("sell_price", Decimal("0.00"))
+
+                # Check if cost or sell price changed
+                if new_cost != existing_cost or new_sell != existing_sell:
                     description = _build_description(prefix, fd1, fd2, fd3)
                     pricing_changes[group_code].append({
                         "PkId": "",
                         "Inventory Code": existing_code,
                         "Description": description,
                         "Date From": _tomorrow_ddmmyyyy(),
-                        "SellLMWide": f"{new_price:.2f}",
-                        "SellLMHeight": f"{new_price:.2f}",
-                        "CostLMWide": "0.00",
-                        "CostLMHeight": "0.00",
+                        "CostSQM": f"{new_cost:.2f}",
+                        "SellSQM": f"{new_sell:.2f}",
                         "Operation": "A"
                     })
 
@@ -613,7 +673,7 @@ def compute_changes(
                         "Operation": "P",
                         "Code": existing_code,
                         "Description": description,
-                        "Reason": f"Price changed: {existing_price:.2f} → {new_price:.2f}"
+                        "Reason": f"Price changed: Cost {existing_cost:.2f} → {new_cost:.2f}, Sell {existing_sell:.2f} → {new_sell:.2f}"
                     })
 
         # DEPRECATE: In inventory (active, not already deprecated), not in fabrics
@@ -661,7 +721,7 @@ def compute_changes(
                 })
 
     _p("Change computation complete", 60)
-    return dict(items_changes), dict(pricing_changes), change_log
+    return dict(items_changes), dict(pricing_changes), change_log, markup_info
 
 
 # ========== Excel Generation ==========
@@ -952,7 +1012,7 @@ def sync_blinds_awnings_fabrics(
     pricing_map = load_existing_buz_pricing(db, groups_config)
 
     # Compute changes
-    items_changes, pricing_changes, change_log = compute_changes(
+    items_changes, pricing_changes, change_log, markup_info = compute_changes(
         fabrics_by_group,
         inv_by_group,
         existing_codes,
@@ -979,14 +1039,18 @@ def sync_blinds_awnings_fabrics(
         deprecates = len([c for c in change_log if c.get("Group") == group_code and c.get("Operation") == "D"])
         pricing = len(pricing_changes.get(group_code, []))
 
-        # Only include groups with changes
-        if adds > 0 or edits > 0 or deprecates > 0 or pricing > 0:
+        # Only include groups with changes or markup info
+        if adds > 0 or edits > 0 or deprecates > 0 or pricing > 0 or group_code in markup_info:
             groups_summary[group_code] = {
                 "A": adds,
                 "E": edits,
                 "D": deprecates,
                 "P": pricing
             }
+
+            # Add markup info if available
+            if group_code in markup_info:
+                groups_summary[group_code]["markup"] = markup_info[group_code]
 
     summary = {
         "A": total_adds,
@@ -1161,18 +1225,15 @@ def apply_changes_to_database(items_changes: Dict[str, List[Dict]], pricing_chan
             db.execute_query("""
                 INSERT INTO pricing_data (
                     inventory_group_code, InventoryCode, Description,
-                    DateFrom, SellLMWide, SellLMHeight,
-                    CostLMWide, CostLMHeight
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    DateFrom, SellSQM, CostSQM
+                ) VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 group_code,
                 inventory_code,
                 row.get("Description", ""),
                 row.get("Date From", ""),
-                _q2(row.get("SellLMWide", "0.00")),
-                _q2(row.get("SellLMHeight", "0.00")),
-                _q2(row.get("CostLMWide", "0.00")),
-                _q2(row.get("CostLMHeight", "0.00"))
+                _q2(row.get("SellSQM", "0.00")),
+                _q2(row.get("CostSQM", "0.00"))
             ))
             pricing_added += 1
 

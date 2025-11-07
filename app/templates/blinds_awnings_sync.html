@@ -139,7 +139,7 @@
 
       {% if summary and summary.by_group %}
         <h4>By Group</h4>
-        <table class="table table-sm table-bordered" style="max-width: 600px;">
+        <table class="table table-sm table-bordered" style="max-width: 900px;">
           <thead>
             <tr>
               <th>Group</th>
@@ -147,6 +147,7 @@
               <th>Edits</th>
               <th>Deprecations</th>
               <th>Pricing</th>
+              <th>Markup Used</th>
             </tr>
           </thead>
           <tbody>
@@ -157,6 +158,24 @@
               <td>{{ stats.E or 0 }}</td>
               <td>{{ stats.D or 0 }}</td>
               <td>{{ stats.P or 0 }}</td>
+              <td>
+                {% if stats.markup %}
+                  {% set m = stats.markup %}
+                  {% set markup_val = m.markup_used|float %}
+                  {% if m.markup_source == 'override' %}
+                    <span style="background-color: #ffffcc; padding: 2px 4px;">{{ "%.3f"|format(markup_val) }}x (override)</span>
+                  {% elif m.markup_source == 'calculated' %}
+                    {{ "%.3f"|format(markup_val) }}x
+                    {% if m.markup_override and m.markup_override != m.markup_used %}
+                      <span style="color: #999;">(existing avg: {{ "%.3f"|format(m.existing_avg_markup|float) }}x)</span>
+                    {% endif %}
+                  {% elif m.markup_source == 'default' %}
+                    <span style="color: #999;">{{ "%.3f"|format(markup_val) }}x (default)</span>
+                  {% endif %}
+                {% else %}
+                  <span style="color: #ccc;">-</span>
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
           </tbody>
