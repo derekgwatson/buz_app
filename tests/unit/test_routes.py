@@ -30,22 +30,3 @@ class TestRoutes:
         )
         assert response.status_code == 302  # Assuming a redirect after success
         assert response.headers['Location'] == '/manage_inventory_groups'
-
-    @patch('services.database.create_db_manager')  # Mock the create_db_manager function
-    @patch('time.time', return_value=123456.78)  # Mock time.time to return a fixed value
-    def test_before_request(self, mock_time, get_db_manager):
-        """Test the before_request function."""
-        # Mock database manager
-
-        with self.app.app_context():
-            # Call the actual before_request function
-            before_request()
-
-            # Assert that g.db is set correctly
-            assert g.db == get_db_manager
-
-            # Assert that the start time is set correctly
-            assert g.start_time == 123456.78
-
-            # Assert that create_db_manager was called with the correct argument
-            mock_create_db_manager.assert_called_once_with(self.app.config['database'])

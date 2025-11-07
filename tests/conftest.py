@@ -37,6 +37,12 @@ def get_db_manager(app_config):
 
 
 @pytest.fixture
+def client(app_context):
+    """Fixture for Flask test client."""
+    return app_context.test_client()
+
+
+@pytest.fixture
 def auth_headers():
     """Fixture for authorization headers."""
     credentials = b64encode(b"testuser:testpassword").decode("utf-8")
