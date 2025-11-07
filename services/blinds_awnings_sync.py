@@ -683,7 +683,10 @@ def compute_changes(
                     item_cost_grid = grid_code + "C"
                     logger.debug(f"Group {group_code} ADD {new_code}: Looked up grid codes for category '{price_category}' → Price: {item_price_grid}, Cost: {item_cost_grid}")
                 else:
-                    logger.warning(f"Group {group_code} ADD {new_code}: No grid code found for price category '{price_category}'")
+                    # No mapping found - leave grid codes blank (e.g., verishades don't use grids)
+                    item_price_grid = ""
+                    item_cost_grid = ""
+                    logger.debug(f"Group {group_code} ADD {new_code}: No grid code mapping for category '{price_category}' - leaving blank")
 
             item_row = {
                 "PkId": "",
@@ -796,7 +799,10 @@ def compute_changes(
                         item_cost_grid = grid_code + "C"
                         logger.debug(f"Group {group_code} EDIT {existing_code}: Looked up grid codes for category '{price_category}' → Price: {item_price_grid}, Cost: {item_cost_grid}")
                     else:
-                        logger.warning(f"Group {group_code} EDIT {existing_code}: No grid code found for price category '{price_category}'")
+                        # No mapping found - blank out grid codes (e.g., verishades, or clearing old grid codes during reactivation)
+                        item_price_grid = ""
+                        item_cost_grid = ""
+                        logger.debug(f"Group {group_code} EDIT {existing_code}: No grid code mapping for category '{price_category}' - blanking out")
 
                 item_row = {
                     "PkId": _norm(inv_row["PkId"]),
