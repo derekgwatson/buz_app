@@ -124,6 +124,15 @@
             <a class="btn btn-primary" href="{{ f.url }}">Download {{ f.label }}</a>
           {% endfor %}
         </p>
+        {% if job_id %}
+        <p>
+          <button id="apply-to-db-btn" class="btn btn-warning" onclick="applyToDatabase()">
+            Update Database with These Changes
+          </button>
+          <span id="apply-status" style="margin-left: 10px;"></span>
+        </p>
+        <div id="apply-alert" class="alert" style="display: none;"></div>
+        {% endif %}
       {% endif %}
 
       {% if change_log and change_log|length > 0 %}
@@ -175,4 +184,64 @@
     </form>
   {% endif %}
 </div>
+
+{% if job_id and ran and not error %}
+<script>
+async function applyToDatabase() {
+  const btn = document.getElementById('apply-to-db-btn');
+  const status = document.getElementById('apply-status');
+  const alert = document.getElementById('apply-alert');
+
+  // Confirm with user
+  if (!confirm('This will update your local database with the changes shown above.\n\nMake sure you have already uploaded the Excel files to Buz first!\n\nContinue?')) {
+    return;
+  }
+
+  // Disable button
+  btn.disabled = true;
+  status.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Updating database...';
+  alert.style.display = 'none';
+
+  try {
+    const res = await fetch(
+      '{{ url_for("main_routes.blinds_awnings_sync_apply_to_db", job_id=job_id) }}',
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const data = await res.json();
+
+    if (data.success) {
+      const stats = data.stats;
+      status.innerHTML = '<span style="color: green;">✓ Success!</span>';
+      alert.className = 'alert alert-success';
+      alert.style.display = 'block';
+      alert.innerHTML = `<strong>Database updated:</strong><br>
+        Items added: ${stats.items_added}<br>
+        Items updated: ${stats.items_updated}<br>
+        Pricing records added: ${stats.pricing_added}`;
+
+      // Keep button disabled after success
+      btn.innerHTML = 'Database Updated';
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch (e) {
+    status.innerHTML = '<span style="color: red;">✗ Failed</span>';
+    alert.className = 'alert alert-danger';
+    alert.style.display = 'block';
+    alert.innerHTML = `<strong>Error:</strong> ${e.message}`;
+
+    // Re-enable button on failure
+    btn.disabled = false;
+  }
+}
+</script>
+{% endif %}
+
 {% endblock %}

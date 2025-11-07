@@ -846,5 +846,183 @@ def sync_blinds_awnings_fabrics(
         "items_file": items_path,
         "pricing_file": pricing_path,
         "summary": summary,
-        "change_log": change_log
+        "change_log": change_log,
+        "items_changes": items_changes,
+        "pricing_changes": pricing_changes
+    }
+
+
+def apply_changes_to_database(items_changes: Dict[str, List[Dict]], pricing_changes: Dict[str, List[Dict]], db, progress=None) -> Dict[str, int]:
+    """
+    Apply the computed changes to the database.
+
+    Args:
+        items_changes: Dict of group_code -> list of item change dicts
+        pricing_changes: Dict of group_code -> list of pricing change dicts
+        db: DatabaseManager instance
+        progress: Optional progress callback function(message, pct)
+
+    Returns:
+        Dict with counts: {"items_added": N, "items_updated": N, "pricing_added": N}
+    """
+    def _p(msg, pct=None):
+        if progress:
+            progress(msg, pct)
+
+    _p("Applying changes to database...", 0)
+
+    items_added = 0
+    items_updated = 0
+    pricing_added = 0
+
+    # Apply item changes
+    total_items = sum(len(rows) for rows in items_changes.values())
+    processed = 0
+
+    for group_code, rows in items_changes.items():
+        for row in rows:
+            operation = row.get("Operation")
+            code = row.get("Code")
+
+            if operation == "A":
+                # ADD: Insert new item
+                db.execute_query("""
+                    INSERT INTO inventory_items (
+                        inventory_group_code, Code, Description,
+                        DescnPart1, DescnPart2, DescnPart3,
+                        PriceGridCode, CostGridCode, DiscountGroupCode,
+                        SupplierProductCode, Active, Warning,
+                        TaxRate, Supplier
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    group_code,
+                    code,
+                    row.get("Description", ""),
+                    row.get("DescnPart1 (Material)", ""),
+                    row.get("DescnPart2 (Material Types)", ""),
+                    row.get("DescnPart3 (Colour)", ""),
+                    row.get("Price Grid Code", ""),
+                    row.get("Cost Grid Code", ""),
+                    row.get("Discount Group Code", ""),
+                    row.get("Supplier Product Code", ""),
+                    row.get("Active", "TRUE"),
+                    row.get("Warning", ""),
+                    row.get("Tax Rate", TAX_RATE),
+                    row.get("Supplier", SUPPLIER_NAME)
+                ))
+                items_added += 1
+
+            elif operation == "E":
+                # EDIT: Update existing item
+                pk_id = row.get("PkId", "")
+
+                if pk_id:
+                    # Update by PkId if available
+                    db.execute_query("""
+                        UPDATE inventory_items
+                        SET Description = ?,
+                            DescnPart1 = ?,
+                            DescnPart2 = ?,
+                            DescnPart3 = ?,
+                            PriceGridCode = ?,
+                            CostGridCode = ?,
+                            DiscountGroupCode = ?,
+                            SupplierProductCode = ?,
+                            Active = ?,
+                            Warning = ?,
+                            TaxRate = ?,
+                            Supplier = ?
+                        WHERE PkId = ?
+                    """, (
+                        row.get("Description", ""),
+                        row.get("DescnPart1 (Material)", ""),
+                        row.get("DescnPart2 (Material Types)", ""),
+                        row.get("DescnPart3 (Colour)", ""),
+                        row.get("Price Grid Code", ""),
+                        row.get("Cost Grid Code", ""),
+                        row.get("Discount Group Code", ""),
+                        row.get("Supplier Product Code", ""),
+                        row.get("Active", "TRUE"),
+                        row.get("Warning", ""),
+                        row.get("Tax Rate", TAX_RATE),
+                        row.get("Supplier", SUPPLIER_NAME),
+                        pk_id
+                    ))
+                else:
+                    # Update by Code if no PkId
+                    db.execute_query("""
+                        UPDATE inventory_items
+                        SET Description = ?,
+                            DescnPart1 = ?,
+                            DescnPart2 = ?,
+                            DescnPart3 = ?,
+                            PriceGridCode = ?,
+                            CostGridCode = ?,
+                            DiscountGroupCode = ?,
+                            SupplierProductCode = ?,
+                            Active = ?,
+                            Warning = ?,
+                            TaxRate = ?,
+                            Supplier = ?
+                        WHERE Code = ?
+                    """, (
+                        row.get("Description", ""),
+                        row.get("DescnPart1 (Material)", ""),
+                        row.get("DescnPart2 (Material Types)", ""),
+                        row.get("DescnPart3 (Colour)", ""),
+                        row.get("Price Grid Code", ""),
+                        row.get("Cost Grid Code", ""),
+                        row.get("Discount Group Code", ""),
+                        row.get("Supplier Product Code", ""),
+                        row.get("Active", "TRUE"),
+                        row.get("Warning", ""),
+                        row.get("Tax Rate", TAX_RATE),
+                        row.get("Supplier", SUPPLIER_NAME),
+                        code
+                    ))
+                items_updated += 1
+
+            processed += 1
+            if total_items > 0:
+                _p(f"Processing items: {processed}/{total_items}", int(50 * processed / total_items))
+
+    # Apply pricing changes
+    total_pricing = sum(len(rows) for rows in pricing_changes.values())
+    processed = 0
+
+    for group_code, rows in pricing_changes.items():
+        for row in rows:
+            inventory_code = row.get("Inventory Code")
+
+            # Insert pricing record
+            db.execute_query("""
+                INSERT INTO pricing_data (
+                    inventory_group_code, InventoryCode, Description,
+                    DateFrom, SellLMWide, SellLMHeight,
+                    CostLMWide, CostLMHeight
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                group_code,
+                inventory_code,
+                row.get("Description", ""),
+                row.get("Date From", ""),
+                _q2(row.get("SellLMWide", "0.00")),
+                _q2(row.get("SellLMHeight", "0.00")),
+                _q2(row.get("CostLMWide", "0.00")),
+                _q2(row.get("CostLMHeight", "0.00"))
+            ))
+            pricing_added += 1
+
+            processed += 1
+            if total_pricing > 0:
+                _p(f"Processing pricing: {processed}/{total_pricing}", 50 + int(50 * processed / total_pricing))
+
+    _p("Database update complete!", 100)
+
+    logger.info(f"Applied changes to database: items_added={items_added}, items_updated={items_updated}, pricing_added={pricing_added}")
+
+    return {
+        "items_added": items_added,
+        "items_updated": items_updated,
+        "pricing_added": pricing_added
     }

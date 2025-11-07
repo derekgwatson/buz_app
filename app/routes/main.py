@@ -1379,7 +1379,7 @@ def blinds_awnings_sync_progress(job_id):
             files=files,
             last_inventory_upload=last_inventory_upload,
             stale_threshold_hours=6,
-            job_id=None,
+            job_id=job_id,
         )
 
     # Job still running, show progress
@@ -1405,6 +1405,44 @@ def blinds_awnings_sync_status(job_id):
     resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@main_routes_bp.route("/blinds-awnings-sync/apply-to-db/<job_id>", methods=["POST"])
+@auth.login_required
+def blinds_awnings_sync_apply_to_db(job_id):
+    """Apply changes from sync job to database."""
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Unknown job ID"}), 404
+
+    if not job.get("done"):
+        return jsonify({"success": False, "error": "Job not complete"}), 400
+
+    result = job.get("result", {})
+    items_changes = result.get("items_changes")
+    pricing_changes = result.get("pricing_changes")
+
+    if not items_changes or not pricing_changes:
+        return jsonify({"success": False, "error": "No changes data found in job result"}), 400
+
+    # Apply changes
+    try:
+        from services.blinds_awnings_sync import apply_changes_to_database
+
+        stats = apply_changes_to_database(
+            items_changes=items_changes,
+            pricing_changes=pricing_changes,
+            db=g.db
+        )
+
+        return jsonify({
+            "success": True,
+            "stats": stats
+        })
+
+    except Exception as e:
+        logger.exception("Failed to apply changes to database")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @main_routes_bp.route("/lead-times", methods=["GET"])
