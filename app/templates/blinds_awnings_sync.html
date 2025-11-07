@@ -73,7 +73,16 @@
         if (j.error) {
           setLog([...(j.log || []), '', '❌ ' + j.error]);
         } else {
-          location.reload();
+          console.log('Job complete, result:', j.result);
+          // Only reload once - check if we've already reloaded
+          if (!sessionStorage.getItem('blinds_sync_reloaded_{{ job_id }}')) {
+            sessionStorage.setItem('blinds_sync_reloaded_{{ job_id }}', 'true');
+            location.reload();
+          } else {
+            // Already reloaded once, stop polling and show message
+            console.error('Page already reloaded once, but still on progress page. Result:', j.result);
+            setLog([...(j.log || []), '', '✓ Sync complete! If results are not showing, please refresh the page.']);
+          }
         }
         return;
       }
@@ -110,6 +119,12 @@
         <button class="btn btn-success btn-lg">Try Again</button>
       </form>
     {% else %}
+      {# Clear the reload flag when successfully showing results #}
+      {% if job_id %}
+      <script>
+        sessionStorage.removeItem('blinds_sync_reloaded_{{ job_id }}');
+      </script>
+      {% endif %}
       <p>
         <strong>Summary:</strong>
         {% if summary %}
@@ -136,6 +151,14 @@
         </p>
         <div id="apply-alert" class="alert" style="display: none;"></div>
         {% endif %}
+      {% elif not error %}
+        <div class="alert alert-warning">
+          <strong>No files generated.</strong> This can happen if:
+          <ul>
+            <li>There were no changes to make (all fabrics already match)</li>
+            <li>The generated files couldn't be saved</li>
+          </ul>
+        </div>
       {% endif %}
 
       {% if change_log and change_log|length > 0 %}
