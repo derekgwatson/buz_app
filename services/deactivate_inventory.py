@@ -115,6 +115,7 @@ def generate_deactivation_workbook(
         for src_r in matched:
             _copy_row_values(src, dst, src_r, out_r)
             dst.cell(row=out_r, column=OPERATION_COL, value="D")
+            dst.cell(row=out_r, column=WARNING_COL, value=None)
             out_r += 1
 
         stats[src.title] = len(matched)
