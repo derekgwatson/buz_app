@@ -142,6 +142,7 @@ def load_groups_config_from_sheet(
         - Category
         - Markup (optional - pricing markup multiplier)
         - Wastage (optional - wastage percentage, e.g. 20 for 20%)
+        - Price Type (optional - "SQM" or "LM", defaults to "SQM")
 
     Returns dict mapping group code to configuration.
     """
@@ -209,6 +210,11 @@ def load_groups_config_from_sheet(
             except (InvalidOperation, ValueError) as e:
                 logger.warning(f"Group {code}: Failed to parse wastage value '{wastage_str}': {e}")
 
+        # Parse optional price type (SQM or LM)
+        price_type = row_dict.get("Price Type", "").strip().upper()
+        if price_type not in ["SQM", "LM"]:
+            price_type = "SQM"  # Default to SQM
+
         groups_config[code] = {
             "description_prefix": row_dict.get("Description", ""),
             "price_grid_code": price_grid_code,
@@ -216,7 +222,8 @@ def load_groups_config_from_sheet(
             "discount_group_code": row_dict.get("Discount Group Code", ""),
             "category": row_dict.get("Category", ""),
             "markup_override": markup_override,
-            "wastage_pct": wastage_pct
+            "wastage_pct": wastage_pct,
+            "price_type": price_type
         }
 
     _p(f"Loaded configuration for {len(groups_config)} groups", 3)
@@ -269,6 +276,7 @@ def load_fabric_data_from_sheets(
         headers = [h.strip() for h in rows[0]]
 
         # Expected columns: FD1, FD2, FD3, Unleashed Code, Category, Price (or Price Category for wholesale)
+        # Width is optional (needed for retail with LM price types)
         required = ["FD1", "FD2", "FD3", "Unleashed Code", "Category"]
         for col in required:
             if col not in headers:
@@ -282,6 +290,9 @@ def load_fabric_data_from_sheets(
             price_col = "Price Category"
         else:
             raise RuntimeError(f"Missing required column 'Price' or 'Price Category' in {'Wholesale' if is_wholesale else 'Retail'} tab")
+
+        # Check for optional Width column (for vertical blind conversion)
+        has_width = "Width" in headers
 
         # Build DataFrame
         data = []
@@ -305,6 +316,10 @@ def load_fabric_data_from_sheets(
 
         # Add key for matching
         df["_key"] = df.apply(lambda r: _build_desc_key(r["FD1"], r["FD2"], r["FD3"]), axis=1)
+
+        # Log if Width column is available (for vertical blind conversion)
+        if has_width and not is_wholesale:
+            logger.debug(f"Width column available in {'Wholesale' if is_wholesale else 'Retail'} tab for LM→SQM conversion")
 
         return df
 
@@ -617,6 +632,20 @@ def compute_changes(
             # Pricing for retail groups only
             if not is_wholesale and markup_used:
                 cost_sqm = _q2(price_value)
+
+                # Convert LM to SQM for vertical blinds
+                price_type = group_cfg.get("price_type", "SQM")
+                if price_type == "LM":
+                    width_str = _norm(fabric_row.get("Width", ""))
+                    try:
+                        width_mm = float(width_str) if width_str else 0
+                        if width_mm > 0:
+                            cost_sqm = cost_sqm / (Decimal(str(width_mm)) / Decimal("1000"))
+                        else:
+                            logger.warning(f"Missing/invalid width for vertical blind {new_code}: '{width_str}'")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Failed to parse width for vertical blind {new_code}: '{width_str}' - {e}")
+
                 # Apply wastage adjustment if configured
                 if wastage_pct:
                     cost_sqm = cost_sqm * (Decimal("1") + wastage_pct)
@@ -700,6 +729,20 @@ def compute_changes(
             # Check pricing (retail only)
             if not is_wholesale and markup_used:
                 new_cost = _q2(price_value)
+
+                # Convert LM to SQM for vertical blinds
+                price_type = group_cfg.get("price_type", "SQM")
+                if price_type == "LM":
+                    width_str = _norm(fabric_row.get("Width", ""))
+                    try:
+                        width_mm = float(width_str) if width_str else 0
+                        if width_mm > 0:
+                            new_cost = new_cost / (Decimal(str(width_mm)) / Decimal("1000"))
+                        else:
+                            logger.warning(f"Missing/invalid width for vertical blind {existing_code}: '{width_str}'")
+                    except (ValueError, TypeError) as e:
+                        logger.warning(f"Failed to parse width for vertical blind {existing_code}: '{width_str}' - {e}")
+
                 # Apply wastage adjustment if configured
                 if wastage_pct:
                     new_cost = new_cost * (Decimal("1") + wastage_pct)
