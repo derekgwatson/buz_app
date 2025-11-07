@@ -190,7 +190,7 @@ class TestLoadFabricData:
 
         material_restrictions = {}
 
-        result = load_fabric_data_from_sheets(
+        result, filtered = load_fabric_data_from_sheets(
             mock_service,
             "sheet_id_123",
             "Retail",
@@ -207,6 +207,10 @@ class TestLoadFabricData:
         # Check wholesale group (WSROLL)
         assert "WSROLL" in result
         assert len(result["WSROLL"]) == 1
+
+        # Check filtered (should be empty with no restrictions)
+        assert isinstance(filtered, dict)
+        assert len(filtered.get("ROLL", set())) == 0
         assert result["WSROLL"].iloc[0]["FD1"] == "Brand3"
 
 
@@ -305,12 +309,13 @@ class TestComputeChanges:
 
         pricing_map = {}
 
-        items_changes, pricing_changes, change_log = compute_changes(
+        items_changes, pricing_changes, change_log, markup_info = compute_changes(
             fabrics_by_group,
             inv_by_group,
             existing_codes,
             groups_config,
-            pricing_map
+            pricing_map,
+            {"ROLL": set()}
         )
 
         # Check ADD operation
@@ -379,12 +384,13 @@ class TestComputeChanges:
 
         pricing_map = {}
 
-        items_changes, pricing_changes, change_log = compute_changes(
+        items_changes, pricing_changes, change_log, markup_info = compute_changes(
             fabrics_by_group,
             inv_by_group,
             existing_codes,
             groups_config,
-            pricing_map
+            pricing_map,
+            {"ROLL": set()}
         )
 
         # Check EDIT operation
@@ -437,12 +443,13 @@ class TestComputeChanges:
 
         pricing_map = {}
 
-        items_changes, pricing_changes, change_log = compute_changes(
+        items_changes, pricing_changes, change_log, markup_info = compute_changes(
             fabrics_by_group,
             inv_by_group,
             existing_codes,
             groups_config,
-            pricing_map
+            pricing_map,
+            {"ROLL": set()}
         )
 
         # Check DEPRECATE operation
@@ -486,12 +493,13 @@ class TestComputeChanges:
 
         pricing_map = {}
 
-        items_changes, pricing_changes, change_log = compute_changes(
+        items_changes, pricing_changes, change_log, markup_info = compute_changes(
             fabrics_by_group,
             inv_by_group,
             existing_codes,
             groups_config,
-            pricing_map
+            pricing_map,
+            {"ROLL": set()}
         )
 
         # Check items created with grid codes

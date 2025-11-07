@@ -239,12 +239,13 @@ def load_fabric_data_from_sheets(
     groups_config: Dict[str, Dict[str, Any]],
     material_restrictions: Dict[str, List[str]],
     progress=None
-) -> Dict[str, pd.DataFrame]:
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, set]]:
     """
     Load fabric data from Google Sheets Retail and Wholesale tabs.
 
-    Returns dict mapping group_code to DataFrame with columns:
-        FD1, FD2, FD3, UnleashedCode, Category, Price, _key
+    Returns:
+        - fabrics_by_group: dict mapping group_code to DataFrame with columns: FD1, FD2, FD3, UnleashedCode, Category, Price, _key
+        - filtered_by_material: dict mapping group_code to set of _keys that were filtered out due to material restrictions
     """
     def _p(msg: str, pct: Optional[int] = None):
         if callable(progress):
@@ -317,6 +318,7 @@ def load_fabric_data_from_sheets(
 
     # Build mapping: group_code → DataFrame of fabrics for that group
     fabrics_by_group = {}
+    filtered_by_material = {}
 
     for group_code, group_cfg in groups_config.items():
         category = group_cfg.get("category", "")
@@ -328,19 +330,24 @@ def load_fabric_data_from_sheets(
         # Filter by category
         group_df = source_df[source_df["Category"].str.strip() == category].copy()
 
-        # Apply material restrictions
+        # Apply material restrictions and track filtered items
         if group_code in material_restrictions:
+            before_keys = set(group_df["_key"].tolist())
             group_df = group_df[
                 group_df.apply(
                     lambda r: _check_material_restriction(group_code, r["FD2"], material_restrictions),
                     axis=1
                 )
             ].copy()
+            after_keys = set(group_df["_key"].tolist())
+            filtered_by_material[group_code] = before_keys - after_keys
+        else:
+            filtered_by_material[group_code] = set()
 
         fabrics_by_group[group_code] = group_df
 
     _p(f"Loaded fabrics for {len(fabrics_by_group)} groups", 30)
-    return fabrics_by_group
+    return fabrics_by_group, filtered_by_material
 
 
 # ========== Database Loading ==========
@@ -472,6 +479,7 @@ def compute_changes(
     existing_codes: Dict[str, set],
     groups_config: Dict[str, Dict[str, Any]],
     pricing_map: Dict[str, Dict[str, Any]],
+    filtered_by_material: Dict[str, set],
     progress=None
 ) -> Tuple[Dict[str, List[Dict]], Dict[str, List[Dict]], List[Dict], Dict[str, Dict]]:
     """
@@ -768,12 +776,19 @@ def compute_changes(
 
                 items_changes[group_code].append(item_row)
 
+                # Determine deprecation reason
+                filtered_keys = filtered_by_material.get(group_code, set())
+                if key in filtered_keys:
+                    reason = f"Material type '{fd2}' not allowed for this product group"
+                else:
+                    reason = "Not in Google Sheet"
+
                 change_log.append({
                     "Group": group_code,
                     "Operation": "D",
                     "Code": existing_code,
                     "Description": description,
-                    "Reason": "Deprecated (not in Google Sheet)"
+                    "Reason": reason
                 })
 
     _p("Change computation complete", 60)
@@ -1060,7 +1075,7 @@ def sync_blinds_awnings_fabrics(
     )
 
     # Load fabric data from Google Sheets
-    fabrics_by_group = load_fabric_data_from_sheets(
+    fabrics_by_group, filtered_by_material = load_fabric_data_from_sheets(
         sheets_service,
         spreadsheet_id,
         retail_tab,
@@ -1084,6 +1099,7 @@ def sync_blinds_awnings_fabrics(
         existing_codes,
         groups_config,
         pricing_map,
+        filtered_by_material,
         progress=_p
     )
 
