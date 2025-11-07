@@ -232,10 +232,19 @@ def load_fabric_data_from_sheets(
         headers = [h.strip() for h in rows[0]]
 
         # Expected columns: FD1, FD2, FD3, Unleashed Code, Category, Price (or Price Category for wholesale)
-        required = ["FD1", "FD2", "FD3", "Unleashed Code", "Category", "Price"]
+        required = ["FD1", "FD2", "FD3", "Unleashed Code", "Category"]
         for col in required:
             if col not in headers:
                 raise RuntimeError(f"Missing required column '{col}' in {'Wholesale' if is_wholesale else 'Retail'} tab")
+
+        # Check for Price or Price Category column
+        price_col = None
+        if "Price" in headers:
+            price_col = "Price"
+        elif "Price Category" in headers:
+            price_col = "Price Category"
+        else:
+            raise RuntimeError(f"Missing required column 'Price' or 'Price Category' in {'Wholesale' if is_wholesale else 'Retail'} tab")
 
         # Build DataFrame
         data = []
@@ -245,6 +254,10 @@ def load_fabric_data_from_sheets(
             data.append(row[:len(headers)])
 
         df = pd.DataFrame(data, columns=headers, dtype=str).fillna("")
+
+        # Normalize price column to "Price"
+        if price_col == "Price Category":
+            df["Price"] = df["Price Category"]
 
         # Filter out empty rows (where FD1, FD2, FD3 are all empty)
         df = df[
