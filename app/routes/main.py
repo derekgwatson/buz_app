@@ -1354,6 +1354,10 @@ def blinds_awnings_sync_progress(job_id):
         change_log = result.get("change_log", [])
         error = job.get("error")
 
+        logger.info(f"Job {job_id} complete. Items file: {items_file}, Pricing file: {pricing_file}")
+        logger.info(f"Items file exists: {os.path.exists(items_file) if items_file else 'N/A'}")
+        logger.info(f"Pricing file exists: {os.path.exists(pricing_file) if pricing_file else 'N/A'}")
+
         files = []
         if items_file and os.path.exists(items_file):
             files.append({
@@ -1367,6 +1371,8 @@ def blinds_awnings_sync_progress(job_id):
                 "filename": os.path.basename(pricing_file),
                 "url": url_for("main_routes.download_file", filename=os.path.basename(pricing_file))
             })
+
+        logger.info(f"Files list: {files}")
 
         last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
 
