@@ -136,6 +136,33 @@
           {% endif %}
         {% endif %}
       </p>
+
+      {% if summary and summary.by_group %}
+        <h4>By Group</h4>
+        <table class="table table-sm table-bordered" style="max-width: 600px;">
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th>Adds</th>
+              <th>Edits</th>
+              <th>Deprecations</th>
+              <th>Pricing</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for group, stats in summary.by_group.items() %}
+            <tr>
+              <td><strong>{{ group }}</strong></td>
+              <td>{{ stats.A or 0 }}</td>
+              <td>{{ stats.E or 0 }}</td>
+              <td>{{ stats.D or 0 }}</td>
+              <td>{{ stats.P or 0 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+
       {% if files %}
         <p>
           {% for f in files %}

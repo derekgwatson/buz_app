@@ -886,17 +886,36 @@ def sync_blinds_awnings_fabrics(
         progress=_p
     )
 
-    # Compute summary
+    # Compute summary - overall and per-group
     total_adds = sum(len([r for r in rows if r.get("Operation") == "A"]) for rows in items_changes.values())
     total_edits = sum(len([r for r in rows if r.get("Operation") == "E"]) for rows in items_changes.values())
     total_deprecates = len([c for c in change_log if c.get("Operation") == "D"])
     total_pricing = sum(len(rows) for rows in pricing_changes.values())
 
+    # Per-group breakdown
+    groups_summary = {}
+    for group_code in groups_config.keys():
+        group_items = items_changes.get(group_code, [])
+        adds = len([r for r in group_items if r.get("Operation") == "A"])
+        edits = len([r for r in group_items if r.get("Operation") == "E"])
+        deprecates = len([c for c in change_log if c.get("Group") == group_code and c.get("Operation") == "D"])
+        pricing = len(pricing_changes.get(group_code, []))
+
+        # Only include groups with changes
+        if adds > 0 or edits > 0 or deprecates > 0 or pricing > 0:
+            groups_summary[group_code] = {
+                "A": adds,
+                "E": edits,
+                "D": deprecates,
+                "P": pricing
+            }
+
     summary = {
         "A": total_adds,
         "E": total_edits,
         "D": total_deprecates,
-        "P": total_pricing
+        "P": total_pricing,
+        "by_group": groups_summary
     }
 
     _p("Sync complete!", 100)
