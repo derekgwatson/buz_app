@@ -1,0 +1,178 @@
+{% extends "layout.html" %}
+{% block title %}Blinds & Awnings Sync{% endblock %}
+{% block content %}
+<div class="container">
+  <h3>Blinds & Awnings Fabric Sync</h3>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat,msg in messages %}
+        <div class="alert alert-{{cat}}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if last_inventory_upload %}
+    <p>
+      <strong>Last inventory upload:</strong>
+      {{ last_inventory_upload|datetimeformat }}
+      (warn if older than {{ stale_threshold_hours }}h)
+    </p>
+  {% else %}
+    <p><em>No inventory upload timestamp found.</em></p>
+  {% endif %}
+
+  {% if job_id %}
+    {# --- Progress mode --- #}
+    <div class="card">
+      <div class="card-body">
+        <h4 class="card-title">Blinds & Awnings Sync is running…</h4>
+        <div class="progress my-3" style="height: 20px;">
+          <div id="bar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+        </div>
+        <pre id="log" class="bg-dark text-light p-2"
+             style="height: 250px; overflow:auto; white-space: pre-wrap;"></pre>
+      </div>
+    </div>
+
+<script>
+  const bar = document.getElementById('bar');
+  const logBox = document.getElementById('log');
+
+  // Follow the tail unless user scrolls up
+  let stickToBottom = true;
+  logBox.addEventListener('scroll', () => {
+    // near-bottom threshold avoids jitter
+    stickToBottom = (logBox.scrollTop + logBox.clientHeight) >= (logBox.scrollHeight - 10);
+  });
+
+  function setLog(lines) {
+    const shouldStick = stickToBottom;      // snapshot BEFORE we change content
+    logBox.textContent = (lines || []).join('\n');
+    if (shouldStick) {
+      // wait for layout, then jump to bottom
+      requestAnimationFrame(() => { logBox.scrollTop = logBox.scrollHeight; });
+    }
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(
+        '{{ url_for("main_routes.blinds_awnings_sync_status", job_id=job_id) }}',
+        { cache: 'no-store', credentials: 'same-origin' }
+      );
+      if (!res.ok) throw new Error('Status ' + res.status);
+      const j = await res.json();
+
+      bar.style.width = (j.pct || 0) + '%';
+      bar.textContent = (j.pct || 0) + '%';
+
+      setLog(j.log);
+
+      if (j.done) {
+        if (j.error) {
+          setLog([...(j.log || []), '', '❌ ' + j.error]);
+        } else {
+          location.reload();
+        }
+        return;
+      }
+    } catch (e) {
+      // append error and keep following if we were at bottom
+      const lines = (logBox.textContent || '').split('\n');
+      lines.push('[poll error] ' + e.message);
+      setLog(lines);
+      console.error(e);
+    }
+    setTimeout(poll, 1000);
+  }
+  poll();
+</script>
+
+
+  {% elif not ran %}
+    {# --- Initial GET: show Run button --- #}
+    <div class="alert alert-info">
+      <strong>Important:</strong> Before running this sync, make sure you have:
+      <ul>
+        <li>Uploaded the latest Buz inventory and pricing data</li>
+        <li>Updated the Unleashed data in your Google Sheet (Retail and Wholesale tabs)</li>
+      </ul>
+    </div>
+    <form action="{{ url_for('main_routes.blinds_awnings_sync_start') }}" method="post">
+      <button class="btn btn-success btn-lg">Run Blinds & Awnings Sync</button>
+    </form>
+
+  {% else %}
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% else %}
+      <p>
+        <strong>Summary:</strong>
+        {% if summary %}
+          Adds: {{ summary.A or 0 }},
+          Edits: {{ summary.E or 0 }},
+          Deprecations: {{ summary.D or 0 }}
+          {% if summary.P %}
+            , Pricing Updates: {{ summary.P }}
+          {% endif %}
+        {% endif %}
+      </p>
+      {% if files %}
+        <p>
+          {% for f in files %}
+            <a class="btn btn-primary" href="{{ f.url }}">Download {{ f.label }}</a>
+          {% endfor %}
+        </p>
+      {% endif %}
+
+      {% if change_log and change_log|length > 0 %}
+        <h4>Changes ({{ change_log|length }} total)</h4>
+        <div style="max-height: 500px; overflow:auto;">
+          <table class="table table-condensed table-bordered table-sm">
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Operation</th>
+                <th>Code</th>
+                <th>Description</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in change_log %}
+              <tr>
+                <td>{{ row.Group }}</td>
+                <td>
+                  {% if row.Operation == 'A' %}
+                    <span class="badge badge-success">ADD</span>
+                  {% elif row.Operation == 'E' %}
+                    <span class="badge badge-warning">EDIT</span>
+                  {% elif row.Operation == 'D' %}
+                    <span class="badge badge-danger">DEPRECATE</span>
+                  {% elif row.Operation == 'P' %}
+                    <span class="badge badge-info">PRICE</span>
+                  {% else %}
+                    {{ row.Operation }}
+                  {% endif %}
+                </td>
+                <td><code>{{ row.Code }}</code></td>
+                <td>{{ row.Description }}</td>
+                <td>{{ row.Reason }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p>No changes this run.</p>
+      {% endif %}
+    {% endif %}
+
+    <hr>
+    <form method="post" action="{{ url_for('main_routes.blinds_awnings_sync_start') }}">
+      <button class="btn btn-default">Run Again</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

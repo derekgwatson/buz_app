@@ -1,0 +1,770 @@
+# services/blinds_awnings_sync.py
+"""
+Blinds & Awnings Fabric Sync Service
+
+Syncs blinds and awnings fabrics from Google Sheets (Retail/Wholesale tabs) to Buz inventory.
+Generates items upload and pricing upload Excel files.
+"""
+
+import os
+import re
+import logging
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from typing import Any, Dict, List, Optional, Tuple
+from collections import defaultdict
+from openpyxl import Workbook
+import pandas as pd
+
+from services.excel_safety import save_workbook_gracefully
+
+logger = logging.getLogger(__name__)
+
+# Constants
+SUPPLIER_NAME = "Unleashed"
+TAX_RATE = "GST"
+DEPRECATED_WARNING = "Deprecated - DO NOT USE"
+
+
+# ========== Utility Functions ==========
+
+def _norm(s: Any) -> str:
+    """Normalize string value."""
+    return ("" if s is None else str(s)).strip()
+
+
+def _build_desc_key(fd1: str, fd2: str, fd3: str) -> str:
+    """Build a normalized key from 3 description parts (lowercase for matching)."""
+    return f"{_norm(fd1).lower()}||{_norm(fd2).lower()}||{_norm(fd3).lower()}"
+
+
+def _q2(x: Any) -> Decimal:
+    """Convert to Decimal with 2dp, default to 0.00."""
+    try:
+        return Decimal(str(x).strip() or "0").quantize(Decimal("0.01"))
+    except (InvalidOperation, AttributeError):
+        return Decimal("0.00")
+
+
+def _tomorrow_ddmmyyyy() -> str:
+    """Return tomorrow's date in DD/MM/YYYY format."""
+    return (datetime.today() + timedelta(days=1)).strftime("%d/%m/%Y")
+
+
+def _is_wholesale_group(group_code: str) -> bool:
+    """Check if a group is wholesale (starts with WS)."""
+    return _norm(group_code).upper().startswith("WS")
+
+
+def _normalize_colour_for_desc(colour: str) -> str:
+    """
+    Normalize colour for description field.
+    If colour is 'To Be Confirmed', prefix with 'Colour'.
+    """
+    colour_norm = _norm(colour)
+    if colour_norm.lower() == "to be confirmed":
+        return "Colour To Be Confirmed"
+    return colour_norm
+
+
+def _build_description(prefix: str, fd1: str, fd2: str, fd3: str) -> str:
+    """
+    Build full description: [prefix] FD1 FD2 FD3
+    Handle special case where FD3='To Be Confirmed' → 'Colour To Be Confirmed'
+    """
+    parts = [
+        _norm(prefix),
+        _norm(fd1),
+        _norm(fd2),
+        _normalize_colour_for_desc(fd3)
+    ]
+    return " ".join(p for p in parts if p)
+
+
+def _next_code_for_group(existing_codes: List[str], group_prefix: str, start: int = 10000) -> str:
+    """
+    Generate next sequential code for a group.
+    Finds all codes starting with group_prefix, extracts numeric suffix, returns next number.
+    """
+    pattern = re.compile(rf"^{re.escape(group_prefix)}(\d+)$", re.IGNORECASE)
+    max_num = start - 1
+
+    for code in existing_codes:
+        match = pattern.match(_norm(code))
+        if match:
+            try:
+                num = int(match.group(1))
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                pass
+
+    return f"{group_prefix}{max_num + 1}"[:20]
+
+
+def _check_material_restriction(group_code: str, fd2: str, material_restrictions: Dict[str, List[str]]) -> bool:
+    """
+    Check if FD2 (material) is allowed for this group.
+    Returns True if allowed, False if restricted.
+    """
+    if group_code not in material_restrictions:
+        return True  # No restriction = allowed
+
+    allowed_materials = material_restrictions[group_code]
+    fd2_norm = _norm(fd2)
+
+    # Check if FD2 contains any of the allowed material keywords
+    for material in allowed_materials:
+        if material.lower() in fd2_norm.lower():
+            return True
+
+    return False
+
+
+# ========== Google Sheets Data Loading ==========
+
+def load_fabric_data_from_sheets(
+    sheets_service,
+    spreadsheet_id: str,
+    retail_tab: str,
+    wholesale_tab: str,
+    groups_config: Dict[str, Dict[str, Any]],
+    material_restrictions: Dict[str, List[str]],
+    progress=None
+) -> Dict[str, pd.DataFrame]:
+    """
+    Load fabric data from Google Sheets Retail and Wholesale tabs.
+
+    Returns dict mapping group_code to DataFrame with columns:
+        FD1, FD2, FD3, UnleashedCode, Category, Price, _key
+    """
+    def _p(msg: str, pct: Optional[int] = None):
+        if callable(progress):
+            try:
+                progress(msg, pct)
+            except Exception:
+                pass
+
+    _p("Loading Retail tab from Google Sheets...", 5)
+    retail_rows = sheets_service.fetch_sheet_data(spreadsheet_id, f"{retail_tab}!A:Z")
+
+    _p("Loading Wholesale tab from Google Sheets...", 10)
+    wholesale_rows = sheets_service.fetch_sheet_data(spreadsheet_id, f"{wholesale_tab}!A:Z")
+
+    def _parse_sheet(rows, is_wholesale=False):
+        """Parse sheet rows into DataFrame."""
+        if not rows or len(rows) < 2:
+            return pd.DataFrame()
+
+        # First row is header
+        headers = [h.strip() for h in rows[0]]
+
+        # Expected columns: FD1, FD2, FD3, Unleashed Code, Category, Price (or Price Category for wholesale)
+        required = ["FD1", "FD2", "FD3", "Unleashed Code", "Category", "Price"]
+        for col in required:
+            if col not in headers:
+                raise RuntimeError(f"Missing required column '{col}' in {'Wholesale' if is_wholesale else 'Retail'} tab")
+
+        # Build DataFrame
+        data = []
+        for row in rows[1:]:
+            if len(row) < len(headers):
+                row = row + [""] * (len(headers) - len(row))
+            data.append(row[:len(headers)])
+
+        df = pd.DataFrame(data, columns=headers, dtype=str).fillna("")
+
+        # Filter out empty rows (where FD1, FD2, FD3 are all empty)
+        df = df[
+            (df["FD1"].str.strip() != "") |
+            (df["FD2"].str.strip() != "") |
+            (df["FD3"].str.strip() != "")
+        ].copy()
+
+        # Add key for matching
+        df["_key"] = df.apply(lambda r: _build_desc_key(r["FD1"], r["FD2"], r["FD3"]), axis=1)
+
+        return df
+
+    _p("Parsing Retail data...", 15)
+    retail_df = _parse_sheet(retail_rows, is_wholesale=False)
+
+    _p("Parsing Wholesale data...", 20)
+    wholesale_df = _parse_sheet(wholesale_rows, is_wholesale=True)
+
+    _p("Mapping fabrics to inventory groups...", 25)
+
+    # Build mapping: group_code → DataFrame of fabrics for that group
+    fabrics_by_group = {}
+
+    for group_code, group_cfg in groups_config.items():
+        category = group_cfg.get("category", "")
+        is_wholesale = _is_wholesale_group(group_code)
+
+        # Select appropriate dataframe
+        source_df = wholesale_df if is_wholesale else retail_df
+
+        # Filter by category
+        group_df = source_df[source_df["Category"].str.strip() == category].copy()
+
+        # Apply material restrictions
+        if group_code in material_restrictions:
+            group_df = group_df[
+                group_df.apply(
+                    lambda r: _check_material_restriction(group_code, r["FD2"], material_restrictions),
+                    axis=1
+                )
+            ].copy()
+
+        fabrics_by_group[group_code] = group_df
+
+    _p(f"Loaded fabrics for {len(fabrics_by_group)} groups", 30)
+    return fabrics_by_group
+
+
+# ========== Database Loading ==========
+
+def load_existing_buz_inventory(db, groups_config: Dict[str, Dict[str, Any]]) -> Tuple[Dict[str, pd.DataFrame], Dict[str, Dict[str, str]]]:
+    """
+    Load existing Buz inventory for all blinds/awnings groups.
+
+    Returns:
+        - inv_by_group: dict[group_code] → DataFrame
+        - existing_codes: dict[group_code] → set of existing codes
+    """
+    group_codes = list(groups_config.keys())
+
+    if not group_codes:
+        return {}, {}
+
+    placeholders = ','.join('?' * len(group_codes))
+    query = f"""
+        SELECT
+            Code,
+            SupplierProductCode,
+            DescnPart1,
+            DescnPart2,
+            DescnPart3,
+            Description,
+            Active,
+            Warning,
+            PriceGridCode,
+            CostGridCode,
+            DiscountGroupCode,
+            inventory_group_code,
+            PkId
+        FROM inventory_items
+        WHERE inventory_group_code IN ({placeholders})
+    """
+
+    rows = db.execute_query(query, group_codes).fetchall()
+
+    # Convert to DataFrame
+    if rows:
+        df_all = pd.DataFrame([dict(r) for r in rows], dtype=str).fillna("")
+    else:
+        df_all = pd.DataFrame()
+
+    # Add matching key
+    if not df_all.empty:
+        df_all["_key"] = df_all.apply(
+            lambda r: _build_desc_key(r["DescnPart1"], r["DescnPart2"], r["DescnPart3"]),
+            axis=1
+        )
+
+    # Split by group
+    inv_by_group = {}
+    existing_codes = {}
+
+    for group_code in group_codes:
+        if df_all.empty:
+            inv_by_group[group_code] = pd.DataFrame()
+            existing_codes[group_code] = set()
+        else:
+            group_df = df_all[df_all["inventory_group_code"] == group_code].copy()
+            inv_by_group[group_code] = group_df
+            existing_codes[group_code] = set(group_df["Code"].tolist())
+
+    return inv_by_group, existing_codes
+
+
+def load_existing_buz_pricing(db, groups_config: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """
+    Load latest pricing for all inventory codes (retail groups only).
+
+    Returns dict: inventory_code → {sell_price, cost_price, date_from}
+    """
+    query = """
+        SELECT
+            InventoryCode,
+            SellLMWide,
+            CostLMWide,
+            DateFrom
+        FROM pricing_data
+    """
+
+    rows = db.execute_query(query).fetchall()
+
+    if not rows:
+        return {}
+
+    df = pd.DataFrame([dict(r) for r in rows], dtype=str).fillna("")
+
+    # Parse dates and sort to get latest per code
+    df["_date_dt"] = pd.to_datetime(df["DateFrom"], errors="coerce", dayfirst=True)
+    df = df.sort_values(["InventoryCode", "_date_dt"], kind="mergesort")
+
+    # Get last row per code
+    latest = df.groupby("InventoryCode", as_index=False).tail(1)
+
+    pricing_map = {}
+    for _, row in latest.iterrows():
+        code = _norm(row["InventoryCode"])
+        pricing_map[code] = {
+            "sell_price": _q2(row["SellLMWide"]),
+            "cost_price": _q2(row["CostLMWide"]),
+            "date_from": _norm(row["DateFrom"])
+        }
+
+    return pricing_map
+
+
+# ========== Matching & Change Detection ==========
+
+def compute_changes(
+    fabrics_by_group: Dict[str, pd.DataFrame],
+    inv_by_group: Dict[str, pd.DataFrame],
+    existing_codes: Dict[str, set],
+    groups_config: Dict[str, Dict[str, Any]],
+    pricing_map: Dict[str, Dict[str, Any]],
+    progress=None
+) -> Tuple[Dict[str, List[Dict]], Dict[str, List[Dict]], List[Dict]]:
+    """
+    Compute ADD, EDIT, and DEPRECATE operations.
+
+    Returns:
+        - items_changes: dict[group_code] → list of item rows to write
+        - pricing_changes: dict[group_code] → list of pricing rows to write (retail only)
+        - change_log: list of change descriptions for UI
+    """
+    def _p(msg: str, pct: Optional[int] = None):
+        if callable(progress):
+            try:
+                progress(msg, pct)
+            except Exception:
+                pass
+
+    items_changes = defaultdict(list)
+    pricing_changes = defaultdict(list)
+    change_log = []
+
+    _p("Computing changes for each group...", 35)
+
+    for group_code, group_cfg in groups_config.items():
+        _p(f"Processing group {group_code}...", None)
+
+        fabrics_df = fabrics_by_group.get(group_code, pd.DataFrame())
+        inv_df = inv_by_group.get(group_code, pd.DataFrame())
+        codes_set = existing_codes.get(group_code, set())
+
+        # Get config for this group
+        prefix = group_cfg.get("description_prefix", "")
+        price_grid_code = group_cfg.get("price_grid_code")
+        cost_grid_code = group_cfg.get("cost_grid_code")
+        discount_code = group_cfg.get("discount_group_code", "")
+        is_wholesale = _is_wholesale_group(group_code)
+
+        # Build sets of keys
+        fabric_keys = set(fabrics_df["_key"].tolist()) if not fabrics_df.empty else set()
+        inv_keys = set(inv_df["_key"].tolist()) if not inv_df.empty else set()
+
+        # ADD: In fabrics, not in inventory
+        add_keys = fabric_keys - inv_keys
+        for key in add_keys:
+            fabric_row = fabrics_df[fabrics_df["_key"] == key].iloc[0]
+
+            fd1 = _norm(fabric_row["FD1"])
+            fd2 = _norm(fabric_row["FD2"])
+            fd3 = _norm(fabric_row["FD3"])
+            unleashed_code = _norm(fabric_row["Unleashed Code"])
+            price_value = _norm(fabric_row["Price"])
+
+            # Generate new code
+            new_code = _next_code_for_group(list(codes_set), group_code)
+            codes_set.add(new_code)
+
+            description = _build_description(prefix, fd1, fd2, fd3)
+
+            item_row = {
+                "PkId": "",
+                "Code": new_code,
+                "Description": description,
+                "DescnPart1 (Material)": fd1,
+                "DescnPart2 (Material Types)": fd2,
+                "DescnPart3 (Colour)": fd3,
+                "Price Grid Code": price_grid_code or "",
+                "Cost Grid Code": cost_grid_code or "",
+                "Discount Group Code": discount_code,
+                "Tax Rate": TAX_RATE,
+                "Supplier": SUPPLIER_NAME,
+                "Supplier Product Code": unleashed_code,
+                "Active": "TRUE",
+                "Warning": "",
+                "Operation": "A"
+            }
+
+            items_changes[group_code].append(item_row)
+
+            change_log.append({
+                "Group": group_code,
+                "Operation": "A",
+                "Code": new_code,
+                "Description": description,
+                "Reason": "New fabric"
+            })
+
+            # Pricing for retail groups only
+            if not is_wholesale:
+                price_sqm = _q2(price_value)
+                pricing_changes[group_code].append({
+                    "PkId": "",
+                    "Inventory Code": new_code,
+                    "Description": description,
+                    "Date From": "01/01/2020",  # New fabric date
+                    "SellLMWide": f"{price_sqm:.2f}",
+                    "SellLMHeight": f"{price_sqm:.2f}",
+                    "CostLMWide": "0.00",  # No cost for new fabrics
+                    "CostLMHeight": "0.00",
+                    "Operation": "A"
+                })
+
+        # EDIT: In both, check for changes
+        shared_keys = fabric_keys & inv_keys
+        for key in shared_keys:
+            fabric_row = fabrics_df[fabrics_df["_key"] == key].iloc[0]
+            inv_row = inv_df[inv_df["_key"] == key].iloc[0]
+
+            fd1 = _norm(fabric_row["FD1"])
+            fd2 = _norm(fabric_row["FD2"])
+            fd3 = _norm(fabric_row["FD3"])
+            unleashed_code = _norm(fabric_row["Unleashed Code"])
+            price_value = _norm(fabric_row["Price"])
+
+            existing_code = _norm(inv_row["Code"])
+            existing_supp_code = _norm(inv_row["SupplierProductCode"])
+            existing_active = _norm(inv_row["Active"]).upper() in ("TRUE", "YES", "1")
+            existing_warning = _norm(inv_row["Warning"])
+
+            reasons = []
+            needs_edit = False
+
+            # Check if supplier product code changed
+            if unleashed_code != existing_supp_code:
+                needs_edit = True
+                reasons.append(f"Supplier code changed: {existing_supp_code} → {unleashed_code}")
+
+            # Check if inactive (and not already deprecated)
+            if not existing_active and existing_warning != DEPRECATED_WARNING:
+                needs_edit = True
+                reasons.append("Reactivated")
+
+            if needs_edit:
+                description = _build_description(prefix, fd1, fd2, fd3)
+
+                item_row = {
+                    "PkId": _norm(inv_row["PkId"]),
+                    "Code": existing_code,
+                    "Description": description,
+                    "DescnPart1 (Material)": fd1,
+                    "DescnPart2 (Material Types)": fd2,
+                    "DescnPart3 (Colour)": fd3,
+                    "Price Grid Code": price_grid_code or _norm(inv_row["PriceGridCode"]),
+                    "Cost Grid Code": cost_grid_code or _norm(inv_row["CostGridCode"]),
+                    "Discount Group Code": discount_code or _norm(inv_row["DiscountGroupCode"]),
+                    "Tax Rate": TAX_RATE,
+                    "Supplier": SUPPLIER_NAME,
+                    "Supplier Product Code": unleashed_code,
+                    "Active": "TRUE",
+                    "Warning": "",
+                    "Operation": "E"
+                }
+
+                items_changes[group_code].append(item_row)
+
+                change_log.append({
+                    "Group": group_code,
+                    "Operation": "E",
+                    "Code": existing_code,
+                    "Description": description,
+                    "Reason": "; ".join(reasons)
+                })
+
+            # Check pricing (retail only)
+            if not is_wholesale:
+                new_price = _q2(price_value)
+                existing_pricing = pricing_map.get(existing_code, {})
+                existing_price = existing_pricing.get("sell_price", Decimal("0.00"))
+
+                if new_price != existing_price:
+                    description = _build_description(prefix, fd1, fd2, fd3)
+                    pricing_changes[group_code].append({
+                        "PkId": "",
+                        "Inventory Code": existing_code,
+                        "Description": description,
+                        "Date From": _tomorrow_ddmmyyyy(),
+                        "SellLMWide": f"{new_price:.2f}",
+                        "SellLMHeight": f"{new_price:.2f}",
+                        "CostLMWide": "0.00",
+                        "CostLMHeight": "0.00",
+                        "Operation": "A"
+                    })
+
+                    change_log.append({
+                        "Group": group_code,
+                        "Operation": "P",
+                        "Code": existing_code,
+                        "Description": description,
+                        "Reason": f"Price changed: {existing_price:.2f} → {new_price:.2f}"
+                    })
+
+        # DEPRECATE: In inventory (active, not already deprecated), not in fabrics
+        deprecate_keys = inv_keys - fabric_keys
+        for key in deprecate_keys:
+            inv_row = inv_df[inv_df["_key"] == key].iloc[0]
+
+            existing_code = _norm(inv_row["Code"])
+            existing_active = _norm(inv_row["Active"]).upper() in ("TRUE", "YES", "1")
+            existing_warning = _norm(inv_row["Warning"])
+
+            # Only deprecate if active and not already deprecated
+            if existing_active and existing_warning != DEPRECATED_WARNING:
+                fd1 = _norm(inv_row["DescnPart1"])
+                fd2 = _norm(inv_row["DescnPart2"])
+                fd3 = _norm(inv_row["DescnPart3"])
+                description = _build_description(prefix, fd1, fd2, fd3)
+
+                item_row = {
+                    "PkId": _norm(inv_row["PkId"]),
+                    "Code": existing_code,
+                    "Description": description,
+                    "DescnPart1 (Material)": fd1,
+                    "DescnPart2 (Material Types)": fd2,
+                    "DescnPart3 (Colour)": fd3,
+                    "Price Grid Code": _norm(inv_row["PriceGridCode"]),
+                    "Cost Grid Code": _norm(inv_row["CostGridCode"]),
+                    "Discount Group Code": _norm(inv_row["DiscountGroupCode"]),
+                    "Tax Rate": TAX_RATE,
+                    "Supplier": SUPPLIER_NAME,
+                    "Supplier Product Code": _norm(inv_row["SupplierProductCode"]),
+                    "Active": "TRUE",  # Keep active
+                    "Warning": DEPRECATED_WARNING,
+                    "Operation": "E"
+                }
+
+                items_changes[group_code].append(item_row)
+
+                change_log.append({
+                    "Group": group_code,
+                    "Operation": "D",
+                    "Code": existing_code,
+                    "Description": description,
+                    "Reason": "Deprecated (not in Google Sheet)"
+                })
+
+    _p("Change computation complete", 60)
+    return dict(items_changes), dict(pricing_changes), change_log
+
+
+# ========== Excel Generation ==========
+
+def generate_workbooks(
+    items_changes: Dict[str, List[Dict]],
+    pricing_changes: Dict[str, List[Dict]],
+    headers_cfg: Dict[str, List[Dict]],
+    output_dir: str,
+    progress=None
+) -> Tuple[str, str]:
+    """
+    Generate items and pricing upload workbooks.
+
+    Returns (items_path, pricing_path)
+    """
+    def _p(msg: str, pct: Optional[int] = None):
+        if callable(progress):
+            try:
+                progress(msg, pct)
+            except Exception:
+                pass
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Get headers from config
+    items_headers = [h["spreadsheet_column"] for h in headers_cfg["buz_inventory_item_file"]]
+    pricing_headers = [h["spreadsheet_column"] for h in headers_cfg["buz_pricing_file"]]
+
+    # ===== Items Workbook =====
+    _p("Generating items workbook...", 65)
+    items_wb = Workbook()
+    items_wb.remove(items_wb.active)
+
+    for group_code, rows in items_changes.items():
+        if not rows:
+            continue
+
+        ws = items_wb.create_sheet(title=group_code)
+        ws.append([])  # Row 1 blank
+        ws.append(items_headers + [""])  # Row 2 headers + trailing blank
+
+        for row_dict in rows:
+            row_values = []
+            for header in items_headers:
+                row_values.append(row_dict.get(header, ""))
+            ws.append(row_values + [""])  # Trailing blank cell
+
+    items_path = os.path.join(output_dir, "blinds_awnings_items_upload.xlsx")
+    has_items = save_workbook_gracefully(items_wb, items_path)
+
+    if not has_items:
+        _p("No item changes", 75)
+    else:
+        _p("Items workbook generated", 75)
+
+    # ===== Pricing Workbook =====
+    _p("Generating pricing workbook...", 80)
+    pricing_wb = Workbook()
+    pricing_wb.remove(pricing_wb.active)
+
+    for group_code, rows in pricing_changes.items():
+        if not rows:
+            continue
+
+        ws = pricing_wb.create_sheet(title=group_code)
+        ws.append(pricing_headers)  # Row 1 headers (pricing file format)
+
+        for row_dict in rows:
+            row_values = []
+            for header in pricing_headers:
+                if header == "Operation":
+                    row_values.append("A")
+                elif header == "PkId":
+                    row_values.append("")
+                else:
+                    row_values.append(row_dict.get(header, ""))
+            ws.append(row_values)
+
+    pricing_path = os.path.join(output_dir, "blinds_awnings_pricing_upload.xlsx")
+    has_pricing = save_workbook_gracefully(pricing_wb, pricing_path)
+
+    if not has_pricing:
+        _p("No pricing changes", 90)
+    else:
+        _p("Pricing workbook generated", 90)
+
+    return items_path, pricing_path
+
+
+# ========== Main Orchestrator ==========
+
+def sync_blinds_awnings_fabrics(
+    db,
+    config: Dict[str, Any],
+    sheets_service,
+    output_dir: str = "uploads",
+    progress=None
+) -> Dict[str, Any]:
+    """
+    Main orchestrator for blinds/awnings fabric sync.
+
+    Args:
+        db: DatabaseManager instance
+        config: Full config dict (from config.json)
+        sheets_service: GoogleSheetsService instance
+        output_dir: Output directory for generated files
+        progress: Optional progress callback(msg, pct)
+
+    Returns:
+        Dict with:
+            - items_file: path to items workbook
+            - pricing_file: path to pricing workbook
+            - summary: dict with counts (adds, edits, deprecates, pricing)
+            - change_log: list of change descriptions
+    """
+    def _p(msg: str, pct: Optional[int] = None):
+        if callable(progress):
+            try:
+                progress(msg, pct)
+            except Exception:
+                pass
+
+    _p("Starting blinds/awnings fabric sync...", 1)
+
+    # Extract config
+    groups_config = config.get("blinds_awnings_fabric_groups", {})
+    material_restrictions = config.get("material_restrictions_by_group", {})
+    headers_cfg = config.get("headers", {})
+    sheets_cfg = config["spreadsheets"]["blinds_awnings_sync"]
+
+    spreadsheet_id = sheets_cfg["id"]
+    retail_tab = sheets_cfg["retail_tab"]
+    wholesale_tab = sheets_cfg["wholesale_tab"]
+
+    # Load fabric data from Google Sheets
+    fabrics_by_group = load_fabric_data_from_sheets(
+        sheets_service,
+        spreadsheet_id,
+        retail_tab,
+        wholesale_tab,
+        groups_config,
+        material_restrictions,
+        progress=_p
+    )
+
+    # Load existing Buz data
+    _p("Loading existing Buz inventory...", 32)
+    inv_by_group, existing_codes = load_existing_buz_inventory(db, groups_config)
+
+    _p("Loading existing Buz pricing...", 34)
+    pricing_map = load_existing_buz_pricing(db, groups_config)
+
+    # Compute changes
+    items_changes, pricing_changes, change_log = compute_changes(
+        fabrics_by_group,
+        inv_by_group,
+        existing_codes,
+        groups_config,
+        pricing_map,
+        progress=_p
+    )
+
+    # Generate workbooks
+    items_path, pricing_path = generate_workbooks(
+        items_changes,
+        pricing_changes,
+        headers_cfg,
+        output_dir,
+        progress=_p
+    )
+
+    # Compute summary
+    total_adds = sum(len([r for r in rows if r.get("Operation") == "A"]) for rows in items_changes.values())
+    total_edits = sum(len([r for r in rows if r.get("Operation") == "E"]) for rows in items_changes.values())
+    total_deprecates = len([c for c in change_log if c.get("Operation") == "D"])
+    total_pricing = sum(len(rows) for rows in pricing_changes.values())
+
+    summary = {
+        "A": total_adds,
+        "E": total_edits,
+        "D": total_deprecates,
+        "P": total_pricing
+    }
+
+    _p("Sync complete!", 100)
+
+    logger.info(f"Blinds/Awnings sync complete: A={total_adds}, E={total_edits}, D={total_deprecates}, P={total_pricing}")
+
+    return {
+        "items_file": items_path,
+        "pricing_file": pricing_path,
+        "summary": summary,
+        "change_log": change_log
+    }

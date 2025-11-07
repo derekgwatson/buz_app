@@ -1241,6 +1241,172 @@ def curtain_sync_status(job_id):
     return resp
 
 
+# ========== Blinds & Awnings Sync Routes ==========
+
+@main_routes_bp.route("/blinds-awnings-sync", methods=["GET"])
+@auth.login_required
+def blinds_awnings_sync_landing():
+    """Landing page for blinds/awnings sync."""
+    last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
+    return render_template(
+        "blinds_awnings_sync.html",
+        ran=False,
+        last_inventory_upload=last_inventory_upload,
+        stale_threshold_hours=6,
+        job_id=None,
+    )
+
+
+@main_routes_bp.route("/blinds-awnings-sync/start", methods=["POST"])
+@auth.login_required
+def blinds_awnings_sync_start():
+    """Start blinds/awnings sync job."""
+    job_id = uuid.uuid4().hex
+    create_job(job_id)
+
+    out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
+    db_path = current_app.config["database"]
+    config_dict = dict(current_app.config)  # Copy config for thread
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    def blinds_awnings_sync_runner(job_id, db_path, out_dir, config_dict):
+        """Background thread runner."""
+        import logging
+        logger = logging.getLogger("blinds_awnings_sync")
+        db = create_db_manager(db_path)
+
+        try:
+            import sentry_sdk
+            with sentry_sdk.start_transaction(op="task", name="blinds_awnings_sync_job"):
+                _run_blinds_awnings_sync(job_id, db, out_dir, config_dict, logger)
+        except ImportError:
+            _run_blinds_awnings_sync(job_id, db, out_dir, config_dict, logger)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    def _run_blinds_awnings_sync(job_id, db, out_dir, config_dict, logger):
+        """Actual sync logic."""
+        from services.blinds_awnings_sync import sync_blinds_awnings_fabrics
+
+        try:
+            progress = make_progress(job_id, db)
+            progress("Starting...", 1)
+
+            gs_service = GoogleSheetsService()
+
+            result = sync_blinds_awnings_fabrics(
+                db=db,
+                config=config_dict,
+                sheets_service=gs_service,
+                output_dir=out_dir,
+                progress=progress
+            )
+
+            # Store result
+            update_job(
+                job_id,
+                pct=100,
+                message="Sync complete!",
+                done=True,
+                result=result,
+                db=db
+            )
+
+        except Exception as e:
+            logger.exception("Blinds/awnings sync failed")
+            update_job(
+                job_id,
+                pct=0,
+                message=f"Error: {str(e)}",
+                error=str(e),
+                db=db
+            )
+
+    threading.Thread(
+        name=f"blinds-awnings-sync-{job_id[:8]}",
+        target=blinds_awnings_sync_runner,
+        args=(job_id, db_path, out_dir, config_dict),
+        daemon=True
+    ).start()
+
+    return redirect(url_for("main_routes.blinds_awnings_sync_progress", job_id=job_id))
+
+
+@main_routes_bp.route("/blinds-awnings-sync/progress/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_sync_progress(job_id):
+    """Show progress page for running job."""
+    job = get_job(job_id)
+    if not job:
+        flash("Unknown job ID.", "warning")
+        return redirect(url_for("main_routes.blinds_awnings_sync_landing"))
+
+    # If job is done, show results
+    if job.get("done"):
+        result = job.get("result", {})
+        items_file = result.get("items_file", "")
+        pricing_file = result.get("pricing_file", "")
+        summary = result.get("summary", {})
+        change_log = result.get("change_log", [])
+        error = job.get("error")
+
+        files = []
+        if items_file and os.path.exists(items_file):
+            files.append({
+                "label": "Items Upload",
+                "filename": os.path.basename(items_file),
+                "url": url_for("main_routes.download_file", filename=os.path.basename(items_file))
+            })
+        if pricing_file and os.path.exists(pricing_file):
+            files.append({
+                "label": "Pricing Upload",
+                "filename": os.path.basename(pricing_file),
+                "url": url_for("main_routes.download_file", filename=os.path.basename(pricing_file))
+            })
+
+        last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
+
+        return render_template(
+            "blinds_awnings_sync.html",
+            ran=True,
+            error=error,
+            summary=summary,
+            change_log=change_log,
+            files=files,
+            last_inventory_upload=last_inventory_upload,
+            stale_threshold_hours=6,
+            job_id=None,
+        )
+
+    # Job still running, show progress
+    return render_template("blinds_awnings_sync.html", job_id=job_id)
+
+
+@main_routes_bp.route("/blinds-awnings-sync/status/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_sync_status(job_id):
+    """AJAX endpoint for polling job status."""
+    job = get_job(job_id)
+    if not job:
+        data = {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+    else:
+        data = {
+            "pct": job.get("pct", 0),
+            "log": job.get("log", []),
+            "done": job.get("done", False),
+            "error": job.get("error"),
+            "result": job.get("result")
+        }
+
+    resp = jsonify(data)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @main_routes_bp.route("/lead-times", methods=["GET"])
 @auth.login_required
 def lead_times_start():
