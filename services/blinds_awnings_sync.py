@@ -446,8 +446,7 @@ def compute_changes(
     _p("Computing changes for each group...", 35)
 
     for group_code, group_cfg in groups_config.items():
-        _p(f"Processing group {group_code}...", None)
-
+        # Don't log per-group to avoid resetting progress bar
         fabrics_df = fabrics_by_group.get(group_code, pd.DataFrame())
         inv_df = inv_by_group.get(group_code, pd.DataFrame())
         codes_set = existing_codes.get(group_code, set())
