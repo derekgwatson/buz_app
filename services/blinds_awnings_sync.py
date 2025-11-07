@@ -242,6 +242,71 @@ def load_groups_config_from_sheet(
     return groups_config
 
 
+def load_price_grids_lookup(
+    sheets_service,
+    spreadsheet_id: str,
+    price_grids_tab: str,
+    progress=None
+) -> Dict[Tuple[str, str], str]:
+    """
+    Load price grid lookup from 'Price Grids' tab in Google Sheets.
+
+    Expected columns:
+        - Code (inventory group code)
+        - Price Category (e.g., "89-1", "127-3")
+        - Grid Code (e.g., "WG89-1", "WGR127-3")
+
+    Returns dict mapping (group_code, price_category) → grid_code
+    """
+    def _p(msg: str, pct: Optional[int] = None):
+        if callable(progress):
+            try:
+                progress(msg, pct)
+            except Exception:
+                pass
+
+    _p("Loading Price Grids lookup from Google Sheets...", 3)
+
+    rows = sheets_service.fetch_sheet_data(spreadsheet_id, f"{price_grids_tab}!A:Z")
+
+    if not rows or len(rows) < 2:
+        logger.warning(f"Price Grids tab '{price_grids_tab}' is empty or has no data - wholesale items will have no grid codes")
+        return {}
+
+    # Parse header
+    headers = [h.strip() for h in rows[0]]
+
+    # Expected columns
+    required = ["Code", "Price Category", "Grid Code"]
+    for col in required:
+        if col not in headers:
+            raise RuntimeError(f"Missing required column '{col}' in Price Grids tab")
+
+    # Build lookup dict
+    price_grids = {}
+
+    for row in rows[1:]:
+        if len(row) < len(headers):
+            row = row + [""] * (len(headers) - len(row))
+
+        row_dict = {headers[i]: _norm(row[i]) for i in range(len(headers))}
+
+        code = row_dict.get("Code", "")
+        price_category = row_dict.get("Price Category", "")
+        grid_code = row_dict.get("Grid Code", "")
+
+        if not code or not price_category or not grid_code:
+            continue  # Skip empty rows
+
+        key = (code, price_category)
+        price_grids[key] = grid_code
+
+    _p(f"Loaded {len(price_grids)} price grid mappings", 4)
+    logger.info(f"Loaded {len(price_grids)} price grid mappings for wholesale items")
+
+    return price_grids
+
+
 def load_fabric_data_from_sheets(
     sheets_service,
     spreadsheet_id: str,
@@ -499,6 +564,7 @@ def compute_changes(
     groups_config: Dict[str, Dict[str, Any]],
     pricing_map: Dict[str, Dict[str, Any]],
     filtered_by_material: Dict[str, set],
+    price_grids: Dict[Tuple[str, str], str],
     progress=None
 ) -> Tuple[Dict[str, List[Dict]], Dict[str, List[Dict]], List[Dict], Dict[str, Dict]]:
     """
@@ -605,6 +671,20 @@ def compute_changes(
 
             description = _build_description(prefix, fd1, fd2, fd3)
 
+            # For wholesale groups, look up grid codes from Price Grids tab
+            item_price_grid = price_grid_code
+            item_cost_grid = cost_grid_code
+            if is_wholesale:
+                price_category = _norm(fabric_row.get("Price", ""))  # For wholesale, "Price" column contains Price Category
+                lookup_key = (group_code, price_category)
+                if lookup_key in price_grids:
+                    grid_code = price_grids[lookup_key]
+                    item_price_grid = grid_code
+                    item_cost_grid = grid_code + "C"
+                    logger.debug(f"Group {group_code} ADD {new_code}: Looked up grid codes for category '{price_category}' → Price: {item_price_grid}, Cost: {item_cost_grid}")
+                else:
+                    logger.warning(f"Group {group_code} ADD {new_code}: No grid code found for price category '{price_category}'")
+
             item_row = {
                 "PkId": "",
                 "Code": new_code,
@@ -612,8 +692,8 @@ def compute_changes(
                 "DescnPart1 (Material)": fd1,
                 "DescnPart2 (Material Types)": fd2,
                 "DescnPart3 (Colour)": fd3,
-                "Price Grid Code": price_grid_code or "",
-                "Cost Grid Code": cost_grid_code or "",
+                "Price Grid Code": item_price_grid or "",
+                "Cost Grid Code": item_cost_grid or "",
                 "Discount Group Code": discount_code,
                 "Tax Rate": TAX_RATE,
                 "Supplier": SUPPLIER_NAME,
@@ -704,6 +784,20 @@ def compute_changes(
             if needs_edit:
                 description = _build_description(prefix, fd1, fd2, fd3)
 
+                # For wholesale groups, look up grid codes from Price Grids tab
+                item_price_grid = price_grid_code or _norm(inv_row["PriceGridCode"])
+                item_cost_grid = cost_grid_code or _norm(inv_row["CostGridCode"])
+                if is_wholesale:
+                    price_category = _norm(fabric_row.get("Price", ""))  # For wholesale, "Price" column contains Price Category
+                    lookup_key = (group_code, price_category)
+                    if lookup_key in price_grids:
+                        grid_code = price_grids[lookup_key]
+                        item_price_grid = grid_code
+                        item_cost_grid = grid_code + "C"
+                        logger.debug(f"Group {group_code} EDIT {existing_code}: Looked up grid codes for category '{price_category}' → Price: {item_price_grid}, Cost: {item_cost_grid}")
+                    else:
+                        logger.warning(f"Group {group_code} EDIT {existing_code}: No grid code found for price category '{price_category}'")
+
                 item_row = {
                     "PkId": _norm(inv_row["PkId"]),
                     "Code": existing_code,
@@ -711,8 +805,8 @@ def compute_changes(
                     "DescnPart1 (Material)": fd1,
                     "DescnPart2 (Material Types)": fd2,
                     "DescnPart3 (Colour)": fd3,
-                    "Price Grid Code": price_grid_code or _norm(inv_row["PriceGridCode"]),
-                    "Cost Grid Code": cost_grid_code or _norm(inv_row["CostGridCode"]),
+                    "Price Grid Code": item_price_grid or "",
+                    "Cost Grid Code": item_cost_grid or "",
                     "Discount Group Code": discount_code or _norm(inv_row["DiscountGroupCode"]),
                     "Tax Rate": TAX_RATE,
                     "Supplier": SUPPLIER_NAME,
@@ -1125,6 +1219,15 @@ def sync_blinds_awnings_fabrics(
         progress=_p
     )
 
+    # Load price grids lookup for wholesale items
+    price_grids_tab = sheets_cfg.get("price_grids_tab", "Price Grids")
+    price_grids = load_price_grids_lookup(
+        sheets_service,
+        spreadsheet_id,
+        price_grids_tab,
+        progress=_p
+    )
+
     # Load fabric data from Google Sheets
     fabrics_by_group, filtered_by_material = load_fabric_data_from_sheets(
         sheets_service,
@@ -1151,6 +1254,7 @@ def sync_blinds_awnings_fabrics(
         groups_config,
         pricing_map,
         filtered_by_material,
+        price_grids,
         progress=_p
     )
 

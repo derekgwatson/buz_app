@@ -24,7 +24,8 @@
             "id": "1OE7CnACQjFFGgIm_yFjN8Qhf0l5xEQkJqXwFV4plNlI",
             "retail_tab": "Retail",
             "wholesale_tab": "Wholesale",
-            "buz_template_tab": "Buz template"
+            "buz_template_tab": "Buz template",
+            "price_grids_tab": "Price Grids"
         }
     },
     "headers": {
