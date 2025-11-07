@@ -157,7 +157,6 @@ class TestLoadGroupsConfig:
 class TestLoadFabricData:
     """Test Google Sheets data loading."""
 
-    @patch('services.blinds_awnings_sync.GoogleSheetsService')
     def test_load_fabric_data_from_sheets(self):
         """Test loading fabric data from Google Sheets."""
         # Mock sheets service
@@ -218,27 +217,13 @@ class TestLoadBuzData:
         """Test loading existing inventory from database."""
         db = get_db_manager
 
-        # Insert test data
+        # Insert test data (table already created by init_db in fixture)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS inventory_items (
-                Code TEXT,
-                SupplierProductCode TEXT,
-                DescnPart1 TEXT,
-                DescnPart2 TEXT,
-                DescnPart3 TEXT,
-                Description TEXT,
-                Active TEXT,
-                Warning TEXT,
-                PriceGridCode TEXT,
-                CostGridCode TEXT,
-                DiscountGroupCode TEXT,
-                inventory_group_code TEXT,
-                PkId TEXT
-            )
-        """)
-
-        db.execute_query("""
-            INSERT INTO inventory_items VALUES
+            INSERT INTO inventory_items (
+                Code, SupplierProductCode, DescnPart1, DescnPart2, DescnPart3,
+                Description, Active, Warning, PriceGridCode, CostGridCode,
+                DiscountGroupCode, inventory_group_code, PkId
+            ) VALUES
             ('ROLL10000', 'UNL001', 'Brand1', 'Fabric1', 'Red',
              'Roller Blind Brand1 Fabric1 Red', 'TRUE', '', '', '', 'RB', 'ROLL', 'pk1'),
             ('WSROLL10000', 'UNL002', 'Brand2', 'Fabric2', 'Blue',
@@ -263,20 +248,13 @@ class TestLoadBuzData:
         """Test loading existing pricing from database."""
         db = get_db_manager
 
-        # Insert test data
+        # Insert test data (table already created by init_db in fixture)
         db.execute_query("""
-            CREATE TABLE IF NOT EXISTS pricing_data (
-                InventoryCode TEXT,
-                SellLMWide TEXT,
-                CostLMWide TEXT,
-                DateFrom TEXT
-            )
-        """)
-
-        db.execute_query("""
-            INSERT INTO pricing_data VALUES
-            ('ROLL10000', '45.50', '30.00', '01/01/2024'),
-            ('ROLL10000', '50.00', '35.00', '01/06/2024')
+            INSERT INTO pricing_data (
+                InventoryCode, SellLMWide, CostLMWide, DateFrom
+            ) VALUES
+            ('ROLL10000', 45.50, 30.00, '01/01/2024'),
+            ('ROLL10000', 50.00, 35.00, '01/06/2024')
         """)
 
         groups_config = {
@@ -350,8 +328,8 @@ class TestComputeChanges:
         assert "ROLL" in pricing_changes
         assert len(pricing_changes["ROLL"]) == 1
 
-        # Check change log
-        assert len(change_log) == 2  # 1 for item, 1 for pricing
+        # Check change log (only item ADD is logged, not pricing)
+        assert len(change_log) == 1
         assert change_log[0]["Operation"] == "A"
 
     def test_compute_changes_edit_operation(self):
