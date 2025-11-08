@@ -384,7 +384,7 @@ def get_duplicate_fabric_details(db_manager: DatabaseManager):
         WHERE id IN ({});
     """.format(",".join(map(str, duplicate_ids)))
 
-    return db_manager.execute_query(query)
+    return db_manager.execute_query(query).fetchall()
 
 
 def get_or_create_supplier(db, supplier_code=UNLEASHED_SUPPLIER_CODE, supplier_name=UNLEASHED_SUPPLIER_NAME):
