@@ -505,6 +505,7 @@ def generate_duplicates_report():
     from services.buz_inventory_items import create_inventory_workbook_creator
 
     if request.method == 'POST':
+        action = request.form.get('action', 'find')
 
         # Step 1: Fetch duplicate inventory details
         duplicate_details = get_duplicate_fabric_details(g.db)
@@ -525,26 +526,45 @@ def generate_duplicates_report():
                 grouped_data[group_name] = []
             grouped_data[group_name].append(item_dict)
 
-        # Step 3: Create the workbook creator instance
-        inventory_creator = create_inventory_workbook_creator(current_app)
+        # If action is download, generate and serve the file
+        if action == 'download':
+            # Step 3: Create the workbook creator instance
+            inventory_creator = create_inventory_workbook_creator(current_app)
 
-        # Step 4: Populate the workbook
-        inventory_creator.populate_workbook(grouped_data)
-        inventory_creator.auto_fit_columns()
+            # Step 4: Populate the workbook
+            inventory_creator.populate_workbook(grouped_data)
+            inventory_creator.auto_fit_columns()
 
-        # Step 5: Save to buffer and serve directly
-        buffer = inventory_creator.save_to_buffer()
+            # Step 5: Save to buffer and serve directly
+            buffer = inventory_creator.save_to_buffer()
 
-        if not buffer:
-            flash('No duplicates to report.', 'warning')
-            return render_template('fabric_duplicates.html')
+            if not buffer:
+                flash('No duplicates to report.', 'warning')
+                return render_template('fabric_duplicates.html')
 
-        return send_file(
-            buffer,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            as_attachment=True,
-            download_name="Duplicates_Report.xlsx",
-            max_age=0,
+            return send_file(
+                buffer,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                as_attachment=True,
+                download_name="Duplicates_Report.xlsx",
+                max_age=0,
+            )
+
+        # Otherwise, show the results on screen
+        # Calculate summary statistics
+        total_duplicates = len(duplicate_details)
+        summary = {}
+        for group_name, items in grouped_data.items():
+            summary[group_name] = {
+                'count': len(items),
+                'items': items[:10]  # Show first 10 items as preview
+            }
+
+        return render_template(
+            'fabric_duplicates.html',
+            summary=summary,
+            total_duplicates=total_duplicates,
+            has_results=True
         )
 
     return render_template('fabric_duplicates.html')

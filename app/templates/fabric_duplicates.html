@@ -6,19 +6,72 @@
 
     <h1>Find Duplicate Items</h1>
 
-    <form action="{{ url_for('main_routes.generate_duplicates_report') }}" method="POST">
-        <div class="alert alert-info" role="alert">
-            This will generate an upload file containing duplicate items.
-            The file is ready for upload to Buz but does not directly affect any data in your system.
+    {% if has_results %}
+        <!-- Results Section -->
+        <div class="alert alert-success" role="alert">
+            <strong>Found {{ total_duplicates }} duplicate item(s)</strong> across {{ summary|length }} group(s)
         </div>
 
-        <p>
-            Ensure that the Buz Inventory Items data is up to date before generating the file.
-            This feature identifies items within a single group in Buz with the same descriptions.
-        </p>
-        <hr>
+        <!-- Summary by Group -->
+        {% for group_name, data in summary.items() %}
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5>{{ group_name }} <span class="badge badge-secondary">{{ data.count }} duplicate(s)</span></h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-striped">
+                        <thead>
+                            <tr>
+                                <th>Supplier Product Code</th>
+                                <th>Description</th>
+                                <th>Supplier</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in data.items %}
+                                <tr>
+                                    <td>{{ item.get('SupplierProductCode', '') }}</td>
+                                    <td>{{ item.get('Description', '') }}</td>
+                                    <td>{{ item.get('Supplier', '') }}</td>
+                                </tr>
+                            {% endfor %}
+                            {% if data.count > 10 %}
+                                <tr>
+                                    <td colspan="3" class="text-muted"><em>... and {{ data.count - 10 }} more</em></td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endfor %}
 
-        <button type="submit" class="btn btn-primary">Find Duplicates</button>
-    </form>
+        <!-- Download Button -->
+        <form action="{{ url_for('main_routes.generate_duplicates_report') }}" method="POST" class="mt-3">
+            <input type="hidden" name="action" value="download">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-download"></i> Download Excel File
+            </button>
+            <a href="{{ url_for('main_routes.generate_duplicates_report') }}" class="btn btn-secondary">Start Over</a>
+        </form>
+
+    {% else %}
+        <!-- Initial Form -->
+        <form action="{{ url_for('main_routes.generate_duplicates_report') }}" method="POST">
+            <input type="hidden" name="action" value="find">
+            <div class="alert alert-info" role="alert">
+                This will find duplicate items and show you what was found.
+                You can then download an upload file for Buz if needed.
+            </div>
+
+            <p>
+                Ensure that the Buz Inventory Items data is up to date before generating the file.
+                This feature identifies items within a single group in Buz with the same descriptions.
+            </p>
+            <hr>
+
+            <button type="submit" class="btn btn-primary">Find Duplicates</button>
+        </form>
+    {% endif %}
 
 {% endblock %}
