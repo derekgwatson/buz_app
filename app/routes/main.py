@@ -557,7 +557,7 @@ def generate_duplicates_report():
         for group_name, items in grouped_data.items():
             summary[group_name] = {
                 'count': len(items),
-                'items': items[:10]  # Show first 10 items as preview
+                'duplicates': items[:10]  # Show first 10 items as preview
             }
 
         return render_template(
