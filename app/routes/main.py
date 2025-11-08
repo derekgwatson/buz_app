@@ -29,6 +29,9 @@ from services.excel_safety import save_workbook_gracefully
 # Create Blueprint
 main_routes_bp = Blueprint('main_routes', __name__)
 
+# Get logger
+logger = logging.getLogger(__name__)
+
 
 @auth.verify_password
 def verify_password(username, password):
@@ -1239,6 +1242,292 @@ def curtain_sync_status(job_id):
     resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+# ========== Blinds & Awnings Sync Routes ==========
+
+@main_routes_bp.route("/blinds-awnings-sync", methods=["GET"])
+@auth.login_required
+def blinds_awnings_sync_landing():
+    """Landing page for blinds/awnings sync."""
+    last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
+    return render_template(
+        "blinds_awnings_sync.html",
+        ran=False,
+        last_inventory_upload=last_inventory_upload,
+        stale_threshold_hours=6,
+        job_id=None,
+    )
+
+
+@main_routes_bp.route("/blinds-awnings-sync/start", methods=["POST"])
+@auth.login_required
+def blinds_awnings_sync_start():
+    """Start blinds/awnings sync job."""
+    job_id = uuid.uuid4().hex
+    create_job(job_id)
+
+    out_dir = current_app.config.get("UPLOAD_OUTPUT_DIR") or current_app.config["upload_folder"]
+    db_path = current_app.config["database"]
+    config_dict = dict(current_app.config)  # Copy config for thread
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    def blinds_awnings_sync_runner(job_id, db_path, out_dir, config_dict):
+        """Background thread runner."""
+        import logging
+        logger = logging.getLogger("blinds_awnings_sync")
+        db = create_db_manager(db_path)
+
+        try:
+            import sentry_sdk
+            with sentry_sdk.start_transaction(op="task", name="blinds_awnings_sync_job"):
+                _run_blinds_awnings_sync(job_id, db, out_dir, config_dict, logger)
+        except ImportError:
+            _run_blinds_awnings_sync(job_id, db, out_dir, config_dict, logger)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    def _run_blinds_awnings_sync(job_id, db, out_dir, config_dict, logger):
+        """Actual sync logic."""
+        from services.blinds_awnings_sync import sync_blinds_awnings_fabrics
+
+        try:
+            progress = make_progress(job_id, db)
+            progress("Starting...", 1)
+
+            gs_service = GoogleSheetsService()
+
+            result = sync_blinds_awnings_fabrics(
+                db=db,
+                config=config_dict,
+                sheets_service=gs_service,
+                output_dir=out_dir,
+                progress=progress
+            )
+
+            # Store result
+            update_job(
+                job_id,
+                pct=100,
+                message="Sync complete!",
+                done=True,
+                result=result,
+                db=db
+            )
+
+        except Exception as e:
+            logger.exception("Blinds/awnings sync failed")
+            update_job(
+                job_id,
+                pct=0,
+                message=f"Error: {str(e)}",
+                error=str(e),
+                db=db
+            )
+
+    threading.Thread(
+        name=f"blinds-awnings-sync-{job_id[:8]}",
+        target=blinds_awnings_sync_runner,
+        args=(job_id, db_path, out_dir, config_dict),
+        daemon=True
+    ).start()
+
+    return redirect(url_for("main_routes.blinds_awnings_sync_progress", job_id=job_id))
+
+
+@main_routes_bp.route("/blinds-awnings-sync/progress/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_sync_progress(job_id):
+    """Show progress page for running job."""
+    job = get_job(job_id)
+    if not job:
+        flash("Unknown job ID.", "warning")
+        return redirect(url_for("main_routes.blinds_awnings_sync_landing"))
+
+    # If job is done, show results
+    if job.get("done"):
+        result = job.get("result", {})
+        summary = result.get("summary", {})
+        change_log = result.get("change_log", [])
+        error = job.get("error")
+
+        # Check if there are changes to download
+        items_changes = result.get("items_changes", {})
+        pricing_changes = result.get("pricing_changes", {})
+        has_items = any(len(rows) > 0 for rows in items_changes.values())
+        has_pricing = any(len(rows) > 0 for rows in pricing_changes.values())
+
+        files = []
+        if has_items:
+            files.append({
+                "label": "Items Upload",
+                "filename": "blinds_awnings_items_upload.xlsx",
+                "url": url_for("main_routes.blinds_awnings_download_items", job_id=job_id)
+            })
+        if has_pricing:
+            files.append({
+                "label": "Pricing Upload",
+                "filename": "blinds_awnings_pricing_upload.xlsx",
+                "url": url_for("main_routes.blinds_awnings_download_pricing", job_id=job_id)
+            })
+
+        last_inventory_upload = get_last_upload_time(g.db, "inventory_items")
+
+        return render_template(
+            "blinds_awnings_sync.html",
+            ran=True,
+            error=error,
+            summary=summary,
+            change_log=change_log,
+            files=files,
+            last_inventory_upload=last_inventory_upload,
+            stale_threshold_hours=6,
+            job_id=job_id,
+        )
+
+    # Job still running, show progress
+    return render_template("blinds_awnings_sync.html", job_id=job_id)
+
+
+@main_routes_bp.route("/blinds-awnings-sync/status/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_sync_status(job_id):
+    """AJAX endpoint for polling job status."""
+    job = get_job(job_id)
+    if not job:
+        data = {"pct": 0, "log": [], "done": False, "error": None, "result": None}
+    else:
+        data = {
+            "pct": job.get("pct", 0),
+            "log": job.get("log", []),
+            "done": job.get("done", False),
+            "error": job.get("error"),
+            "result": job.get("result")
+        }
+
+    resp = jsonify(data)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@main_routes_bp.route("/blinds-awnings-sync/apply-to-db/<job_id>", methods=["POST"])
+@auth.login_required
+def blinds_awnings_sync_apply_to_db(job_id):
+    """Apply changes from sync job to database."""
+    job = get_job(job_id)
+    if not job:
+        return jsonify({"success": False, "error": "Unknown job ID"}), 404
+
+    if not job.get("done"):
+        return jsonify({"success": False, "error": "Job not complete"}), 400
+
+    result = job.get("result", {})
+    items_changes = result.get("items_changes")
+    pricing_changes = result.get("pricing_changes")
+
+    if not items_changes or not pricing_changes:
+        return jsonify({"success": False, "error": "No changes data found in job result"}), 400
+
+    # Apply changes
+    try:
+        from services.blinds_awnings_sync import apply_changes_to_database
+
+        stats = apply_changes_to_database(
+            items_changes=items_changes,
+            pricing_changes=pricing_changes,
+            db=g.db
+        )
+
+        return jsonify({
+            "success": True,
+            "stats": stats
+        })
+
+    except Exception as e:
+        logger.exception("Failed to apply changes to database")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@main_routes_bp.route("/blinds-awnings-sync/download/items/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_download_items(job_id):
+    """Generate and download items workbook on-demand."""
+    from services.blinds_awnings_sync import generate_workbooks_in_memory
+    from io import BytesIO
+
+    job = get_job(job_id)
+    if not job or not job.get("done"):
+        return "Job not found or not complete", 404
+
+    result = job.get("result", {})
+    items_changes = result.get("items_changes", {})
+    headers_cfg = result.get("headers_cfg", {})
+
+    # Check if there are actually any items to download
+    has_items = any(len(rows) > 0 for rows in items_changes.values())
+    if not has_items or not headers_cfg:
+        return "No items to download", 404
+
+    # Generate workbook in memory
+    try:
+        items_stream, _ = generate_workbooks_in_memory(
+            items_changes,
+            {},  # Don't need pricing for items download
+            headers_cfg
+        )
+
+        return send_file(
+            items_stream,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="blinds_awnings_items_upload.xlsx"
+        )
+    except Exception as e:
+        logger.exception("Failed to generate items workbook")
+        return f"Error generating file: {str(e)}", 500
+
+
+@main_routes_bp.route("/blinds-awnings-sync/download/pricing/<job_id>", methods=["GET"])
+@auth.login_required
+def blinds_awnings_download_pricing(job_id):
+    """Generate and download pricing workbook on-demand."""
+    from services.blinds_awnings_sync import generate_workbooks_in_memory
+    from io import BytesIO
+
+    job = get_job(job_id)
+    if not job or not job.get("done"):
+        return "Job not found or not complete", 404
+
+    result = job.get("result", {})
+    pricing_changes = result.get("pricing_changes", {})
+    headers_cfg = result.get("headers_cfg", {})
+
+    # Check if there are actually any pricing changes to download
+    has_pricing = any(len(rows) > 0 for rows in pricing_changes.values())
+    if not has_pricing or not headers_cfg:
+        return "No pricing changes to download", 404
+
+    # Generate workbook in memory
+    try:
+        _, pricing_stream = generate_workbooks_in_memory(
+            {},  # Don't need items for pricing download
+            pricing_changes,
+            headers_cfg
+        )
+
+        return send_file(
+            pricing_stream,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="blinds_awnings_pricing_upload.xlsx"
+        )
+    except Exception as e:
+        logger.exception("Failed to generate pricing workbook")
+        return f"Error generating file: {str(e)}", 500
 
 
 @main_routes_bp.route("/lead-times", methods=["GET"])

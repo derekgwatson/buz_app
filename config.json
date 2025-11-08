@@ -19,6 +19,13 @@
             "id": "18UHYVRoSV7FyqzQBR9O8iFIb-UGUvnUvdpuTKtNcHuQ",
             "tab": "ML new",
             "range": "ML new!A:O"
+        },
+        "blinds_awnings_sync": {
+            "id": "1OE7CnACQjFFGgIm_yFjN8Qhf0l5xEQkJqXwFV4plNlI",
+            "retail_tab": "Retail",
+            "wholesale_tab": "Wholesale",
+            "buz_template_tab": "Buz template",
+            "price_grids_tab": "Price Grids"
         }
     },
     "headers": {
@@ -549,6 +556,9 @@
         ]
     },
     "material_restrictions_by_group": {
+        "FAAWB": [
+            "Acrylic"
+        ],
         "SUND": [
             "Acrylic"
         ],
