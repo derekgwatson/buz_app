@@ -532,11 +532,20 @@ def generate_duplicates_report():
         inventory_creator.populate_workbook(grouped_data)
         inventory_creator.auto_fit_columns()
 
-        # Step 5: Save the workbook
-        output_path = os.path.join(current_app.config["upload_folder"], "Duplicates_Report.xlsx")
-        inventory_creator.save_workbook(output_path)
+        # Step 5: Save to buffer and serve directly
+        buffer = inventory_creator.save_to_buffer()
 
-        return render_template('fabric_duplicates.html', output_path=output_path)
+        if not buffer:
+            flash('No duplicates to report.', 'warning')
+            return render_template('fabric_duplicates.html')
+
+        return send_file(
+            buffer,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="Duplicates_Report.xlsx",
+            max_age=0,
+        )
 
     return render_template('fabric_duplicates.html')
 
