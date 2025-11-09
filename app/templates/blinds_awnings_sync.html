@@ -1,0 +1,413 @@
+{% extends "layout.html" %}
+{% block title %}Blinds & Awnings Sync{% endblock %}
+{% block content %}
+<div class="container">
+  <h3>Blinds & Awnings Fabric Sync</h3>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat,msg in messages %}
+        <div class="alert alert-{{cat}}">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% if last_inventory_upload %}
+    <p>
+      <strong>Last inventory upload:</strong>
+      {{ last_inventory_upload|datetimeformat }}
+      (warn if older than {{ stale_threshold_hours }}h)
+    </p>
+  {% else %}
+    <p><em>No inventory upload timestamp found.</em></p>
+  {% endif %}
+
+  {% if job_id and not ran %}
+    {# --- Progress mode --- #}
+    <div class="card">
+      <div class="card-body">
+        <h4 class="card-title">Blinds & Awnings Sync is running…</h4>
+        <div class="progress my-3" style="height: 20px;">
+          <div id="bar" class="progress-bar" role="progressbar" style="width: 0%">0%</div>
+        </div>
+        <pre id="log" class="bg-dark text-light p-2"
+             style="height: 250px; overflow:auto; white-space: pre-wrap;"></pre>
+      </div>
+    </div>
+
+<script>
+  const bar = document.getElementById('bar');
+  const logBox = document.getElementById('log');
+
+  // Follow the tail unless user scrolls up
+  let stickToBottom = true;
+  logBox.addEventListener('scroll', () => {
+    // near-bottom threshold avoids jitter
+    stickToBottom = (logBox.scrollTop + logBox.clientHeight) >= (logBox.scrollHeight - 10);
+  });
+
+  function setLog(lines) {
+    const shouldStick = stickToBottom;      // snapshot BEFORE we change content
+    logBox.textContent = (lines || []).join('\n');
+    if (shouldStick) {
+      // wait for layout, then jump to bottom
+      requestAnimationFrame(() => { logBox.scrollTop = logBox.scrollHeight; });
+    }
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(
+        '{{ url_for("main_routes.blinds_awnings_sync_status", job_id=job_id) }}',
+        { cache: 'no-store', credentials: 'same-origin' }
+      );
+      if (!res.ok) throw new Error('Status ' + res.status);
+      const j = await res.json();
+
+      bar.style.width = (j.pct || 0) + '%';
+      bar.textContent = (j.pct || 0) + '%';
+
+      setLog(j.log);
+
+      if (j.done) {
+        if (j.error) {
+          setLog([...(j.log || []), '', '❌ ' + j.error]);
+        } else {
+          console.log('Job complete, result:', j.result);
+          // Only reload once - check if we've already reloaded
+          if (!sessionStorage.getItem('blinds_sync_reloaded_{{ job_id }}')) {
+            sessionStorage.setItem('blinds_sync_reloaded_{{ job_id }}', 'true');
+            location.reload();
+          } else {
+            // Already reloaded once, stop polling and show message
+            console.error('Page already reloaded once, but still on progress page. Result:', j.result);
+            setLog([...(j.log || []), '', '✓ Sync complete! If results are not showing, please refresh the page.']);
+          }
+        }
+        return;
+      }
+    } catch (e) {
+      // append error and keep following if we were at bottom
+      const lines = (logBox.textContent || '').split('\n');
+      lines.push('[poll error] ' + e.message);
+      setLog(lines);
+      console.error(e);
+    }
+    setTimeout(poll, 1000);
+  }
+  poll();
+</script>
+
+
+  {% elif not ran %}
+    {# --- Initial GET: show Run button --- #}
+    <div class="alert alert-info">
+      <strong>Important:</strong> Before running this sync, make sure you have:
+      <ul>
+        <li>Uploaded the latest Buz inventory and pricing data</li>
+        <li>Updated the Unleashed data in your Google Sheet (Retail and Wholesale tabs)</li>
+      </ul>
+    </div>
+    <form action="{{ url_for('main_routes.blinds_awnings_sync_start') }}" method="post">
+      <button class="btn btn-success btn-lg">Run Blinds & Awnings Sync</button>
+    </form>
+
+  {% else %}
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+      <form method="post" action="{{ url_for('main_routes.blinds_awnings_sync_start') }}">
+        <button class="btn btn-success btn-lg">Try Again</button>
+      </form>
+    {% else %}
+      {# Clear the reload flag when successfully showing results #}
+      {% if job_id %}
+      <script>
+        sessionStorage.removeItem('blinds_sync_reloaded_{{ job_id }}');
+      </script>
+      {% endif %}
+      <p>
+        <strong>Summary:</strong>
+        {% if summary %}
+          Adds: {{ summary.A or 0 }},
+          Edits: {{ summary.E or 0 }},
+          Deprecations: {{ summary.D or 0 }}
+          {% if summary.P %}
+            , Pricing Updates: {{ summary.P }}
+          {% endif %}
+        {% endif %}
+      </p>
+
+      {% if summary and summary.by_group %}
+        <h4>Changes by Group (click to expand)</h4>
+
+        <style>
+          .group-row {
+            cursor: pointer;
+            user-select: none;
+            background-color: #2d3748;
+            color: #e0e0e0;
+          }
+          .group-row:hover {
+            background-color: #4a5568;
+          }
+          .group-row td {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
+          }
+          .group-details {
+            display: none;
+          }
+          .group-details.expanded {
+            display: table-row;
+          }
+          .expand-icon {
+            display: inline-block;
+            width: 20px;
+            text-align: center;
+            font-weight: bold;
+            color: #63b3ed;
+            font-size: 18px;
+          }
+          .details-table {
+            margin: 0;
+            width: 100%;
+            background-color: #1a202c;
+            border: 3px solid #4299e1;
+            color: #e0e0e0;
+          }
+          .details-table thead {
+            background-color: #2d3748;
+            color: #e0e0e0;
+          }
+          .details-table thead th {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
+          }
+          .details-table tbody tr {
+            background-color: #1a202c;
+          }
+          .details-table tbody tr:nth-child(even) {
+            background-color: #2d3748;
+          }
+          .details-table tbody td {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
+          }
+          .group-details-cell {
+            background-color: #1a202c !important;
+            border: 3px solid #4299e1 !important;
+            padding: 0 !important;
+          }
+          .summary-table {
+            background-color: #2d3748;
+            color: #e0e0e0;
+          }
+          .summary-table thead {
+            background-color: #1a202c;
+            color: #e0e0e0;
+          }
+          .summary-table thead th {
+            border-color: #4a5568 !important;
+            color: #e0e0e0;
+          }
+        </style>
+
+        <table class="table table-sm table-bordered summary-table">
+          <thead style="position: sticky; top: 0; background-color: #1a202c; z-index: 10; border-bottom: 3px solid #4299e1;">
+            <tr>
+              <th style="width: 30px;"></th>
+              <th>Group</th>
+              <th style="width: 80px;">Adds</th>
+              <th style="width: 80px;">Edits</th>
+              <th style="width: 100px;">Deprecations</th>
+              <th style="width: 80px;">Pricing</th>
+              <th style="width: 200px;">Markup Used</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for group, stats in summary.by_group.items()|sort %}
+            <tr class="group-row" onclick="toggleGroup('{{ group }}')">
+              <td><span class="expand-icon" id="icon-{{ group }}">+</span></td>
+              <td><strong>{{ group }}</strong></td>
+              <td>{{ stats.A or 0 }}</td>
+              <td>{{ stats.E or 0 }}</td>
+              <td>{{ stats.D or 0 }}</td>
+              <td>{{ stats.P or 0 }}</td>
+              <td>
+                {% if stats.markup %}
+                  {% set m = stats.markup %}
+                  {% set markup_val = m.markup_used|float %}
+                  {% if m.markup_source == 'override' %}
+                    <span style="background-color: #ffffcc; padding: 2px 4px;">{{ "%.3f"|format(markup_val) }}x (override)</span>
+                  {% elif m.markup_source == 'calculated' %}
+                    {{ "%.3f"|format(markup_val) }}x
+                  {% elif m.markup_source == 'default' %}
+                    <span style="color: #999;">{{ "%.3f"|format(markup_val) }}x (default)</span>
+                  {% endif %}
+                {% else %}
+                  <span style="color: #ccc;">-</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr class="group-details" id="details-{{ group }}">
+              <td colspan="7" class="group-details-cell">
+                {% if change_log %}
+                  {% set group_changes = [] %}
+                  {% for row in change_log %}
+                    {% if row.Group == group %}
+                      {% set _ = group_changes.append(row) %}
+                    {% endif %}
+                  {% endfor %}
+
+                  {% if group_changes %}
+                  <div style="max-height: 400px; overflow: auto; padding: 15px;">
+                    <table class="details-table table table-sm table-bordered">
+                      <thead>
+                        <tr>
+                          <th>Operation</th>
+                          <th>Code</th>
+                          <th>Description</th>
+                          <th>Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for row in group_changes %}
+                        <tr>
+                          <td style="width: 100px;">
+                            {% if row.Operation == 'A' %}
+                              <span class="badge badge-success">ADD</span>
+                            {% elif row.Operation == 'E' %}
+                              <span class="badge badge-warning">EDIT</span>
+                            {% elif row.Operation == 'D' %}
+                              <span class="badge badge-danger">DEPRECATE</span>
+                            {% elif row.Operation == 'P' %}
+                              <span class="badge badge-info">PRICE</span>
+                            {% endif %}
+                          </td>
+                          <td style="width: 120px;"><code>{{ row.Code }}</code></td>
+                          <td>{{ row.Description }}</td>
+                          <td>{{ row.Reason }}</td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  {% else %}
+                  <p style="padding: 10px; margin: 0; color: #999;">No changes for this group</p>
+                  {% endif %}
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <script>
+        function toggleGroup(groupCode) {
+          const detailsRow = document.getElementById('details-' + groupCode);
+          const icon = document.getElementById('icon-' + groupCode);
+
+          if (detailsRow.classList.contains('expanded')) {
+            detailsRow.classList.remove('expanded');
+            icon.textContent = '+';
+          } else {
+            detailsRow.classList.add('expanded');
+            icon.textContent = '−';
+          }
+        }
+        </script>
+      {% endif %}
+
+      {% if files %}
+        <p>
+          {% for f in files %}
+            <a class="btn btn-primary" href="{{ f.url }}">Download {{ f.label }}</a>
+          {% endfor %}
+        </p>
+        {% if job_id %}
+        <p>
+          <button id="apply-to-db-btn" class="btn btn-warning" onclick="applyToDatabase()">
+            Update Database with These Changes
+          </button>
+          <span id="apply-status" style="margin-left: 10px;"></span>
+        </p>
+        <div id="apply-alert" class="alert" style="display: none;"></div>
+        {% endif %}
+      {% elif not error %}
+        <div class="alert alert-warning">
+          <strong>No files generated.</strong> This can happen if:
+          <ul>
+            <li>There were no changes to make (all fabrics already match)</li>
+            <li>The generated files couldn't be saved</li>
+          </ul>
+        </div>
+      {% endif %}
+    {% endif %}
+
+    <hr>
+    <form method="post" action="{{ url_for('main_routes.blinds_awnings_sync_start') }}">
+      <button class="btn btn-default">Run Again</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if job_id and ran and not error %}
+<script>
+async function applyToDatabase() {
+  const btn = document.getElementById('apply-to-db-btn');
+  const status = document.getElementById('apply-status');
+  const alert = document.getElementById('apply-alert');
+
+  // Confirm with user
+  if (!confirm('This will update your local database with the changes shown above.\n\nMake sure you have already uploaded the Excel files to Buz first!\n\nContinue?')) {
+    return;
+  }
+
+  // Disable button
+  btn.disabled = true;
+  status.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Updating database...';
+  alert.style.display = 'none';
+
+  try {
+    const res = await fetch(
+      '{{ url_for("main_routes.blinds_awnings_sync_apply_to_db", job_id=job_id) }}',
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const data = await res.json();
+
+    if (data.success) {
+      const stats = data.stats;
+      status.innerHTML = '<span style="color: green;">✓ Success!</span>';
+      alert.className = 'alert alert-success';
+      alert.style.display = 'block';
+      alert.innerHTML = `<strong>Database updated:</strong><br>
+        Items added: ${stats.items_added}<br>
+        Items updated: ${stats.items_updated}<br>
+        Pricing records added: ${stats.pricing_added}`;
+
+      // Keep button disabled after success
+      btn.innerHTML = 'Database Updated';
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch (e) {
+    status.innerHTML = '<span style="color: red;">✗ Failed</span>';
+    alert.className = 'alert alert-danger';
+    alert.style.display = 'block';
+    alert.innerHTML = `<strong>Error:</strong> ${e.message}`;
+
+    // Re-enable button on failure
+    btn.disabled = false;
+  }
+}
+</script>
+{% endif %}
+
+{% endblock %}
