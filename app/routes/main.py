@@ -1429,7 +1429,7 @@ def blinds_awnings_sync_apply_to_db(job_id):
     items_changes = result.get("items_changes")
     pricing_changes = result.get("pricing_changes")
 
-    if not items_changes or not pricing_changes:
+    if not items_changes and not pricing_changes:
         return jsonify({"success": False, "error": "No changes data found in job result"}), 400
 
     # Apply changes
