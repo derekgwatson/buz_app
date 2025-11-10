@@ -96,6 +96,33 @@ class BuzCustomerAutomation:
             self.result.add_step("Browser left open for debugging - manually close when done")
             # Don't sleep - let the function return so results can be shown immediately
 
+    async def get_current_organization(self, page: Page) -> Optional[str]:
+        """
+        Check which organization we're currently in by reading the brand link.
+
+        Returns:
+            Organization name if in an org, None if on org selector page
+        """
+        try:
+            # Check if we're on the org selector page
+            my_buz_link = page.locator('a.navbar-brand.buz-brand:has-text("My BUZ")')
+            if await my_buz_link.count() > 0:
+                return None  # On org selector page
+
+            # Check for org brand link (Watson Blinds, Designer Drapes, etc.)
+            brand_link = page.locator('a.brand[style*="border-right"]')
+            if await brand_link.count() > 0:
+                org_name = await brand_link.text_content()
+                return org_name.strip()
+
+            # Fallback: check URL
+            if "mybuz/organizations" in page.url:
+                return None  # On org selector page
+
+            return None  # Unknown state
+        except:
+            return None
+
     async def switch_organization(self, org_name: str):
         """
         Switch to a specific Buz organization
@@ -122,26 +149,31 @@ class BuzCustomerAutomation:
 
     async def ensure_correct_organization(self, org_name: str):
         """
-        Check if we're on the org selector page and switch to correct org if needed
+        Check if we're in the correct org, and switch only if needed
 
         Args:
             org_name: Name of the organization to ensure we're in
         """
         page = await self.context.new_page()
         try:
+            # Navigate to a page to check which org we're in
             await page.goto("https://console1.buzmanager.com/myorg/user-management/users", wait_until='networkidle')
 
-            # Check if we ended up on the organization selector page
-            current_url = page.url
-            if "mybuz/organizations" in current_url:
-                self.result.add_step(f"Detected organization selector page, switching to {org_name}")
+            # Check which org we're currently in
+            current_org = await self.get_current_organization(page)
+
+            if current_org is None:
+                # On org selector page, need to select the org
+                self.result.add_step(f"On org selector page, selecting {org_name}")
                 await page.close()
                 await self.switch_organization(org_name)
+            elif current_org == org_name:
+                # Already in the correct org
+                self.result.add_step(f"✓ Already in {org_name} instance")
+                await page.close()
             else:
-                # We're already in an org, check if it's the right one
-                # The page title or header should show the current org
-                # For now, just assume we might need to switch
-                self.result.add_step(f"Ensuring we're in {org_name} instance")
+                # In wrong org, need to switch
+                self.result.add_step(f"Currently in '{current_org}', switching to {org_name}")
                 await page.close()
                 await self.switch_organization(org_name)
 
