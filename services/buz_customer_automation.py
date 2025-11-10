@@ -450,10 +450,17 @@ class BuzCustomerAutomation:
             await group_select.select_option(label='Customers')
             self.result.add_step("Selected 'Customers' group")
 
-            # Bypass finicky customer autocomplete by directly setting the hidden PKID field
-            # This is much more reliable than trying to work with the Angular autocomplete
+            # Set the customer PKID directly using JavaScript (it's a hidden field)
+            # Also fill the visible customer name field in case it's required for validation
             self.result.add_step(f"Setting customer: {customer_name} (ID: {customer_pkid})")
-            await page.fill('input#customerPkId', customer_pkid)
+
+            # Set the hidden PKID field using JavaScript
+            await page.evaluate(f'document.getElementById("customerPkId").value = "{customer_pkid}"')
+
+            # Also fill the visible customer name field (may be needed for form validation)
+            customer_input = page.locator('input#customers')
+            await customer_input.fill(customer_name)
+
             self.result.add_step(f"✓ Customer linked successfully")
 
             # Click Save User button
