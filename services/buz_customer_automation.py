@@ -133,10 +133,14 @@ class BuzCustomerAutomation:
 
         self.result.add_step(f"✓ Switched to {account_name}")
 
-    async def handle_org_selector_if_present(self, page: Page):
+    async def handle_org_selector_if_present(self, page: Page, intended_url: str):
         """
         Check if we're on the org selector page and automatically click through.
-        Buz sometimes redirects here even with saved auth - this handles it gracefully.
+        After clicking, re-navigate to the intended URL since Buz sends us to home page.
+
+        Args:
+            page: The page object
+            intended_url: The URL we were trying to reach (will navigate back here after clicking org)
         """
         # Check if we're on org selector
         if "mybuz/organizations" not in page.url:
@@ -150,6 +154,10 @@ class BuzCustomerAutomation:
             await org_link.click()
             await page.wait_for_load_state('networkidle')
             self.result.add_step("✓ Clicked through org selector")
+
+            # Re-navigate to intended destination (clicking org takes us to home page)
+            self.result.add_step(f"Re-navigating to intended page...")
+            await page.goto(intended_url, wait_until='networkidle')
         else:
             raise Exception("On org selector page but couldn't find org link to click")
 
@@ -176,7 +184,7 @@ class BuzCustomerAutomation:
             await page.goto(invite_url, wait_until='networkidle')
 
             # Handle if Buz bounced us to org selector
-            await self.handle_org_selector_if_present(page)
+            await self.handle_org_selector_if_present(page, invite_url)
 
             # Check if the email field is filled (indicates user exists)
             email_input = page.locator('input#text-email')
@@ -211,7 +219,7 @@ class BuzCustomerAutomation:
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
 
             # Handle if Buz bounced us to org selector
-            await self.handle_org_selector_if_present(page)
+            await self.handle_org_selector_if_present(page, self.USER_MANAGEMENT_URL)
 
             # Select Customers group
             user_type_select = page.locator('select.form-control').filter(has_text='Employees')
@@ -296,7 +304,7 @@ class BuzCustomerAutomation:
         await page.goto(details_url, wait_until='networkidle')
 
         # Handle if Buz bounced us to org selector
-        await self.handle_org_selector_if_present(page)
+        await self.handle_org_selector_if_present(page, details_url)
 
         # Find the "New Sale" button and extract PKID from its href
         new_sale_link = page.locator('a:has-text("New Sale")')
@@ -481,7 +489,7 @@ class BuzCustomerAutomation:
         await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
 
         # Handle if Buz bounced us to org selector
-        await self.handle_org_selector_if_present(page)
+        await self.handle_org_selector_if_present(page, self.CUSTOMERS_URL)
 
         # Search for the customer we just created to get the code and PKID
         result = await self.search_customer(page, customer_data.company_name, customer_data.email)
@@ -512,7 +520,7 @@ class BuzCustomerAutomation:
             await page.goto(self.INVITE_USER_URL, wait_until='networkidle')
 
             # Handle if Buz bounced us to org selector
-            await self.handle_org_selector_if_present(page)
+            await self.handle_org_selector_if_present(page, self.INVITE_USER_URL)
 
             # Fill in user details
             await page.fill('input#text-firstName', customer_data.first_name)
@@ -607,7 +615,7 @@ class BuzCustomerAutomation:
             await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
 
             # Handle if Buz bounced us to org selector
-            await self.handle_org_selector_if_present(page)
+            await self.handle_org_selector_if_present(page, self.CUSTOMERS_URL)
 
             result = await self.search_customer(page, customer_data.company_name, customer_data.email)
 
