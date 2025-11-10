@@ -398,25 +398,40 @@ class BuzCustomerAutomation:
             self.result.add_step(f"Entering customer name with slow typing: {customer_name}")
             customer_input = page.locator('input#customers')
 
-            # Type the FULL customer name slowly, character by character
-            # This is required for the Angular autocomplete to work properly
-            for char in customer_name:
-                await customer_input.type(char, delay=100)
-                await page.wait_for_timeout(50)
+            # Try typing the customer name with retry logic
+            # The Angular autocomplete is very finicky and sometimes needs multiple attempts
+            max_attempts = 2
+            dropdown_item = None
 
-            # Wait for dropdown to appear
-            await page.wait_for_timeout(1500)
+            for attempt in range(max_attempts):
+                if attempt > 0:
+                    # Clear the field slowly before retrying
+                    self.result.add_step(f"Dropdown not found, clearing and retrying (attempt {attempt + 1}/{max_attempts})...")
+                    await customer_input.click()
+                    await customer_input.fill('')  # Clear field
+                    await page.wait_for_timeout(500)
 
-            # Look for dropdown with customer name
-            # The dropdown should show customer name and address
-            dropdown_item = page.locator(f'[role="option"]:has-text("{customer_name}"), li:has-text("{customer_name}")')
+                # Type the FULL customer name slowly, character by character
+                # Use slower typing on retry attempts
+                delay = 150 if attempt == 0 else 250
+                for char in customer_name:
+                    await customer_input.type(char, delay=delay)
+                    await page.wait_for_timeout(50)
 
-            if await dropdown_item.count() > 0:
-                await dropdown_item.first.click()
-                self.result.add_step(f"✓ Selected customer from autocomplete: {customer_name}")
+                # Wait for dropdown to appear
+                await page.wait_for_timeout(2000)
+
+                # Look for dropdown with customer name
+                dropdown_item = page.locator(f'[role="option"]:has-text("{customer_name}"), li:has-text("{customer_name}")')
+
+                if await dropdown_item.count() > 0:
+                    # Found it!
+                    await dropdown_item.first.click()
+                    self.result.add_step(f"✓ Selected customer from autocomplete: {customer_name}")
+                    break
             else:
                 # Customer field is REQUIRED - cannot save without it
-                error_msg = f"Failed to find customer '{customer_name}' in autocomplete dropdown. Customer field is required."
+                error_msg = f"Failed to find customer '{customer_name}' in autocomplete dropdown after {max_attempts} attempts. Customer field is required."
                 self.result.add_step(f"ERROR: {error_msg}")
                 raise Exception(error_msg)
 
