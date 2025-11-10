@@ -167,16 +167,14 @@ class BuzCustomerAutomation:
             await search_input.type(email, delay=50)  # Type with small delay to trigger events
             await page.wait_for_timeout(1500)
 
-            # Check if empty data row is present (indicates no results)
-            empty_row = page.locator('tr.dxgvEmptyDataRow_Bootstrap, tr#_grdDevEx_DXEmptyRow')
-            has_empty_row = await empty_row.count() > 0
+            # Check if any results exist in the table after search filters
+            results_table = page.locator('table tbody tr')
+            count = await results_table.count()
 
-            if not has_empty_row:
+            if count > 0:
                 self.result.add_step(f"User already exists (active) with email: {email}")
                 try:
-                    # Get actual data rows (rows with class dxgvDataRow_Bootstrap)
-                    data_rows = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
-                    first_row = data_rows.first
+                    first_row = results_table.first
                     # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
@@ -189,19 +187,17 @@ class BuzCustomerAutomation:
             await status_select.select_option(label='Deactivated users')
             await page.wait_for_timeout(1500)
 
-            # Check if empty data row is present (indicates no results)
-            empty_row = page.locator('tr.dxgvEmptyDataRow_Bootstrap, tr#_grdDevEx_DXEmptyRow')
-            has_empty_row = await empty_row.count() > 0
+            # Re-query the table after switching to deactivated
+            results_table = page.locator('table tbody tr')
+            count = await results_table.count()
 
-            if not has_empty_row:
+            if count > 0:
                 self.result.add_step(f"User found in deactivated users: {email}")
 
                 # Get customer name before reactivating
                 customer_name = None
                 try:
-                    # Get actual data rows (rows with class dxgvDataRow_Bootstrap)
-                    data_rows = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
-                    first_row = data_rows.first
+                    first_row = results_table.first
                     # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
