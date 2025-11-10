@@ -180,6 +180,55 @@ class BuzCustomerAutomation:
         except:
             await page.close()
 
+    async def verify_not_on_org_selector(self, page: Page, intended_url: str, org_name: str):
+        """
+        After navigating, verify we didn't land on the org selector page.
+        If we did, switch to correct org and navigate back to intended destination.
+
+        Args:
+            page: The page we just navigated
+            intended_url: Where we intended to go
+            org_name: Organization we should be in
+        """
+        current_org = await self.get_current_organization(page)
+
+        if current_org is None:
+            # We're on the org selector page - need to switch and retry
+            self.result.add_step(f"⚠️ Landed on org selector, switching to {org_name}")
+
+            # Switch to correct org
+            switch_page = await self.context.new_page()
+            try:
+                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
+                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
+                await org_link.click()
+                await switch_page.wait_for_load_state('networkidle')
+                self.result.add_step(f"✓ Switched to {org_name}")
+            finally:
+                await switch_page.close()
+
+            # Now navigate back to where we wanted to go
+            await page.goto(intended_url, wait_until='networkidle')
+            self.result.add_step(f"✓ Navigated back to: {intended_url}")
+        elif current_org != org_name:
+            # In wrong org
+            self.result.add_step(f"⚠️ In wrong org '{current_org}', switching to {org_name}")
+
+            # Switch to correct org
+            switch_page = await self.context.new_page()
+            try:
+                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
+                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
+                await org_link.click()
+                await switch_page.wait_for_load_state('networkidle')
+                self.result.add_step(f"✓ Switched to {org_name}")
+            finally:
+                await switch_page.close()
+
+            # Navigate back to where we wanted to go
+            await page.goto(intended_url, wait_until='networkidle')
+            self.result.add_step(f"✓ Navigated back to: {intended_url}")
+
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str], Optional[str]]:
         """
         Check if user already exists and what group they're in.
@@ -573,9 +622,13 @@ class BuzCustomerAutomation:
             if not self.keep_open:
                 await page.close()
 
-    async def add_customer_from_ticket(self, customer_data: CustomerData) -> CustomerAutomationResult:
+    async def add_customer_from_ticket(self, customer_data: CustomerData, org_name: str) -> CustomerAutomationResult:
         """
         Complete workflow to add customer and user from Zendesk ticket data
+
+        Args:
+            customer_data: Customer information from Zendesk
+            org_name: Buz organization name (e.g., "Watson Blinds", "Designer Drapes")
 
         Steps:
         1. Check if user exists (optimization)
@@ -614,6 +667,9 @@ class BuzCustomerAutomation:
         page = await self.context.new_page()
         try:
             await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
+
+            # Verify we didn't land on org selector (Buz sometimes redirects there)
+            await self.verify_not_on_org_selector(page, self.CUSTOMERS_URL, org_name)
 
             result = await self.search_customer(page, customer_data.company_name, customer_data.email)
 
@@ -708,7 +764,7 @@ async def add_customer_from_zendesk_ticket(
                 await automation.switch_organization(instance)
 
             # Run the workflow for this instance
-            result = await automation.add_customer_from_ticket(customer_data)
+            result = await automation.add_customer_from_ticket(customer_data, instance)
 
             # If processing multiple instances, continue to the next one
             if idx < len(customer_data.buz_instances) - 1:
