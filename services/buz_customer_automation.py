@@ -106,9 +106,11 @@ class BuzCustomerAutomation:
             await status_select.select_option(label='Active users')
             self.result.add_step("Checking active users")
 
-            # Type email into search field
+            # Type email into search field (type slowly to trigger Angular events)
             search_input = page.locator('input#search-text, input[placeholder*="Name, user name or email"]')
-            await search_input.fill(email)
+            await search_input.click()  # Focus the input
+            await search_input.fill('')  # Clear any existing text
+            await search_input.type(email, delay=50)  # Type with small delay to trigger events
             await page.wait_for_timeout(1500)
 
             # Check if any results exist in the table after search filters
