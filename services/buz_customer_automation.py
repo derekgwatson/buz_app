@@ -85,18 +85,16 @@ class BuzCustomerAutomation:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - close browser"""
-        self.result.add_step(f"DEBUG: keep_open={self.keep_open}, will {'NOT close' if self.keep_open else 'close'} browser")
         if not self.keep_open:
             if self.context:
                 await self.context.close()
             if self.browser:
                 await self.browser.close()
         else:
-            # Keep browser open for debugging
-            # Sleep for a very long time to keep the thread alive (and browser subprocess alive)
-            self.result.add_step("Browser left open for debugging - will stay open for 1 hour or until you manually close it")
-            import asyncio
-            await asyncio.sleep(3600)  # Sleep 1 hour to keep browser alive
+            # Keep browser open for debugging - don't close it
+            # Browser subprocess will stay alive until manually closed or Flask app restarts
+            self.result.add_step("Browser left open for debugging - manually close when done")
+            # Don't sleep - let the function return so results can be shown immediately
 
     async def switch_organization(self, org_name: str):
         """
