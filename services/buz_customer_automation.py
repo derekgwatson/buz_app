@@ -109,18 +109,26 @@ class BuzCustomerAutomation:
             # Type email into search field
             search_input = page.locator('input#search-text, input[placeholder*="Name, user name or email"]')
             await search_input.fill(email)
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(1500)
 
-            # Check if any results exist in the table (only visible rows)
-            results_table = page.locator('table tbody tr:visible')
-            count = await results_table.count()
+            # Check if any results exist in the table
+            # Get all rows and filter to only visible ones
+            all_rows = page.locator('table tbody tr')
+            count = await all_rows.count()
 
-            if count > 0:
+            # Find the first visible row
+            visible_row = None
+            for i in range(count):
+                row = all_rows.nth(i)
+                if await row.is_visible():
+                    visible_row = row
+                    break
+
+            if visible_row:
                 self.result.add_step(f"User already exists (active) with email: {email}")
                 try:
-                    first_row = results_table.first
                     # Customer name is in the first column inside an anchor tag
-                    customer_name_link = first_row.locator('td:first-child a')
+                    customer_name_link = visible_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
                     return True, False, customer_name.strip() if customer_name else None
                 except:
@@ -129,18 +137,25 @@ class BuzCustomerAutomation:
             # Not found in active users, check deactivated users
             self.result.add_step("Not found in active users, checking deactivated users")
             await status_select.select_option(label='Deactivated users')
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(1500)
 
-            count = await results_table.count()
-            if count > 0:
+            # Find the first visible row in deactivated users
+            count = await all_rows.count()
+            visible_row = None
+            for i in range(count):
+                row = all_rows.nth(i)
+                if await row.is_visible():
+                    visible_row = row
+                    break
+
+            if visible_row:
                 self.result.add_step(f"User found in deactivated users: {email}")
 
                 # Get customer name before reactivating
                 customer_name = None
                 try:
-                    first_row = results_table.first
                     # Customer name is in the first column inside an anchor tag
-                    customer_name_link = first_row.locator('td:first-child a')
+                    customer_name_link = visible_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
                     customer_name = customer_name.strip() if customer_name else None
                 except:
