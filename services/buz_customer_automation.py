@@ -462,18 +462,45 @@ class BuzCustomerAutomation:
         await page.click('button:has-text("Save"), input[value="Save"]')
         await page.wait_for_load_state('networkidle')
 
-        # After creating, we need to find the customer code and get the PKID
-        # Navigate back to customer list to search for the customer we just created
-        await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
+        # After successful save, Buz redirects to the customer details page
+        # URL format: https://go.buzmanager.com/Contacts/Customers/Details?Code=CUSTOMER123
+        current_url = page.url
+        self.result.add_step(f"After save, landed on: {current_url}")
 
-        # Search for the customer we just created to get the code and PKID
-        result = await self.search_customer(page, customer_data.company_name, customer_data.email)
-        if not result:
-            raise Exception(f"Failed to find customer after creation: {customer_data.company_name}")
+        # Check if we're on the customer details page (success)
+        if 'Customers/Details' in current_url and 'Code=' in current_url:
+            # Extract customer code from URL
+            customer_code = current_url.split('Code=')[-1].split('&')[0]
+            self.result.add_step(f"✓ Customer created successfully, Code: {customer_code}")
 
-        customer_name, customer_pkid = result
-        self.result.add_step(f"Customer created: {customer_name} (ID: {customer_pkid})")
-        return (customer_name, customer_pkid)
+            # Get customer name and PKID from the details page we're already on
+            customer_pkid = await self.get_customer_pkid(page, customer_code)
+
+            # Get customer name from the page title or heading
+            try:
+                customer_name_heading = page.locator('h1, .page-title')
+                customer_name = await customer_name_heading.first.text_content()
+                customer_name = customer_name.strip()
+            except:
+                # Fallback to the name we tried to create
+                customer_name = customer_data.company_name
+
+            self.result.add_step(f"Customer created: {customer_name} (ID: {customer_pkid})")
+            return (customer_name, customer_pkid)
+        else:
+            # Still on create form or error page - save failed
+            self.result.add_step(f"⚠️ Save may have failed - not redirected to details page")
+            self.result.add_step("Will try searching for customer as fallback...")
+
+            # Navigate to customer list to search
+            await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
+            result = await self.search_customer(page, customer_data.company_name, customer_data.email)
+            if not result:
+                raise Exception(f"Failed to find customer after creation: {customer_data.company_name}")
+
+            customer_name, customer_pkid = result
+            self.result.add_step(f"Found customer: {customer_name} (ID: {customer_pkid})")
+            return (customer_name, customer_pkid)
 
     async def create_user(self, customer_name: str, customer_pkid: str, customer_data: CustomerData) -> bool:
         """
