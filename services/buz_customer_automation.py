@@ -405,30 +405,34 @@ class BuzCustomerAutomation:
         await page.wait_for_load_state('networkidle')
 
         # Select Wholesale customer group
-        group_select = page.locator('select#CustomerGroupId, select[name="CustomerGroupId"]')
+        group_select = page.locator('select#CustomerGroupPkId')
         await group_select.select_option(label='Wholesale')
         self.result.add_step("Selected 'Wholesale' customer group")
 
         # Fill in company name
         await page.fill('input#CompanyName, input[name="CompanyName"]', customer_data.company_name)
 
-        # Fill in first and last name
-        await page.fill('input#FirstName, input[name="FirstName"]', customer_data.first_name)
-        await page.fill('input#LastName, input[name="LastName"]', customer_data.last_name)
+        # Fill in billing details (first and last name)
+        await page.fill('input#BillingDetails_FirstName', customer_data.first_name)
+        await page.fill('input#BillingDetails_LastName', customer_data.last_name)
         self.result.add_step(f"Filled in name: {customer_data.first_name} {customer_data.last_name}")
+
+        # Fill in email
+        await page.fill('input#emailAddress', customer_data.email)
+        self.result.add_step(f"Added email: {customer_data.email}")
 
         # Fill in phone number (mobile or landline)
         if customer_data.phone:
             if customer_data.is_mobile:
-                await page.fill('input#MobilePhone, input[name="MobilePhone"]', customer_data.phone)
-                self.result.add_step(f"Added mobile phone: {customer_data.phone}")
+                await page.fill('input#BillingDetails_Mobile', customer_data.phone)
+                self.result.add_step(f"Added mobile: {customer_data.phone}")
             else:
-                await page.fill('input#Phone, input[name="Phone"]', customer_data.phone)
+                await page.fill('input#BillingDetails_DirectPhone', customer_data.phone)
                 self.result.add_step(f"Added phone: {customer_data.phone}")
 
         # Handle async address autocomplete
         self.result.add_step(f"Entering address: {customer_data.address}")
-        address_input = page.locator('input#Address, input[name="Address"]')
+        address_input = page.locator('input#BillingDetails_FullAddress')
         await address_input.fill(customer_data.address)
 
         # Wait for autocomplete dropdown to appear
