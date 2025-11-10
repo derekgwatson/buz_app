@@ -447,6 +447,11 @@ class BuzCustomerAutomation:
         await page.wait_for_timeout(500)        # Wait for Google Places to populate fields
         self.result.add_step("Selected address from Google Places autocomplete")
 
+        # Pause for manual inspection if debugging
+        if self.keep_open:
+            self.result.add_step("⏸️  PAUSED for inspection - check the form, then click 'Resume' in Playwright Inspector")
+            await page.pause()
+
         # Click Save
         await page.click('button:has-text("Save"), input[value="Save"]')
         await page.wait_for_load_state('networkidle')
