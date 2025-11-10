@@ -6,6 +6,7 @@ credentials/
 
 # Python prod Virtual Environment
 venv/
+.venv/
 lib/
 lib64/
 bin/

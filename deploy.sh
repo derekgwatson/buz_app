@@ -33,6 +33,10 @@ echo "🌐 Environment: $ENV"
 echo "🔁 Pulling latest code in $CURRENT_DIR..."
 sudo -u www-data git -C "$CURRENT_DIR" pull || { echo "❌ Git pull failed ($ENV)"; exit 1; }
 
+# ensure requirements are ok
+source .venv/bin/activate
+pip install -r requirements.txt
+
 echo "🔄 Restarting systemctl daemon..."
 sudo systemctl daemon-reload || { echo "❌ Failed to restart systemctl daemon"; exit 1; }
 
@@ -46,6 +50,6 @@ sudo systemctl restart "gunicorn-$APP_NAME" || { echo "❌ Failed to restart gun
 #sudo systemctl restart "$TASK_SERVICE" || { echo "❌ Failed to restart background tasks ($ENV)"; exit 1; }
 
 echo "🔄 Deploying any DB changes..."
-sudo -u www-data -H /var/www/$APP_NAME/venv/bin/flask --app app init-db
+sudo -u www-data -H /var/www/$APP_NAME/.venv/bin/flask --app app init-db
 
 echo "🚀 Deploy complete for $APP_NAME ($ENV)."
