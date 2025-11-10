@@ -375,19 +375,28 @@ class BuzCustomerAutomation:
             await page.goto(self.INVITE_USER_URL, wait_until='networkidle')
 
             # Fill in user details
-            await page.fill('input#FirstName, input[name="FirstName"]', customer_data.first_name)
-            await page.fill('input#LastName, input[name="LastName"]', customer_data.last_name)
-            await page.fill('input#Email, input[name="Email"]', customer_data.email)
+            await page.fill('input#text-firstName', customer_data.first_name)
+            await page.fill('input#text-lastName', customer_data.last_name)
+            await page.fill('input#text-email', customer_data.email)
             self.result.add_step(f"Filled in user: {customer_data.first_name} {customer_data.last_name} ({customer_data.email})")
 
-            # Select Customers group
-            group_select = page.locator('select#GroupId, select[name="GroupId"]')
+            # Fill in phone number if available
+            if customer_data.phone:
+                if customer_data.is_mobile:
+                    await page.fill('input#text-mobile', customer_data.phone)
+                    self.result.add_step(f"Filled mobile: {customer_data.phone}")
+                else:
+                    await page.fill('input#text-phone', customer_data.phone)
+                    self.result.add_step(f"Filled phone: {customer_data.phone}")
+
+            # Select Customers group - there's only one select in this section
+            group_select = page.locator('select.form-control').first
             await group_select.select_option(label='Customers')
             self.result.add_step("Selected 'Customers' group")
 
             # Handle finicky customer name autocomplete
             self.result.add_step(f"Entering customer name with slow typing: {customer_name}")
-            customer_input = page.locator('input[placeholder*="start typing customer name"]')
+            customer_input = page.locator('input#customers')
 
             # Type slowly, character by character
             # First, type first word quickly
@@ -421,8 +430,8 @@ class BuzCustomerAutomation:
             else:
                 self.result.add_step("Warning: Could not find customer in autocomplete dropdown")
 
-            # Click Save User
-            await page.click('button:has-text("Save User")')
+            # Click Save User button
+            await page.click('button#save-button')
             await page.wait_for_load_state('networkidle')
 
             self.result.add_step(f"User created successfully: {customer_data.email}")
