@@ -90,8 +90,10 @@ class BuzCustomerAutomation:
         try:
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
 
-            # Select 'customers' from the dropdown
-            await page.locator('select').filter(has_text='Employees').select_option('customers')
+            # Select 'customers' from the dropdown (Angular select with special value binding)
+            # The dropdown has options with values like "0: 0" (Employees) and "1: 5" (Customers)
+            select_element = page.locator('select.form-control')
+            await select_element.select_option(label='Customers')
             self.result.add_step("Selected 'Customers' user type")
 
             # Type email into search field
@@ -262,8 +264,9 @@ class BuzCustomerAutomation:
         try:
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
 
-            # Select 'customers' from dropdown
-            await page.locator('select').filter(has_text='Employees').select_option('customers')
+            # Select 'customers' from dropdown (Angular select with special value binding)
+            select_element = page.locator('select.form-control')
+            await select_element.select_option(label='Customers')
 
             # Click Invite User
             await page.click('button:has-text("Invite User")')

@@ -34,7 +34,7 @@ def add_from_zendesk():
         headless: (optional) Run browser in headless mode (default: true)
     """
     ticket_id = request.form.get("ticket_id", "").strip()
-    headless = request.form.get("headless", "true").lower() in ("true", "1", "yes")
+    headless = request.form.get("headless", "false").lower() in ("true", "1", "yes")
 
     if not ticket_id:
         return jsonify({"error": "Ticket ID is required"}), 400

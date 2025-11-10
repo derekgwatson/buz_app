@@ -108,8 +108,16 @@ class ZendeskService:
             if phone_match:
                 phone = phone_match.group(1).strip()
 
-        # Get email from ticket requester
-        email = ticket.requester.email if ticket.requester else None
+        # Get email from ticket subject (format: "Customer onboard: email@example.com")
+        email = None
+        subject = ticket.subject or ""
+        email_match = re.search(r'Customer onboard:\s*(\S+@\S+)', subject, re.IGNORECASE)
+        if email_match:
+            email = email_match.group(1).strip()
+
+        # Fallback to requester email if not in subject
+        if not email and ticket.requester:
+            email = ticket.requester.email
 
         # Validate required fields
         required = ['first_name', 'last_name', 'company_name', 'address']
@@ -118,7 +126,7 @@ class ZendeskService:
             raise ValueError(f"Missing required fields in ticket: {', '.join(missing)}")
 
         if not email:
-            raise ValueError("Ticket requester email not found")
+            raise ValueError("Email not found in ticket subject or requester")
 
         return CustomerData(
             first_name=fields['first_name'],
