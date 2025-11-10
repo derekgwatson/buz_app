@@ -48,8 +48,9 @@ def init_sentry():
             # Attach stack traces to all messages
             attach_stacktrace=True,
 
-            # In development, still send errors even when Flask debug=True
-            debug=environment == "development",
+            # Disable Sentry's debug logging (very verbose, only needed when debugging Sentry itself)
+            # Set SENTRY_DEBUG=1 in .env to enable if needed
+            debug=os.getenv("SENTRY_DEBUG", "0") == "1",
         )
         logging.info(f"Sentry initialized for environment: {environment}")
     except ImportError:
