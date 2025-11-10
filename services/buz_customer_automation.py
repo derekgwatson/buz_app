@@ -377,8 +377,8 @@ class BuzCustomerAutomation:
             select_element = page.locator('select.form-control').filter(has_text='Employees')
             await select_element.select_option(label='Customers')
 
-            # Click Invite User
-            await page.click('button:has-text("Invite User")')
+            # Click Invite User (it's an <a> tag styled as a button)
+            await page.click('a:has-text("Invite User"), button:has-text("Invite User")')
             await page.wait_for_load_state('networkidle')
 
             # Fill in user details
