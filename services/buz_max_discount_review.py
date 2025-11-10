@@ -275,13 +275,19 @@ class BuzMaxDiscountReview:
             # Column B = Description (index 1)
             # Column C = Code (index 2)
             # Column G = Max Discount Percentage (index 6)
+            # Column N = Can be ordered (index 13)
 
             description = row[1] if len(row) > 1 else None
             code = row[2] if len(row) > 2 else None
             max_discount = row[6] if len(row) > 6 else None
+            can_be_ordered = row[13] if len(row) > 13 else None
 
             # Skip empty rows
             if not code and not description:
+                continue
+
+            # Skip rows where "Can be ordered" is not YES
+            if can_be_ordered != "YES":
                 continue
 
             # Parse max discount percentage
@@ -304,7 +310,7 @@ class BuzMaxDiscountReview:
 
         wb.close()
 
-        self.result.add_step(f"✓ Parsed {len(inventory_groups)} inventory groups")
+        self.result.add_step(f"✓ Parsed {len(inventory_groups)} orderable inventory groups")
         return inventory_groups
 
     async def review_max_discounts(self, selected_orgs: Optional[List[str]] = None) -> MaxDiscountReviewResult:
