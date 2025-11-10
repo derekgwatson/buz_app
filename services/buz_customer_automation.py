@@ -145,12 +145,15 @@ class BuzCustomerAutomation:
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str]]:
         """
         Check if user already exists by navigating to the invite page with their email.
-        If user exists, Buz pre-fills the email field on the form.
+        If user exists, Buz pre-fills the email field and group on the form.
         This simple approach covers all user types (active/inactive, all groups).
 
         Returns:
             (exists: bool, was_reactivated: bool, customer_name: Optional[str])
             Note: was_reactivated will always be False with this method
+
+        Raises:
+            Exception: If user exists in non-Customers group
         """
         self.result.add_step(f"Checking if user exists: {email}")
 
@@ -168,6 +171,26 @@ class BuzCustomerAutomation:
             if email_value and email_value.strip():
                 # User exists - email field is pre-filled
                 self.result.add_step(f"✓ User exists: {email}")
+
+                # Check what group they're in
+                group_select = page.locator('select.form-control').first
+                selected_option = await group_select.locator('option[selected]').text_content()
+                if not selected_option:
+                    # If no option has 'selected' attribute, get the currently selected value
+                    selected_value = await group_select.evaluate('(select) => select.options[select.selectedIndex].text')
+                    selected_option = selected_value
+
+                group_name = selected_option.strip() if selected_option else "Unknown"
+                self.result.add_step(f"User is in group: {group_name}")
+
+                # Check if they're in the Customers group
+                if "Customers" not in group_name:
+                    error_msg = f"User '{email}' already exists in group '{group_name}'. Cannot create as Customer user. Please handle manually."
+                    self.result.add_step(f"ERROR: {error_msg}")
+                    raise Exception(error_msg)
+
+                # User exists and is in Customers group
+                self.result.add_step("User is already a Customer user")
 
                 # Try to get the customer name if available on the form
                 customer_name = None
