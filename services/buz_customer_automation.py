@@ -133,6 +133,26 @@ class BuzCustomerAutomation:
 
         self.result.add_step(f"✓ Switched to {account_name}")
 
+    async def handle_org_selector_if_present(self, page: Page):
+        """
+        Check if we're on the org selector page and automatically click through.
+        Buz sometimes redirects here even with saved auth - this handles it gracefully.
+        """
+        # Check if we're on org selector
+        if "mybuz/organizations" not in page.url:
+            return  # Not on org selector, all good
+
+        self.result.add_step("⚠️  Landed on org selector, clicking through...")
+
+        # Click the first (and usually only) org in the table
+        org_link = page.locator('td a').first
+        if await org_link.count() > 0:
+            await org_link.click()
+            await page.wait_for_load_state('networkidle')
+            self.result.add_step("✓ Clicked through org selector")
+        else:
+            raise Exception("On org selector page but couldn't find org link to click")
+
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str], Optional[str]]:
         """
         Check if user already exists and what group they're in.
@@ -154,6 +174,9 @@ class BuzCustomerAutomation:
             # STEP 1: Check existence and group using invite URL (simple and reliable)
             invite_url = f"https://console1.buzmanager.com/myorg/user-management/inviteuser/{email}"
             await page.goto(invite_url, wait_until='networkidle')
+
+            # Handle if Buz bounced us to org selector
+            await self.handle_org_selector_if_present(page)
 
             # Check if the email field is filled (indicates user exists)
             email_input = page.locator('input#text-email')
@@ -186,6 +209,9 @@ class BuzCustomerAutomation:
             self.result.add_step("User is a Customer - checking if active or inactive")
 
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
+
+            # Handle if Buz bounced us to org selector
+            await self.handle_org_selector_if_present(page)
 
             # Select Customers group
             user_type_select = page.locator('select.form-control').filter(has_text='Employees')
@@ -268,6 +294,9 @@ class BuzCustomerAutomation:
         # Navigate to customer details page using the code
         details_url = f"https://go.buzmanager.com/Contacts/Customers/Details?Code={customer_code}"
         await page.goto(details_url, wait_until='networkidle')
+
+        # Handle if Buz bounced us to org selector
+        await self.handle_org_selector_if_present(page)
 
         # Find the "New Sale" button and extract PKID from its href
         new_sale_link = page.locator('a:has-text("New Sale")')
@@ -451,6 +480,9 @@ class BuzCustomerAutomation:
         # Navigate back to customer list to search for the customer we just created
         await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
 
+        # Handle if Buz bounced us to org selector
+        await self.handle_org_selector_if_present(page)
+
         # Search for the customer we just created to get the code and PKID
         result = await self.search_customer(page, customer_data.company_name, customer_data.email)
         if not result:
@@ -478,6 +510,9 @@ class BuzCustomerAutomation:
         try:
             # Navigate directly to the Invite User page
             await page.goto(self.INVITE_USER_URL, wait_until='networkidle')
+
+            # Handle if Buz bounced us to org selector
+            await self.handle_org_selector_if_present(page)
 
             # Fill in user details
             await page.fill('input#text-firstName', customer_data.first_name)
@@ -570,6 +605,9 @@ class BuzCustomerAutomation:
         page = await self.context.new_page()
         try:
             await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
+
+            # Handle if Buz bounced us to org selector
+            await self.handle_org_selector_if_present(page)
 
             result = await self.search_customer(page, customer_data.company_name, customer_data.email)
 
