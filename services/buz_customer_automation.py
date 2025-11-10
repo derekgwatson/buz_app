@@ -85,10 +85,10 @@ class BuzCustomerAutomation:
                 await self.browser.close()
         else:
             # Keep browser open for debugging
-            # Sleep for a long time to keep the thread alive (and browser subprocess alive)
-            self.result.add_step("Browser left open for debugging - sleeping 10 minutes to keep it alive (you can manually close the browser anytime)")
+            # Sleep for a very long time to keep the thread alive (and browser subprocess alive)
+            self.result.add_step("Browser left open for debugging - will stay open for 1 hour or until you manually close it")
             import asyncio
-            await asyncio.sleep(600)  # Sleep 10 minutes to keep browser alive
+            await asyncio.sleep(3600)  # Sleep 1 hour to keep browser alive
 
     async def switch_organization(self, org_name: str):
         """
@@ -479,15 +479,44 @@ class BuzCustomerAutomation:
 
             self.result.add_step(f"✓ Customer linked successfully")
 
+            # Wait a moment for field to be populated
+            await page.wait_for_timeout(500)
+
+            # DEBUG: Check what values are actually set before saving
+            pkid_value = await page.evaluate('document.getElementById("customerPkId").value')
+            customer_input_value = await customer_input.input_value()
+            self.result.add_step(f"DEBUG: Before save - PKID field='{pkid_value}', Customer name field='{customer_input_value}'")
+
             # Click Save User button
             await page.click('button#save-button')
             await page.wait_for_load_state('networkidle')
 
-            self.result.add_step(f"User created successfully: {customer_data.email}")
-            return True
+            # Verify save succeeded by checking URL - should redirect to user list on success
+            current_url = page.url
+            if 'inviteuser' in current_url:
+                # Still on the invite form - save probably failed due to validation error
+                self.result.add_step(f"ERROR: Still on invite form after save - validation may have failed")
+                self.result.add_step(f"Current URL: {current_url}")
+
+                # Look for error messages on the page
+                error_elements = page.locator('.alert-danger, .error, .reqired-field:not([hidden])')
+                error_count = await error_elements.count()
+                if error_count > 0:
+                    for i in range(min(error_count, 3)):  # Show up to 3 errors
+                        error_text = await error_elements.nth(i).text_content()
+                        self.result.add_step(f"ERROR: {error_text.strip()}")
+
+                raise Exception("User save failed - form validation error")
+            else:
+                self.result.add_step(f"User created successfully: {customer_data.email}")
+                self.result.add_step(f"Redirected to: {current_url}")
+                return True
 
         finally:
-            await page.close()
+            if not self.keep_open:
+                await page.close()
+            else:
+                self.result.add_step("DEBUG: Keeping user creation page open for inspection")
 
     async def add_customer_from_ticket(self, customer_data: CustomerData) -> CustomerAutomationResult:
         """
