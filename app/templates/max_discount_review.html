@@ -222,6 +222,32 @@
 
 <form id="reviewForm">
   <div class="form-group">
+    <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Select Organizations:</label>
+    <div style="margin-left: 1rem;">
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="canberra" checked>
+        Watson Blinds (Canberra)
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="tweed" checked>
+        Tweed
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="bay" checked>
+        Batemans Bay
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="shoalhaven" checked>
+        Shoalhaven
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="wagga" checked>
+        Wagga Wagga
+      </label>
+    </div>
+  </div>
+
+  <div class="form-group">
     <label>
       <input type="checkbox" id="headless" name="headless" checked>
       Run in headless mode (no browser window)
@@ -302,6 +328,16 @@ form.addEventListener('submit', async (e) => {
 
   const headless = document.getElementById('headless').checked;
 
+  // Get selected orgs
+  const selectedOrgs = Array.from(document.querySelectorAll('input[name="orgs"]:checked'))
+    .map(cb => cb.value);
+
+  // Validate at least one org is selected
+  if (selectedOrgs.length === 0) {
+    alert('Please select at least one organization');
+    return;
+  }
+
   // Disable form
   submitBtn.disabled = true;
   submitBtn.textContent = 'Starting...';
@@ -316,6 +352,11 @@ form.addEventListener('submit', async (e) => {
   try {
     const formData = new FormData();
     formData.append('headless', headless ? 'true' : 'false');
+
+    // Add each selected org
+    selectedOrgs.forEach(org => {
+      formData.append('orgs', org);
+    });
 
     const response = await fetch('{{ url_for("max_discount_review.start_review") }}', {
       method: 'POST',

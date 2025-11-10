@@ -28,12 +28,24 @@ def index():
 @auth.login_required
 def start_review():
     """
-    Start max discount review across all orgs.
+    Start max discount review across selected orgs.
 
     Expects:
+        orgs: (required) List of org keys to process
         headless: (optional) Run browser in headless mode (default: true)
     """
     headless = request.form.get("headless", "true").lower() in ("true", "1", "yes")
+
+    # Get selected orgs
+    selected_orgs = request.form.getlist("orgs")
+    if not selected_orgs:
+        return jsonify({"error": "At least one organization must be selected"}), 400
+
+    # Validate org keys
+    valid_orgs = ['canberra', 'tweed', 'bay', 'shoalhaven', 'wagga']
+    invalid_orgs = [org for org in selected_orgs if org not in valid_orgs]
+    if invalid_orgs:
+        return jsonify({"error": f"Invalid organizations: {', '.join(invalid_orgs)}"}), 400
 
     # Create job
     job_id = uuid.uuid4().hex
@@ -51,7 +63,8 @@ def start_review():
         """Background thread to run max discount review"""
         db = create_db_manager(db_path)
         try:
-            update_job(job_id, 5, "Starting max discount review", db=db)
+            org_names = ', '.join([org.title() for org in selected_orgs])
+            update_job(job_id, 5, f"Starting max discount review for: {org_names}", db=db)
 
             # Import and run the review
             from services.buz_max_discount_review import review_max_discounts_all_orgs
@@ -69,6 +82,7 @@ def start_review():
                     review_max_discounts_all_orgs(
                         output_dir=output_dir,
                         headless=headless,
+                        selected_orgs=selected_orgs,
                         job_update_callback=job_callback
                     )
                 )

@@ -299,20 +299,29 @@ class BuzMaxDiscountReview:
         self.result.add_step(f"✓ Parsed {len(inventory_groups)} inventory groups")
         return inventory_groups
 
-    async def review_max_discounts(self) -> MaxDiscountReviewResult:
+    async def review_max_discounts(self, selected_orgs: Optional[List[str]] = None) -> MaxDiscountReviewResult:
         """
-        Download and parse max discounts from all orgs.
+        Download and parse max discounts from selected orgs.
+
+        Args:
+            selected_orgs: List of org keys to process (e.g., ['canberra', 'tweed']).
+                          If None, processes all orgs.
 
         Returns:
-            MaxDiscountReviewResult with data from all orgs
+            MaxDiscountReviewResult with data from selected orgs
         """
         self.result.add_step("=== Starting Max Discount Review ===")
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Filter orgs if selection provided
+        orgs_to_process = self.ORGS.items()
+        if selected_orgs:
+            orgs_to_process = [(k, v) for k, v in self.ORGS.items() if k in selected_orgs]
+
         # Process each org
-        for idx, (org_key, org_config) in enumerate(self.ORGS.items()):
+        for idx, (org_key, org_config) in enumerate(orgs_to_process):
             try:
                 # Switch to org
                 await self.switch_to_org(org_key)
@@ -343,14 +352,17 @@ class BuzMaxDiscountReview:
 async def review_max_discounts_all_orgs(
     output_dir: Path,
     headless: bool = True,
+    selected_orgs: Optional[List[str]] = None,
     job_update_callback=None
 ) -> MaxDiscountReviewResult:
     """
-    High-level function to review max discounts across all orgs.
+    High-level function to review max discounts across selected orgs.
 
     Args:
         output_dir: Directory to save downloaded Excel files
         headless: Run browser in headless mode
+        selected_orgs: List of org keys to process (e.g., ['canberra', 'tweed']).
+                      If None, processes all orgs.
         job_update_callback: Optional callback(pct, message) for job progress
 
     Returns:
@@ -377,7 +389,7 @@ async def review_max_discounts_all_orgs(
         review.result.add_step = wrapped_add_step
 
         # Run the review
-        result = await review.review_max_discounts()
+        result = await review.review_max_discounts(selected_orgs=selected_orgs)
 
     update(100, "Complete")
     return result
