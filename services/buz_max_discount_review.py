@@ -76,7 +76,7 @@ class BuzMaxDiscountReview:
     ORGS = {
         'canberra': {
             'display_name': 'Watson Blinds (Canberra)',
-            'storage_state': '.secrets/buz_storage_state_watsonblinds.json'
+            'storage_state': '.secrets/buz_storage_state_canberra.json'
         },
         'tweed': {
             'display_name': 'Tweed',
@@ -195,8 +195,15 @@ class BuzMaxDiscountReview:
 
         page = await self.context.new_page()
         try:
-            # Navigate to export/import page
-            await page.goto(self.EXPORT_IMPORT_URL, wait_until='networkidle')
+            # Navigate to export/import page (with extended timeout)
+            try:
+                await page.goto(self.EXPORT_IMPORT_URL, wait_until='networkidle', timeout=60000)
+            except Exception as e:
+                # If already on the page or navigation fails, continue
+                self.result.add_step(f"Navigation issue (continuing): {str(e)[:100]}")
+                # Check if we're at least on the right domain
+                if "buzmanager.com" not in page.url:
+                    raise
 
             # Handle org selector if present
             await self.handle_org_selector_if_present(page, self.EXPORT_IMPORT_URL)
@@ -204,13 +211,14 @@ class BuzMaxDiscountReview:
             # Click the download link to open modal
             download_link = page.locator('a[href="#exportModal"]')
             await download_link.click()
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(1000)
             self.result.add_step("Opened export modal")
 
-            # Select "Inventory Groups" from dropdown
-            # The modal should be visible now
-            select = page.locator('select#exportType, select[name="exportType"]')
-            await select.select_option(label='Inventory Groups')
+            # Select "Inventory Groups" from dropdown (it's a multi-select with id="SheetList")
+            # Wait for modal to be visible
+            await page.wait_for_selector('select#SheetList', state='visible', timeout=5000)
+            select = page.locator('select#SheetList')
+            await select.select_option(value='Inventory Groups')
             self.result.add_step("Selected 'Inventory Groups' option")
 
             # Set up download handler before clicking export
