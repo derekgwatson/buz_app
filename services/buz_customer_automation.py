@@ -119,7 +119,9 @@ class BuzCustomerAutomation:
                 self.result.add_step(f"User already exists (active) with email: {email}")
                 try:
                     first_row = results_table.first
-                    customer_name = await first_row.locator('td').nth(0).text_content()
+                    # Customer name is in the first column inside an anchor tag
+                    customer_name_link = first_row.locator('td:first-child a')
+                    customer_name = await customer_name_link.text_content()
                     return True, False, customer_name.strip() if customer_name else None
                 except:
                     return True, False, None
@@ -137,7 +139,9 @@ class BuzCustomerAutomation:
                 customer_name = None
                 try:
                     first_row = results_table.first
-                    customer_name = await first_row.locator('td').nth(0).text_content()
+                    # Customer name is in the first column inside an anchor tag
+                    customer_name_link = first_row.locator('td:first-child a')
+                    customer_name = await customer_name_link.text_content()
                     customer_name = customer_name.strip() if customer_name else None
                 except:
                     pass
