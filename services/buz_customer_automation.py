@@ -77,6 +77,7 @@ class BuzCustomerAutomation:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - close browser"""
+        self.result.add_step(f"DEBUG: keep_open={self.keep_open}, will {'NOT close' if self.keep_open else 'close'} browser")
         if not self.keep_open:
             if self.context:
                 await self.context.close()
@@ -85,6 +86,7 @@ class BuzCustomerAutomation:
         else:
             # Keep browser open for debugging
             # User will need to manually close it
+            self.result.add_step("Browser left open for debugging (manual close required)")
             pass
 
     async def switch_organization(self, org_name: str):
@@ -174,8 +176,11 @@ class BuzCustomerAutomation:
             await page.wait_for_timeout(1500)
 
             # Get only data rows (not headers or empty rows)
+            # DEBUG: Check what rows exist in the table
+            all_rows_count = await page.locator('table tbody tr').count()
             data_rows = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
             count = await data_rows.count()
+            self.result.add_step(f"DEBUG: Active users - Total rows={all_rows_count}, Data rows with class={count}")
 
             if count > 0:
                 self.result.add_step(f"User already exists (active) with email: {email}")
