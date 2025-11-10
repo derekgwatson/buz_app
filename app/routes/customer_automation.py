@@ -9,7 +9,7 @@ from flask import Blueprint, current_app, render_template, request, jsonify, red
 
 from services.auth import auth
 from services.job_service import create_job, update_job, get_job
-from services.database import DatabaseManager
+from services.database import create_db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +48,12 @@ def add_from_zendesk():
     job_id = uuid.uuid4().hex
     db_path = current_app.config["database"]
 
-    db = DatabaseManager(db_path)
+    db = create_db_manager(db_path)
     create_job(job_id, db=db)
 
     def run_automation():
         """Background thread to run customer automation"""
-        db = DatabaseManager(db_path)
+        db = create_db_manager(db_path)
         try:
             update_job(job_id, 5, f"Starting automation for ticket #{ticket_id}", db=db)
 
@@ -134,7 +134,7 @@ def add_from_zendesk():
 def job_status(job_id):
     """Get job status"""
     db_path = current_app.config["database"]
-    db = DatabaseManager(db_path)
+    db = create_db_manager(db_path)
     job = get_job(job_id, db=db)
 
     if not job:
