@@ -107,7 +107,7 @@ class BuzCustomerAutomation:
             self.result.add_step("Checking active users")
 
             # Type email into search field
-            search_input = page.locator('input[placeholder*="name, user name or email"]')
+            search_input = page.locator('input#search-text, input[placeholder*="Name, user name or email"]')
             await search_input.fill(email)
             await page.wait_for_timeout(1000)
 
