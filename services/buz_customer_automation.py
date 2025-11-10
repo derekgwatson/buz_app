@@ -183,14 +183,10 @@ class BuzCustomerAutomation:
             self.result.add_step(f"✓ User exists: {email}")
 
             # Extract selected group from dropdown
+            # Angular apps often don't set 'selected' attribute, so use JavaScript directly
             group_select = page.locator('select.form-control').first
-            selected_option = await group_select.locator('option[selected]').text_content()
-            if not selected_option:
-                # If no option has 'selected' attribute, get the currently selected value
-                selected_value = await group_select.evaluate('(select) => select.options[select.selectedIndex].text')
-                selected_option = selected_value
-
-            group_name = selected_option.strip() if selected_option else "Unknown"
+            group_name = await group_select.evaluate('(select) => select.options[select.selectedIndex].text')
+            group_name = group_name.strip() if group_name else "Unknown"
             self.result.add_step(f"User is in group: {group_name}")
 
             # Check if they're in a non-Customers group
