@@ -33,11 +33,28 @@ async def main(account_name: str = "default") -> None:
         print(f">>> Log in as the {account_name} user in the opened window.")
         print(">>> Approve MFA if prompted.")
         print(f">>> Make sure you're logged in to the correct account for: {account_name}")
-        # Wait until we're **back** on the app (not the identity host)
-        await page.wait_for_url(lambda url: url.startswith("https://go.buzmanager.com/"), timeout=120_000)
+
+        # Wait for login to complete - could land on org selector OR directly in app
+        print(">>> Waiting for login to complete...")
+        await page.wait_for_url(
+            lambda url: url.startswith("https://go.buzmanager.com/") or "mybuz/organizations" in url,
+            timeout=120_000
+        )
+
+        # Check if we landed on org selector
+        if "mybuz/organizations" in page.url:
+            print("\n>>> You're on the organization selector page.")
+            print(f">>> CLICK THE ORGANIZATION for {account_name} in the browser window")
+            print(">>> (This selects which org this account will always use)")
+            # Wait until they've selected an org and are in the app
+            await page.wait_for_url(lambda url: url.startswith("https://go.buzmanager.com/"), timeout=120_000)
+            print(">>> Org selected! Continuing...")
+
         # Ensure org cookie set by visiting a page inside the app
         await page.goto(START_URL)
-        # Save storage state
+        await page.wait_for_load_state('networkidle')
+
+        # Save storage state (now includes org selection)
         await ctx.storage_state(path=str(state_path))
         print(f"\n✓ Saved auth state to: {state_path.resolve()}")
         print(f"✓ This account is now configured for: {account_name}")
