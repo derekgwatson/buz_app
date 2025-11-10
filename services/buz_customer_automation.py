@@ -12,6 +12,14 @@ from services.zendesk_service import CustomerData
 logger = logging.getLogger(__name__)
 
 
+class CustomerAutomationError(Exception):
+    """Exception raised during customer automation that includes the result object with steps"""
+
+    def __init__(self, message: str, result: 'CustomerAutomationResult'):
+        super().__init__(message)
+        self.result = result
+
+
 class CustomerAutomationResult:
     """Result of customer automation workflow"""
 
@@ -142,7 +150,7 @@ class BuzCustomerAutomation:
         except:
             await page.close()
 
-    async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str]]:
+    async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str], Optional[str]]:
         """
         Check if user already exists and what group they're in.
         Uses hybrid approach:
@@ -150,10 +158,11 @@ class BuzCustomerAutomation:
         2. If exists in Customers group, check if active/inactive and reactivate if needed
 
         Returns:
-            (exists: bool, was_reactivated: bool, customer_name: Optional[str])
-
-        Raises:
-            Exception: If user exists in non-Customers group
+            (exists: bool, was_reactivated: bool, customer_name: Optional[str], error_group: Optional[str])
+            - exists: True if user exists
+            - was_reactivated: True if user was inactive and got reactivated
+            - customer_name: Name of linked customer (if available)
+            - error_group: Non-None if user exists in wrong group (name of that group)
         """
         self.result.add_step(f"Checking if user exists: {email}")
 
@@ -170,7 +179,7 @@ class BuzCustomerAutomation:
             if not email_value or not email_value.strip():
                 # User doesn't exist - email field is empty
                 self.result.add_step("User does not exist")
-                return False, False, None
+                return False, False, None, None
 
             # User exists - check their group
             self.result.add_step(f"✓ User exists: {email}")
@@ -188,9 +197,11 @@ class BuzCustomerAutomation:
 
             # Check if they're in a non-Customers group
             if "Customers" not in group_name:
-                error_msg = f"User '{email}' already exists in group '{group_name}'. Cannot create as Customer user. Please handle manually."
-                self.result.add_step(f"ERROR: {error_msg}")
-                raise Exception(error_msg)
+                error_msg = f"⚠️ User '{email}' already exists in group '{group_name}'. Cannot create as Customer user."
+                self.result.add_step(error_msg)
+                self.result.add_step("This must be handled manually - user is not in Customers group.")
+                # Return with error_group set to indicate this error condition
+                return True, False, None, group_name
 
             # STEP 2: User is in Customers group - check if active or inactive
             self.result.add_step("User is a Customer - checking if active or inactive")
@@ -223,9 +234,9 @@ class BuzCustomerAutomation:
                     first_row = results_table.first
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
-                    return True, False, customer_name.strip() if customer_name else None
+                    return True, False, customer_name.strip() if customer_name else None, None
                 except:
-                    return True, False, None
+                    return True, False, None, None
 
             # Not found in active - check deactivated users
             self.result.add_step("Not found in active Customers, checking inactive")
@@ -255,11 +266,11 @@ class BuzCustomerAutomation:
                 await page.wait_for_timeout(500)
                 self.result.add_step(f"✓ Reactivated Customer user: {email}")
 
-                return True, True, customer_name
+                return True, True, customer_name, None
 
             # User exists in Customers group but not found in list (shouldn't happen, but handle it)
             self.result.add_step("User exists as Customer but not found in user list (unusual)")
-            return True, False, None
+            return True, False, None, None
 
         finally:
             await page.close()
@@ -563,7 +574,15 @@ class BuzCustomerAutomation:
         self.result.user_email = customer_data.email
 
         # Step 1: Check if user exists first (optimization)
-        user_exists, was_reactivated, existing_customer = await self.check_user_exists(customer_data.email)
+        user_exists, was_reactivated, existing_customer, error_group = await self.check_user_exists(customer_data.email)
+
+        # Handle case where user exists in wrong group
+        if error_group:
+            self.result.add_step("=== CANNOT PROCEED - Manual intervention required ===")
+            raise CustomerAutomationError(
+                f"User '{customer_data.email}' already exists in group '{error_group}'. Cannot create as Customer user. Please handle manually.",
+                self.result
+            )
 
         if user_exists:
             self.result.user_existed = True

@@ -119,12 +119,23 @@ def add_from_zendesk():
 
         except Exception as e:
             logger.exception(f"Customer automation failed for ticket #{ticket_id}")
+
+            # Check if this is a CustomerAutomationError with result steps
+            from services.buz_customer_automation import CustomerAutomationError
+            result_steps = None
+            if isinstance(e, CustomerAutomationError) and hasattr(e, 'result'):
+                result_steps = e.result.steps
+
             update_job(
                 job_id,
                 pct=0,
                 message=f"Error: {str(e)}",
                 error=str(e),
                 done=True,
+                result={
+                    "error": str(e),
+                    "steps": result_steps if result_steps else []
+                },
                 db=db
             )
 
