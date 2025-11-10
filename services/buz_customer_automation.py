@@ -398,37 +398,27 @@ class BuzCustomerAutomation:
             self.result.add_step(f"Entering customer name with slow typing: {customer_name}")
             customer_input = page.locator('input#customers')
 
-            # Type slowly, character by character
-            # First, type first word quickly
-            words = customer_name.split()
-            first_word = words[0] if words else customer_name
-
-            for char in first_word:
+            # Type the FULL customer name slowly, character by character
+            # This is required for the Angular autocomplete to work properly
+            for char in customer_name:
                 await customer_input.type(char, delay=100)
-
-            # If there are more words, add a space slowly
-            if len(words) > 1:
-                await page.wait_for_timeout(300)
-                await customer_input.type(' ', delay=200)
-                await page.wait_for_timeout(500)
-
-                # Type a bit of the second word
-                for char in words[1][:2]:
-                    await customer_input.type(char, delay=150)
-                    await page.wait_for_timeout(200)
+                await page.wait_for_timeout(50)
 
             # Wait for dropdown to appear
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(1500)
 
-            # Look for dropdown with customer name and address
+            # Look for dropdown with customer name
             # The dropdown should show customer name and address
             dropdown_item = page.locator(f'[role="option"]:has-text("{customer_name}"), li:has-text("{customer_name}")')
 
             if await dropdown_item.count() > 0:
                 await dropdown_item.first.click()
-                self.result.add_step(f"Selected customer from autocomplete: {customer_name}")
+                self.result.add_step(f"✓ Selected customer from autocomplete: {customer_name}")
             else:
-                self.result.add_step("Warning: Could not find customer in autocomplete dropdown")
+                # Customer field is REQUIRED - cannot save without it
+                error_msg = f"Failed to find customer '{customer_name}' in autocomplete dropdown. Customer field is required."
+                self.result.add_step(f"ERROR: {error_msg}")
+                raise Exception(error_msg)
 
             # Click Save User button
             await page.click('button#save-button')
