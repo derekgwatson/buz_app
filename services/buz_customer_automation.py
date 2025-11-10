@@ -175,17 +175,15 @@ class BuzCustomerAutomation:
             await search_input.type(email, delay=50)  # Type with small delay to trigger events
             await page.wait_for_timeout(1500)
 
-            # Get only data rows (not headers or empty rows)
-            # DEBUG: Check what rows exist in the table
-            all_rows_count = await page.locator('table tbody tr').count()
-            data_rows = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
-            count = await data_rows.count()
-            self.result.add_step(f"DEBUG: Active users - Total rows={all_rows_count}, Data rows with class={count}")
+            # Check if any results exist in the table after search filters
+            # NOTE: User table uses plain tr elements (no special classes like customer table)
+            results_table = page.locator('table tbody tr')
+            count = await results_table.count()
 
             if count > 0:
                 self.result.add_step(f"User already exists (active) with email: {email}")
                 try:
-                    first_row = data_rows.first
+                    first_row = results_table.first
                     # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
@@ -198,9 +196,10 @@ class BuzCustomerAutomation:
             await status_select.select_option(label='Deactivated users')
             await page.wait_for_timeout(1500)
 
-            # Get only data rows (not headers or empty rows)
-            data_rows = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
-            count = await data_rows.count()
+            # Re-query the table after switching to deactivated
+            # NOTE: User table uses plain tr elements (no special classes like customer table)
+            results_table = page.locator('table tbody tr')
+            count = await results_table.count()
 
             if count > 0:
                 self.result.add_step(f"User found in deactivated users: {email}")
@@ -208,7 +207,7 @@ class BuzCustomerAutomation:
                 # Get customer name before reactivating
                 customer_name = None
                 try:
-                    first_row = data_rows.first
+                    first_row = results_table.first
                     # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
