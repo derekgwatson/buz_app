@@ -144,119 +144,47 @@ class BuzCustomerAutomation:
 
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str]]:
         """
-        Check if user already exists by email
-        - First checks if they exist as a CUSTOMER user (active or inactive)
-        - If found as customer and inactive, reactivates them
-        - If found in a different group, raises error for manual handling
-        - If not found anywhere, returns False so we can create them
+        Check if user already exists by navigating to the invite page with their email.
+        If user exists, Buz pre-fills the email field on the form.
+        This simple approach covers all user types (active/inactive, all groups).
 
         Returns:
             (exists: bool, was_reactivated: bool, customer_name: Optional[str])
-
-        Raises:
-            Exception: If user exists in non-customer group
+            Note: was_reactivated will always be False with this method
         """
-        self.result.add_step(f"Checking if user exists with email: {email}")
+        self.result.add_step(f"Checking if user exists: {email}")
 
         page = await self.context.new_page()
         try:
-            await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
+            # Navigate directly to invite user page with the email in URL
+            # If user exists, the form will be pre-filled with their data
+            invite_url = f"https://console1.buzmanager.com/myorg/user-management/inviteuser/{email}"
+            await page.goto(invite_url, wait_until='networkidle')
 
-            # STEP 1: Check if user exists as a CUSTOMER user specifically
-            user_type_select = page.locator('select.form-control').filter(has_text='Employees')
-            await user_type_select.select_option(label='Customers')
-            self.result.add_step("Checking Customers group")
+            # Check if the email field is filled (indicates user exists)
+            email_input = page.locator('input#text-email')
+            email_value = await email_input.input_value()
 
-            # Get the active/deactivated dropdown
-            status_select = page.locator('select.form-control').filter(has_text='Active users')
+            if email_value and email_value.strip():
+                # User exists - email field is pre-filled
+                self.result.add_step(f"✓ User exists: {email}")
 
-            # Check active customer users
-            await status_select.select_option(label='Active users')
-            search_input = page.locator('input#search-text, input[placeholder*="Name, user name or email"]')
-            await search_input.click()
-            await search_input.fill('')
-            await search_input.type(email, delay=50)
-            await page.wait_for_timeout(1500)
-
-            results_table = page.locator('table tbody tr')
-            count = await results_table.count()
-
-            if count > 0:
-                self.result.add_step(f"✓ User exists as active Customer user: {email}")
-                try:
-                    first_row = results_table.first
-                    customer_name_link = first_row.locator('td:first-child a')
-                    customer_name = await customer_name_link.text_content()
-                    return True, False, customer_name.strip() if customer_name else None
-                except:
-                    return True, False, None
-
-            # Check inactive customer users
-            self.result.add_step("Not found in active Customers, checking inactive Customers")
-            await status_select.select_option(label='Deactivated users')
-            await page.wait_for_timeout(1500)
-
-            results_table = page.locator('table tbody tr')
-            count = await results_table.count()
-
-            if count > 0:
-                self.result.add_step(f"Found as inactive Customer user: {email}")
-
-                # Get customer name before reactivating
+                # Try to get the customer name if available on the form
                 customer_name = None
                 try:
-                    first_row = results_table.first
-                    customer_name_link = first_row.locator('td:first-child a')
-                    customer_name = await customer_name_link.text_content()
-                    customer_name = customer_name.strip() if customer_name else None
+                    customer_input = page.locator('input#customers')
+                    customer_value = await customer_input.input_value()
+                    if customer_value:
+                        customer_name = customer_value.strip()
+                        self.result.add_step(f"Linked to customer: {customer_name}")
                 except:
                     pass
 
-                # Reactivate the user
-                toggle_label = page.locator(f'label[for="{email}"]')
-                await toggle_label.click()
-                await page.wait_for_timeout(500)
-                self.result.add_step(f"✓ Reactivated Customer user: {email}")
-
-                return True, True, customer_name
-
-            # STEP 2: Not found in Customers group, check ALL users
-            self.result.add_step("Not found in Customers group, checking other groups")
-
-            # Switch to All users (Employees option shows all)
-            await user_type_select.select_option(label='Employees')
-            await status_select.select_option(label='Active users')
-
-            # Search again
-            await search_input.click()
-            await search_input.fill('')
-            await search_input.type(email, delay=50)
-            await page.wait_for_timeout(1500)
-
-            results_table = page.locator('table tbody tr')
-            count = await results_table.count()
-
-            if count > 0:
-                # User exists in a non-customer group
-                try:
-                    first_row = results_table.first
-                    # Group is in the 4th column (index 3)
-                    group_cell = first_row.locator('td').nth(3)
-                    group_name = await group_cell.text_content()
-                    group_name = group_name.strip() if group_name else "Unknown"
-
-                    error_msg = f"User '{email}' already exists in group '{group_name}'. Cannot create as Customer user. Please handle manually."
-                    self.result.add_step(f"ERROR: {error_msg}")
-                    raise Exception(error_msg)
-                except Exception as e:
-                    if "Cannot create as Customer user" in str(e):
-                        raise  # Re-raise our custom error
-                    # If we couldn't get the group, just raise generic error
-                    raise Exception(f"User '{email}' exists in a non-Customer group. Cannot create as Customer user.")
-
-            # User doesn't exist anywhere - safe to create
-            self.result.add_step("User does not exist in any group")
-            return False, False, None
+                return True, False, customer_name
+            else:
+                # User doesn't exist - email field is empty
+                self.result.add_step("User does not exist")
+                return False, False, None
 
         finally:
             await page.close()
