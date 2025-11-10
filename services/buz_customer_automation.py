@@ -240,8 +240,9 @@ class BuzCustomerAutomation:
         # Click Display button (with search icon) - target by ID to avoid invisible duplicate
         await page.click('button#AdvancedDisplay')
         await page.wait_for_load_state('networkidle')
+        await page.wait_for_timeout(1500)  # Let table stabilize after search
 
-        # Check for results
+        # Check for results - re-query to get fresh DOM state
         results = page.locator('table tbody tr')
         count = await results.count()
 
@@ -274,7 +275,10 @@ class BuzCustomerAutomation:
         await email_input.fill(email)
         await page.click('button#AdvancedDisplay')
         await page.wait_for_load_state('networkidle')
+        await page.wait_for_timeout(1500)  # Let table stabilize after search
 
+        # Re-query results to get fresh DOM state
+        results = page.locator('table tbody tr')
         count = await results.count()
         if count > 0:
             first_row = results.first
