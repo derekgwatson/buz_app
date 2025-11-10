@@ -144,11 +144,17 @@ class BuzCustomerAutomation:
 
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str]]:
         """
-        Check if user already exists by email (checks both active and inactive)
-        If found in inactive users, reactivates them.
+        Check if user already exists by email
+        - First checks if they exist as a CUSTOMER user (active or inactive)
+        - If found as customer and inactive, reactivates them
+        - If found in a different group, raises error for manual handling
+        - If not found anywhere, returns False so we can create them
 
         Returns:
             (exists: bool, was_reactivated: bool, customer_name: Optional[str])
+
+        Raises:
+            Exception: If user exists in non-customer group
         """
         self.result.add_step(f"Checking if user exists with email: {email}")
 
@@ -156,79 +162,100 @@ class BuzCustomerAutomation:
         try:
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
 
-            # DON'T filter by user type - we need to check ALL users regardless of group
-            # If a user exists with this email in ANY group, we can't create a new one
-            # The user type dropdown defaults to showing all users
+            # STEP 1: Check if user exists as a CUSTOMER user specifically
+            user_type_select = page.locator('select.form-control').filter(has_text='Employees')
+            await user_type_select.select_option(label='Customers')
+            self.result.add_step("Checking Customers group")
 
             # Get the active/deactivated dropdown
             status_select = page.locator('select.form-control').filter(has_text='Active users')
 
-            # First check active users (regardless of type)
+            # Check active customer users
             await status_select.select_option(label='Active users')
-            self.result.add_step("Checking active users (all types)")
-
-            # Type email into search field (type slowly to trigger Angular events)
             search_input = page.locator('input#search-text, input[placeholder*="Name, user name or email"]')
-            await search_input.click()  # Focus the input
-            await search_input.fill('')  # Clear any existing text
-            await search_input.type(email, delay=50)  # Type with small delay to trigger events
+            await search_input.click()
+            await search_input.fill('')
+            await search_input.type(email, delay=50)
             await page.wait_for_timeout(1500)
 
-            # DEBUG: Check what's in the search field
-            search_value = await search_input.input_value()
-            self.result.add_step(f"DEBUG: Search field contains: '{search_value}'")
-
-            # Check if any results exist in the table after search filters
-            # NOTE: User table uses plain tr elements (no special classes like customer table)
             results_table = page.locator('table tbody tr')
             count = await results_table.count()
-            self.result.add_step(f"DEBUG: Found {count} rows in user table after search")
 
             if count > 0:
-                self.result.add_step(f"User already exists (active) with email: {email}")
+                self.result.add_step(f"✓ User exists as active Customer user: {email}")
                 try:
                     first_row = results_table.first
-                    # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
                     return True, False, customer_name.strip() if customer_name else None
                 except:
                     return True, False, None
 
-            # Not found in active users, check deactivated users
-            self.result.add_step("Not found in active users, checking deactivated users")
+            # Check inactive customer users
+            self.result.add_step("Not found in active Customers, checking inactive Customers")
             await status_select.select_option(label='Deactivated users')
             await page.wait_for_timeout(1500)
 
-            # Re-query the table after switching to deactivated
-            # NOTE: User table uses plain tr elements (no special classes like customer table)
             results_table = page.locator('table tbody tr')
             count = await results_table.count()
 
             if count > 0:
-                self.result.add_step(f"User found in deactivated users: {email}")
+                self.result.add_step(f"Found as inactive Customer user: {email}")
 
                 # Get customer name before reactivating
                 customer_name = None
                 try:
                     first_row = results_table.first
-                    # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
                     customer_name = customer_name.strip() if customer_name else None
                 except:
                     pass
 
-                # Reactivate the user by clicking the toggle
-                # The checkbox has id equal to the email
+                # Reactivate the user
                 toggle_label = page.locator(f'label[for="{email}"]')
                 await toggle_label.click()
                 await page.wait_for_timeout(500)
-                self.result.add_step(f"Reactivated user: {email}")
+                self.result.add_step(f"✓ Reactivated Customer user: {email}")
 
                 return True, True, customer_name
 
-            self.result.add_step("User does not exist")
+            # STEP 2: Not found in Customers group, check ALL users
+            self.result.add_step("Not found in Customers group, checking other groups")
+
+            # Switch to All users (Employees option shows all)
+            await user_type_select.select_option(label='Employees')
+            await status_select.select_option(label='Active users')
+
+            # Search again
+            await search_input.click()
+            await search_input.fill('')
+            await search_input.type(email, delay=50)
+            await page.wait_for_timeout(1500)
+
+            results_table = page.locator('table tbody tr')
+            count = await results_table.count()
+
+            if count > 0:
+                # User exists in a non-customer group
+                try:
+                    first_row = results_table.first
+                    # Group is in the 4th column (index 3)
+                    group_cell = first_row.locator('td').nth(3)
+                    group_name = await group_cell.text_content()
+                    group_name = group_name.strip() if group_name else "Unknown"
+
+                    error_msg = f"User '{email}' already exists in group '{group_name}'. Cannot create as Customer user. Please handle manually."
+                    self.result.add_step(f"ERROR: {error_msg}")
+                    raise Exception(error_msg)
+                except Exception as e:
+                    if "Cannot create as Customer user" in str(e):
+                        raise  # Re-raise our custom error
+                    # If we couldn't get the group, just raise generic error
+                    raise Exception(f"User '{email}' exists in a non-Customer group. Cannot create as Customer user.")
+
+            # User doesn't exist anywhere - safe to create
+            self.result.add_step("User does not exist in any group")
             return False, False, None
 
         finally:
