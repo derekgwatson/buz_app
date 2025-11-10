@@ -32,9 +32,11 @@ def add_from_zendesk():
     Expects:
         ticket_id: Zendesk ticket number
         headless: (optional) Run browser in headless mode (default: true)
+        keep_open: (optional) Keep browser open after completion (default: false)
     """
     ticket_id = request.form.get("ticket_id", "").strip()
     headless = request.form.get("headless", "false").lower() in ("true", "1", "yes")
+    keep_open = request.form.get("keep_open", "false").lower() in ("true", "1", "yes")
 
     if not ticket_id:
         return jsonify({"error": "Ticket ID is required"}), 400
@@ -72,6 +74,7 @@ def add_from_zendesk():
                     add_customer_from_zendesk_ticket(
                         ticket_id=ticket_id,
                         headless=headless,
+                        keep_open=keep_open,
                         job_update_callback=job_callback
                     )
                 )

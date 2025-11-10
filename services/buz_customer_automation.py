@@ -53,8 +53,9 @@ class BuzCustomerAutomation:
     CUSTOMERS_URL = "https://go.buzmanager.com/Contacts/Customers"
     ORG_SELECTOR_URL = "https://console.buzmanager.com/mybuz/organizations"
 
-    def __init__(self, headless: bool = True):
+    def __init__(self, headless: bool = True, keep_open: bool = False):
         self.headless = headless
+        self.keep_open = keep_open
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.result = CustomerAutomationResult()
@@ -76,10 +77,15 @@ class BuzCustomerAutomation:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - close browser"""
-        if self.context:
-            await self.context.close()
-        if self.browser:
-            await self.browser.close()
+        if not self.keep_open:
+            if self.context:
+                await self.context.close()
+            if self.browser:
+                await self.browser.close()
+        else:
+            # Keep browser open for debugging
+            # User will need to manually close it
+            pass
 
     async def switch_organization(self, org_name: str):
         """
@@ -537,6 +543,7 @@ class BuzCustomerAutomation:
 async def add_customer_from_zendesk_ticket(
     ticket_id: int,
     headless: bool = True,
+    keep_open: bool = False,
     job_update_callback=None
 ) -> CustomerAutomationResult:
     """
@@ -545,6 +552,7 @@ async def add_customer_from_zendesk_ticket(
     Args:
         ticket_id: Zendesk ticket ID
         headless: Run browser in headless mode
+        keep_open: Keep browser open after completion (for debugging)
         job_update_callback: Optional callback(pct, message) for job progress
 
     Returns:
@@ -566,7 +574,7 @@ async def add_customer_from_zendesk_ticket(
     update(20, f"Ticket parsed. Customer: {customer_data.company_name}, Instances: {', '.join(customer_data.buz_instances)}")
 
     # Process each Buz instance
-    async with BuzCustomerAutomation(headless=headless) as automation:
+    async with BuzCustomerAutomation(headless=headless, keep_open=keep_open) as automation:
         # Wrap the automation to provide progress updates
         original_add_step = automation.result.add_step
 
