@@ -111,8 +111,8 @@ class BuzCustomerAutomation:
             await search_input.fill(email)
             await page.wait_for_timeout(1000)
 
-            # Check if any results exist in the table
-            results_table = page.locator('table tbody tr')
+            # Check if any results exist in the table (only visible rows)
+            results_table = page.locator('table tbody tr:visible')
             count = await results_table.count()
 
             if count > 0:
