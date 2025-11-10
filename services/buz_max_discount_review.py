@@ -195,18 +195,26 @@ class BuzMaxDiscountReview:
 
         page = await self.context.new_page()
         try:
-            # Navigate to export/import page (with extended timeout)
-            try:
-                await page.goto(self.EXPORT_IMPORT_URL, wait_until='networkidle', timeout=60000)
-            except Exception as e:
-                # If already on the page or navigation fails, continue
-                self.result.add_step(f"Navigation issue (continuing): {str(e)[:100]}")
-                # Check if we're at least on the right domain
-                if "buzmanager.com" not in page.url:
-                    raise
+            # Navigate to export/import page if not already there
+            current_url = page.url
+            if self.EXPORT_IMPORT_URL not in current_url:
+                self.result.add_step(f"Navigating to export page...")
+                try:
+                    # Use 'domcontentloaded' instead of 'networkidle' - it's much faster and more reliable
+                    await page.goto(self.EXPORT_IMPORT_URL, wait_until='domcontentloaded', timeout=30000)
+                except Exception as e:
+                    # If navigation fails, check if we ended up on the right domain anyway
+                    self.result.add_step(f"Navigation timeout (this is usually fine): {str(e)[:80]}")
+                    if "buzmanager.com" not in page.url:
+                        raise
 
-            # Handle org selector if present
-            await self.handle_org_selector_if_present(page, self.EXPORT_IMPORT_URL)
+                # Handle org selector if present
+                await self.handle_org_selector_if_present(page, self.EXPORT_IMPORT_URL)
+            else:
+                self.result.add_step("Already on export page")
+
+            # Wait for the export link to be available
+            await page.wait_for_selector('a[href="#exportModal"]', state='visible', timeout=10000)
 
             # Click the download link to open modal
             download_link = page.locator('a[href="#exportModal"]')
