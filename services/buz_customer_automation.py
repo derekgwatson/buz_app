@@ -247,8 +247,8 @@ class BuzCustomerAutomation:
         has_empty_row = await empty_row.count() > 0
 
         if not has_empty_row:
-            # Get actual data rows (exclude header and empty rows)
-            results = page.locator('table tbody tr').filter(has_not=page.locator('.dxgvHeader_Bootstrap, .dxgvEmptyDataRow_Bootstrap'))
+            # Get actual data rows (rows with class dxgvDataRow_Bootstrap)
+            results = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
             count = await results.count()
             self.result.add_step(f"Found {count} customer(s) by company name")
 
@@ -258,14 +258,17 @@ class BuzCustomerAutomation:
                     row = results.nth(i)
                     row_text = await row.text_content()
                     if email.lower() in row_text.lower():
-                        # Get customer name from 2nd column
-                        customer_name = await row.locator('td').nth(1).text_content()
+                        # Get customer name from 3rd column (index 2) - it's inside an <a> tag
+                        customer_name_link = row.locator('td').nth(2).locator('a')
+                        customer_name = await customer_name_link.text_content()
                         self.result.add_step(f"Matched customer by email: {customer_name.strip()}")
                         return customer_name.strip()
 
             # Single result or no email match - use first result
             first_row = results.first
-            customer_name = await first_row.locator('td').nth(1).text_content()
+            # Customer name is in 3rd column (index 2) inside an <a> tag
+            customer_name_link = first_row.locator('td').nth(2).locator('a')
+            customer_name = await customer_name_link.text_content()
             self.result.add_step(f"Using customer: {customer_name.strip()}")
             return customer_name.strip()
 
@@ -285,10 +288,12 @@ class BuzCustomerAutomation:
         has_empty_row = await empty_row.count() > 0
 
         if not has_empty_row:
-            # Get actual data rows (exclude header and empty rows)
-            results = page.locator('table tbody tr').filter(has_not=page.locator('.dxgvHeader_Bootstrap, .dxgvEmptyDataRow_Bootstrap'))
+            # Get actual data rows (rows with class dxgvDataRow_Bootstrap)
+            results = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
             first_row = results.first
-            customer_name = await first_row.locator('td').nth(1).text_content()
+            # Customer name is in 3rd column (index 2) inside an <a> tag
+            customer_name_link = first_row.locator('td').nth(2).locator('a')
+            customer_name = await customer_name_link.text_content()
             self.result.add_step(f"Found customer by email: {customer_name.strip()}")
             return customer_name.strip()
 
