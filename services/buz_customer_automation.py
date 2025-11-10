@@ -240,13 +240,19 @@ class BuzCustomerAutomation:
         # Click Display button (with search icon) - target by ID to avoid invisible duplicate
         await page.click('button#AdvancedDisplay')
         await page.wait_for_load_state('networkidle')
-        await page.wait_for_timeout(1500)  # Let table stabilize after search
+
+        # Wait for search to complete - look for either results or "no results" message
+        # The table might show old results initially, so wait a bit for it to refresh
+        await page.wait_for_timeout(2000)
 
         # Check for results - re-query to get fresh DOM state
         results = page.locator('table tbody tr')
         count = await results.count()
 
-        if count > 0:
+        # Check if there's a "no results" or empty message
+        no_results = await page.locator('text=/no.*found|no.*results/i').count()
+
+        if count > 0 and no_results == 0:
             self.result.add_step(f"Found {count} customer(s) by company name")
 
             # If multiple results, try to match by email
@@ -275,12 +281,16 @@ class BuzCustomerAutomation:
         await email_input.fill(email)
         await page.click('button#AdvancedDisplay')
         await page.wait_for_load_state('networkidle')
-        await page.wait_for_timeout(1500)  # Let table stabilize after search
+        await page.wait_for_timeout(2000)  # Let table stabilize after search
 
         # Re-query results to get fresh DOM state
         results = page.locator('table tbody tr')
         count = await results.count()
-        if count > 0:
+
+        # Check for "no results" message
+        no_results = await page.locator('text=/no.*found|no.*results/i').count()
+
+        if count > 0 and no_results == 0:
             first_row = results.first
             customer_name = await first_row.locator('td').nth(1).text_content()
             self.result.add_step(f"Found customer by email: {customer_name.strip()}")
