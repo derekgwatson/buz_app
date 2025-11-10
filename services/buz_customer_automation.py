@@ -17,6 +17,7 @@ class CustomerAutomationResult:
 
     def __init__(self):
         self.user_existed = False
+        self.user_reactivated = False
         self.customer_existed = False
         self.customer_created = False
         self.user_created = False
@@ -33,6 +34,7 @@ class CustomerAutomationResult:
         """Convert result to dictionary"""
         return {
             'user_existed': self.user_existed,
+            'user_reactivated': self.user_reactivated,
             'customer_existed': self.customer_existed,
             'customer_created': self.customer_created,
             'user_created': self.user_created,
@@ -77,12 +79,13 @@ class BuzCustomerAutomation:
         if self.browser:
             await self.browser.close()
 
-    async def check_user_exists(self, email: str) -> tuple[bool, Optional[str]]:
+    async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str]]:
         """
-        Check if user already exists by email
+        Check if user already exists by email (checks both active and inactive)
+        If found in inactive users, reactivates them.
 
         Returns:
-            (exists: bool, customer_name: Optional[str])
+            (exists: bool, was_reactivated: bool, customer_name: Optional[str])
         """
         self.result.add_step(f"Checking if user exists with email: {email}")
 
@@ -91,18 +94,21 @@ class BuzCustomerAutomation:
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
 
             # Select 'customers' from the dropdown (Angular select with special value binding)
-            # The dropdown has options with values like "0: 0" (Employees) and "1: 5" (Customers)
             # There are 2 selects, we want the one with Employees/Customers (not Active/Deactivated)
-            select_element = page.locator('select.form-control').filter(has_text='Employees')
-            await select_element.select_option(label='Customers')
+            user_type_select = page.locator('select.form-control').filter(has_text='Employees')
+            await user_type_select.select_option(label='Customers')
             self.result.add_step("Selected 'Customers' user type")
+
+            # Get the active/deactivated dropdown
+            status_select = page.locator('select.form-control').filter(has_text='Active users')
+
+            # First check active users
+            await status_select.select_option(label='Active users')
+            self.result.add_step("Checking active users")
 
             # Type email into search field
             search_input = page.locator('input[placeholder*="name, user name or email"]')
             await search_input.fill(email)
-            self.result.add_step(f"Searching for email: {email}")
-
-            # Wait for results to filter
             await page.wait_for_timeout(1000)
 
             # Check if any results exist in the table
@@ -110,19 +116,43 @@ class BuzCustomerAutomation:
             count = await results_table.count()
 
             if count > 0:
-                self.result.add_step(f"User already exists with email: {email}")
-                # Try to get customer name from the results
+                self.result.add_step(f"User already exists (active) with email: {email}")
+                try:
+                    first_row = results_table.first
+                    customer_name = await first_row.locator('td').nth(0).text_content()
+                    return True, False, customer_name.strip() if customer_name else None
+                except:
+                    return True, False, None
+
+            # Not found in active users, check deactivated users
+            self.result.add_step("Not found in active users, checking deactivated users")
+            await status_select.select_option(label='Deactivated users')
+            await page.wait_for_timeout(1000)
+
+            count = await results_table.count()
+            if count > 0:
+                self.result.add_step(f"User found in deactivated users: {email}")
+
+                # Get customer name before reactivating
                 customer_name = None
                 try:
-                    # Customer name is typically in one of the columns
                     first_row = results_table.first
-                    customer_name = await first_row.locator('td').nth(2).text_content()
+                    customer_name = await first_row.locator('td').nth(0).text_content()
+                    customer_name = customer_name.strip() if customer_name else None
                 except:
                     pass
-                return True, customer_name
-            else:
-                self.result.add_step("User does not exist")
-                return False, None
+
+                # Reactivate the user by clicking the toggle
+                # The checkbox has id equal to the email
+                toggle_label = page.locator(f'label[for="{email}"]')
+                await toggle_label.click()
+                await page.wait_for_timeout(500)
+                self.result.add_step(f"Reactivated user: {email}")
+
+                return True, True, customer_name
+
+            self.result.add_step("User does not exist")
+            return False, False, None
 
         finally:
             await page.close()
@@ -348,12 +378,16 @@ class BuzCustomerAutomation:
         self.result.user_email = customer_data.email
 
         # Step 1: Check if user exists first (optimization)
-        user_exists, existing_customer = await self.check_user_exists(customer_data.email)
+        user_exists, was_reactivated, existing_customer = await self.check_user_exists(customer_data.email)
 
         if user_exists:
             self.result.user_existed = True
+            self.result.user_reactivated = was_reactivated
             self.result.customer_name = existing_customer or customer_data.company_name
-            self.result.add_step(f"✓ User already exists. Nothing to do.")
+            if was_reactivated:
+                self.result.add_step(f"✓ User existed (inactive) and was reactivated. Done.")
+            else:
+                self.result.add_step(f"✓ User already exists (active). Nothing to do.")
             return self.result
 
         # Step 2 & 3: Search for customer, create if needed

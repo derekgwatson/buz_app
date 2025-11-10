@@ -83,7 +83,10 @@ def add_from_zendesk():
             summary_lines = []
 
             if result.user_existed:
-                summary_lines.append(f"✓ User already exists: {result.user_email}")
+                if result.user_reactivated:
+                    summary_lines.append(f"✓ User was reactivated: {result.user_email}")
+                else:
+                    summary_lines.append(f"✓ User already exists: {result.user_email}")
             else:
                 if result.customer_existed:
                     summary_lines.append(f"✓ Found existing customer: {result.customer_name}")
