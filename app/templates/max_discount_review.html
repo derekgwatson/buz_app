@@ -81,20 +81,20 @@
   }
 
   #resultSection.error {
-    background: #fef2f2;
-    border: 1px solid #fca5a5;
+    background: #3d1a1a;
+    border: 1px solid #dc2626;
     border-radius: 0.5rem;
     padding: 1rem;
-    color: #991b1b;
+    color: #fca5a5;
   }
 
   .result-summary {
     margin-bottom: 1rem;
     padding: 1rem;
-    background: #f0fdf4;
-    border: 1px solid #86efac;
+    background: #1e3a1e;
+    border: 1px solid #22c55e;
     border-radius: 0.5rem;
-    color: #065f46;
+    color: #86efac;
     white-space: pre-line;
   }
 
@@ -108,16 +108,17 @@
   .comparison-table table {
     width: 100%;
     border-collapse: collapse;
-    background: #fff;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    background: #2a2a2a;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
   }
 
   .comparison-table th {
-    background: #f9fafb;
+    background: #1f1f1f;
     padding: 0.75rem;
     text-align: left;
     font-weight: 600;
-    border-bottom: 2px solid #e5e7eb;
+    color: #e0e0e0;
+    border-bottom: 2px solid #444;
     position: sticky;
     top: 0;
     z-index: 10;
@@ -125,17 +126,18 @@
 
   .comparison-table td {
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid #444;
+    color: #e0e0e0;
   }
 
   .comparison-table tr:hover {
-    background: #f9fafb;
+    background: #353535;
   }
 
   .comparison-table .code-col {
     font-family: monospace;
     font-weight: 500;
-    color: #1f2937;
+    color: #66d9ef;
   }
 
   .comparison-table .desc-col {
@@ -151,38 +153,42 @@
   }
 
   .comparison-table .discount-match {
-    color: #065f46;
-    background: #d1fae5;
+    color: #86efac;
+    background: #1e3a1e;
   }
 
   .comparison-table .discount-mismatch {
-    color: #991b1b;
-    background: #fee2e2;
+    color: #fca5a5;
+    background: #3d1a1a;
   }
 
   .comparison-table .discount-empty {
-    color: #6b7280;
+    color: #9ca3af;
   }
 
   .filter-bar {
     margin-top: 1rem;
     padding: 1rem;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
+    background: #2a2a2a;
+    border: 1px solid #444;
     border-radius: 0.5rem;
+    color: #e0e0e0;
   }
 
   .filter-bar input {
     padding: 0.5rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid #555;
     border-radius: 0.375rem;
     width: 300px;
     max-width: 100%;
+    background: #333;
+    color: #e0e0e0;
   }
 
   .filter-bar label {
     margin-right: 0.5rem;
     font-weight: 500;
+    color: #e0e0e0;
   }
 
   .stats {
@@ -194,19 +200,19 @@
   .stat-card {
     flex: 1;
     padding: 1rem;
-    background: #fff;
-    border: 1px solid #e5e7eb;
+    background: #2a2a2a;
+    border: 1px solid #444;
     border-radius: 0.5rem;
   }
 
   .stat-card .stat-value {
     font-size: 2rem;
     font-weight: 700;
-    color: #2563eb;
+    color: #66d9ef;
   }
 
   .stat-card .stat-label {
-    color: #6b7280;
+    color: #9ca3af;
     font-size: 0.875rem;
   }
 </style>
