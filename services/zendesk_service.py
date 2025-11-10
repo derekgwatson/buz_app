@@ -46,15 +46,23 @@ class ZendeskService:
         self.subdomain = subdomain or os.getenv('ZENDESK_SUBDOMAIN', 'watsonblinds')
         self.email = email or os.getenv('ZENDESK_EMAIL')
         self.token = token or os.getenv('ZENDESK_API_TOKEN')
+        self._client = None
 
-        if not self.email or not self.token:
-            raise ValueError("Zendesk credentials not provided. Set ZENDESK_EMAIL and ZENDESK_API_TOKEN")
-
-        self.client = Zenpy(
-            subdomain=self.subdomain,
-            email=self.email,
-            token=self.token
-        )
+    @property
+    def client(self):
+        """Lazy initialization of Zenpy client"""
+        if self._client is None:
+            if not self.email or not self.token:
+                raise ValueError(
+                    "Zendesk credentials not provided. "
+                    "Set ZENDESK_EMAIL and ZENDESK_API_TOKEN environment variables."
+                )
+            self._client = Zenpy(
+                subdomain=self.subdomain,
+                email=self.email,
+                token=self.token
+            )
+        return self._client
 
     def get_ticket(self, ticket_id: int) -> Ticket:
         """Fetch a ticket by ID"""
