@@ -436,16 +436,22 @@ class BuzCustomerAutomation:
         address_input = page.locator('input#BillingDetails_FullAddress')
         await address_input.fill(customer_data.address)
 
-        # Wait for Google Places autocomplete to show suggestions
+        # Wait for Google Places autocomplete dropdown to appear
+        # Google Places uses .pac-container for dropdown and .pac-item for suggestions
+        self.result.add_step("Waiting for Google Places suggestions...")
         await page.wait_for_timeout(1500)
 
-        # Use keyboard navigation to select first suggestion from Google Places
-        # Google Places dropdown doesn't use standard HTML, so use keyboard instead
-        await address_input.press('ArrowDown')  # Select first suggestion
-        await page.wait_for_timeout(300)
-        await address_input.press('Enter')      # Confirm selection
-        await page.wait_for_timeout(500)        # Wait for Google Places to populate fields
-        self.result.add_step("Selected address from Google Places autocomplete")
+        # Wait for and click the first Google Places suggestion
+        first_suggestion = page.locator('.pac-container .pac-item').first
+        try:
+            await first_suggestion.wait_for(state='visible', timeout=5000)
+            await first_suggestion.click()
+            # Wait for Google Places place_changed event to populate hidden fields (lat/lng, etc)
+            await page.wait_for_timeout(1000)
+            self.result.add_step("✓ Selected address from Google Places autocomplete")
+        except Exception as e:
+            self.result.add_step(f"⚠️  Could not select from Google Places dropdown: {str(e)}")
+            self.result.add_step("Continuing with typed address (lat/lng may be missing)...")
 
         # Pause for manual inspection if debugging
         if self.keep_open:
