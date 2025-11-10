@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from dataclasses import dataclass
 from zenpy import Zenpy
 from zenpy.lib.api_objects import Ticket
@@ -17,6 +17,7 @@ class CustomerData:
     company_name: str
     address: str
     email: str
+    buz_instances: List[str]  # e.g., ["Watson Blinds", "Designer Drapes"]
     phone: Optional[str] = None
     discount_group: Optional[str] = None
     notes: Optional[str] = None
@@ -91,6 +92,7 @@ class ZendeskService:
             'last_name': r'Last\s+Name[:\s]+(.+)',
             'company_name': r'Company\s+Name[:\s]+(.+)',
             'address': r'Company\s+Address[:\s]+(.+)',
+            'buz_instances_raw': r'Which\s+Buz\s+instance\(s\)\?[:\s]+(.+)',
             'discount_group': r'Discount\s+group[:\s]+(.+)',
             'notes': r'Notes[:\s]+(.+)',
         }
@@ -107,6 +109,13 @@ class ZendeskService:
             phone_match = re.search(r'(?:phone|mobile|number)[:\s]*(\d[\d\s\-\(\)]+\d)', fields['notes'], re.IGNORECASE)
             if phone_match:
                 phone = phone_match.group(1).strip()
+
+        # Parse Buz instances (comma-separated list)
+        buz_instances = []
+        if 'buz_instances_raw' in fields:
+            # Split by comma and clean up
+            raw_instances = fields['buz_instances_raw'].split(',')
+            buz_instances = [inst.strip() for inst in raw_instances if inst.strip()]
 
         # Get email from ticket subject (format: "Customer onboard: email@example.com")
         email = None
@@ -127,12 +136,18 @@ class ZendeskService:
                 f"Got subject: '{subject}'"
             )
 
+        if not buz_instances:
+            raise ValueError(
+                "No Buz instances specified in ticket. Expected 'Which Buz instance(s)?: Watson Blinds' or similar."
+            )
+
         return CustomerData(
             first_name=fields['first_name'],
             last_name=fields['last_name'],
             company_name=fields['company_name'],
             address=fields['address'],
             email=email,
+            buz_instances=buz_instances,
             phone=phone,
             discount_group=fields.get('discount_group'),
             notes=fields.get('notes')

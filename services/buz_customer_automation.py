@@ -50,6 +50,7 @@ class BuzCustomerAutomation:
     STORAGE_STATE_PATH = Path(".secrets/buz_storage_state.json")
     USER_MANAGEMENT_URL = "https://console1.buzmanager.com/myorg/user-management/users"
     CUSTOMERS_URL = "https://go.buzmanager.com/Contacts/Customers"
+    ORG_SELECTOR_URL = "https://console.buzmanager.com/mybuz/organizations"
 
     def __init__(self, headless: bool = True):
         self.headless = headless
@@ -78,6 +79,29 @@ class BuzCustomerAutomation:
             await self.context.close()
         if self.browser:
             await self.browser.close()
+
+    async def switch_organization(self, org_name: str):
+        """
+        Switch to a specific Buz organization
+
+        Args:
+            org_name: Name of the organization (e.g., "Watson Blinds", "Designer Drapes")
+        """
+        self.result.add_step(f"Switching to Buz instance: {org_name}")
+
+        page = await self.context.new_page()
+        try:
+            await page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
+
+            # Click the organization link
+            org_link = page.locator(f'a:has-text("{org_name}")')
+            await org_link.click()
+            await page.wait_for_load_state('networkidle')
+
+            self.result.add_step(f"✓ Switched to: {org_name}")
+
+        finally:
+            await page.close()
 
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str]]:
         """
@@ -459,8 +483,9 @@ async def add_customer_from_zendesk_ticket(
     zd_service = ZendeskService()
     customer_data = zd_service.get_customer_data(ticket_id)
 
-    update(20, f"Ticket parsed. Customer: {customer_data.company_name}")
+    update(20, f"Ticket parsed. Customer: {customer_data.company_name}, Instances: {', '.join(customer_data.buz_instances)}")
 
+    # Process each Buz instance
     async with BuzCustomerAutomation(headless=headless) as automation:
         # Wrap the automation to provide progress updates
         original_add_step = automation.result.add_step
@@ -474,7 +499,25 @@ async def add_customer_from_zendesk_ticket(
 
         automation.result.add_step = wrapped_add_step
 
-        result = await automation.add_customer_from_ticket(customer_data)
+        # Loop through each instance
+        for idx, instance in enumerate(customer_data.buz_instances):
+            if idx > 0:
+                # Reset some flags for subsequent instances
+                automation.result.user_existed = False
+                automation.result.user_reactivated = False
+                automation.result.customer_existed = False
+                automation.result.customer_created = False
+                automation.result.user_created = False
+
+            # Switch to the instance
+            await automation.switch_organization(instance)
+
+            # Run the workflow for this instance
+            result = await automation.add_customer_from_ticket(customer_data)
+
+            # If processing multiple instances, continue to the next one
+            if idx < len(customer_data.buz_instances) - 1:
+                automation.result.add_step(f"--- Moving to next instance ---")
 
     update(100, "Complete")
     return result
