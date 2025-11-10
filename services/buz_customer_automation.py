@@ -93,14 +93,43 @@ class BuzCustomerAutomation:
         try:
             await page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
 
-            # Click the organization link
-            org_link = page.locator(f'a:has-text("{org_name}")')
+            # Click the organization link in the table (not the heading)
+            # The table cell contains the org name, so target the link within a table cell
+            org_link = page.locator(f'td a:has-text("{org_name}")')
             await org_link.click()
             await page.wait_for_load_state('networkidle')
 
             self.result.add_step(f"✓ Switched to: {org_name}")
 
         finally:
+            await page.close()
+
+    async def ensure_correct_organization(self, org_name: str):
+        """
+        Check if we're on the org selector page and switch to correct org if needed
+
+        Args:
+            org_name: Name of the organization to ensure we're in
+        """
+        page = await self.context.new_page()
+        try:
+            await page.goto("https://console1.buzmanager.com/myorg/user-management/users", wait_until='networkidle')
+
+            # Check if we ended up on the organization selector page
+            current_url = page.url
+            if "mybuz/organizations" in current_url:
+                self.result.add_step(f"Detected organization selector page, switching to {org_name}")
+                await page.close()
+                await self.switch_organization(org_name)
+            else:
+                # We're already in an org, check if it's the right one
+                # The page title or header should show the current org
+                # For now, just assume we might need to switch
+                self.result.add_step(f"Ensuring we're in {org_name} instance")
+                await page.close()
+                await self.switch_organization(org_name)
+
+        except:
             await page.close()
 
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str]]:
@@ -510,7 +539,12 @@ async def add_customer_from_zendesk_ticket(
                 automation.result.user_created = False
 
             # Switch to the instance
-            await automation.switch_organization(instance)
+            if idx == 0:
+                # First instance: ensure we're in the right org (handles landing on org selector)
+                await automation.ensure_correct_organization(instance)
+            else:
+                # Subsequent instances: just switch normally
+                await automation.switch_organization(instance)
 
             # Run the workflow for this instance
             result = await automation.add_customer_from_ticket(customer_data)
