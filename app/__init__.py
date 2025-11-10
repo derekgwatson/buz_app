@@ -8,7 +8,7 @@ from config import ProductionConfig
 from services.database import init_db_command, create_db_manager
 from services.config_service import ConfigManager
 from pathlib import Path
-from app.routes import main_routes_bp, fabrics_bp, discount_groups_bp, lead_times_bp, excel_tools_bp, customer_automation_bp
+from app.routes import main_routes_bp, fabrics_bp, discount_groups_bp, lead_times_bp, excel_tools_bp, customer_automation_bp, max_discount_review_bp
 
 
 load_dotenv()
@@ -175,6 +175,7 @@ def create_app(config_name: str = ""):
     app.register_blueprint(lead_times_bp)
     app.register_blueprint(excel_tools_bp)
     app.register_blueprint(customer_automation_bp)
+    app.register_blueprint(max_discount_review_bp)
 
     # CLI
     app.cli.add_command(init_db_command)  # type: ignore

@@ -1,0 +1,514 @@
+{% extends "layout.html" %}
+{% block title %}Max Discount Review{% endblock %}
+
+{% block head %}
+<style>
+  .ok { color: #0a7f36; }
+  .warn { color: #b54708; }
+  .err { color: #b42318; }
+  .info { color: #026aa2; }
+  code { background: #f6f8fa; padding: 2px 6px; border-radius: 4px; }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 500;
+  }
+
+  .form-group input[type="checkbox"] {
+    margin-right: 0.5rem;
+  }
+
+  .btn {
+    padding: 0.6rem 1.2rem;
+    border: 0;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #1d4ed8;
+  }
+
+  .btn-primary:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  #progressSection {
+    display: none;
+    margin-top: 2rem;
+  }
+
+  #progressBar {
+    width: 100%;
+    max-width: 600px;
+    height: 30px;
+  }
+
+  #progressPct {
+    margin-top: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+  }
+
+  #progressLog {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  #resultSection {
+    display: none;
+    margin-top: 2rem;
+  }
+
+  #resultSection.error {
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    color: #991b1b;
+  }
+
+  .result-summary {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 0.5rem;
+    color: #065f46;
+    white-space: pre-line;
+  }
+
+  /* Comparison table */
+  .comparison-table {
+    margin-top: 1.5rem;
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .comparison-table table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .comparison-table th {
+    background: #f9fafb;
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid #e5e7eb;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .comparison-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .comparison-table tr:hover {
+    background: #f9fafb;
+  }
+
+  .comparison-table .code-col {
+    font-family: monospace;
+    font-weight: 500;
+    color: #1f2937;
+  }
+
+  .comparison-table .desc-col {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .comparison-table .discount-col {
+    text-align: right;
+    font-family: monospace;
+  }
+
+  .comparison-table .discount-match {
+    color: #065f46;
+    background: #d1fae5;
+  }
+
+  .comparison-table .discount-mismatch {
+    color: #991b1b;
+    background: #fee2e2;
+  }
+
+  .comparison-table .discount-empty {
+    color: #6b7280;
+  }
+
+  .filter-bar {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+  }
+
+  .filter-bar input {
+    padding: 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    width: 300px;
+    max-width: 100%;
+  }
+
+  .filter-bar label {
+    margin-right: 0.5rem;
+    font-weight: 500;
+  }
+
+  .stats {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  .stat-card {
+    flex: 1;
+    padding: 1rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+  }
+
+  .stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #2563eb;
+  }
+
+  .stat-card .stat-label {
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>Max Discount Review</h2>
+
+<p class="info">
+  Review and compare maximum discount percentages across all Buz organizations.
+  This tool will download the current inventory group settings from each org and display them side-by-side.
+</p>
+
+<form id="reviewForm">
+  <div class="form-group">
+    <label>
+      <input type="checkbox" id="headless" name="headless" checked>
+      Run in headless mode (no browser window)
+    </label>
+  </div>
+
+  <button type="submit" class="btn btn-primary" id="submitBtn">Start Review</button>
+</form>
+
+<div id="progressSection">
+  <h3>Progress</h3>
+  <progress id="progressBar" max="100" value="0"></progress>
+  <div id="progressPct">0%</div>
+  <pre id="progressLog"></pre>
+</div>
+
+<div id="resultSection">
+  <h3 id="resultTitle">Results</h3>
+
+  <div id="errorSection" style="display: none;">
+    <div class="result-summary error" id="errorMessage"></div>
+  </div>
+
+  <div id="successSection" style="display: none;">
+    <div class="result-summary" id="resultSummary"></div>
+
+    <div class="stats" id="statsSection"></div>
+
+    <div class="filter-bar">
+      <label for="searchInput">Filter products:</label>
+      <input type="text" id="searchInput" placeholder="Search by code or description...">
+      <label style="margin-left: 1rem;">
+        <input type="checkbox" id="showMismatchOnly">
+        Show mismatches only
+      </label>
+    </div>
+
+    <div class="comparison-table">
+      <table id="comparisonTable">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Description</th>
+            <!-- Org columns will be added dynamically -->
+          </tr>
+        </thead>
+        <tbody id="comparisonTableBody">
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentJobId = null;
+let poller = null;
+let comparisonData = null;
+
+const form = document.getElementById('reviewForm');
+const submitBtn = document.getElementById('submitBtn');
+const progressSection = document.getElementById('progressSection');
+const progressBar = document.getElementById('progressBar');
+const progressPct = document.getElementById('progressPct');
+const progressLog = document.getElementById('progressLog');
+const resultSection = document.getElementById('resultSection');
+const errorSection = document.getElementById('errorSection');
+const successSection = document.getElementById('successSection');
+const errorMessage = document.getElementById('errorMessage');
+const resultSummary = document.getElementById('resultSummary');
+const statsSection = document.getElementById('statsSection');
+const comparisonTable = document.getElementById('comparisonTable');
+const comparisonTableBody = document.getElementById('comparisonTableBody');
+const searchInput = document.getElementById('searchInput');
+const showMismatchOnly = document.getElementById('showMismatchOnly');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const headless = document.getElementById('headless').checked;
+
+  // Disable form
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Starting...';
+
+  // Hide previous results
+  resultSection.style.display = 'none';
+  progressSection.style.display = 'block';
+  progressBar.value = 0;
+  progressPct.textContent = '0%';
+  progressLog.textContent = '';
+
+  try {
+    const formData = new FormData();
+    formData.append('headless', headless ? 'true' : 'false');
+
+    const response = await fetch('{{ url_for("max_discount_review.start_review") }}', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to start review');
+    }
+
+    currentJobId = data.job_id;
+    startPolling();
+
+  } catch (error) {
+    alert('Error: ' + error.message);
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Start Review';
+    progressSection.style.display = 'none';
+  }
+});
+
+function startPolling() {
+  if (poller) clearInterval(poller);
+
+  poller = setInterval(async () => {
+    try {
+      const res = await fetch(
+        `{{ url_for("max_discount_review.job_status", job_id="JOB_ID") }}`.replace('JOB_ID', currentJobId) +
+        `?t=${Date.now()}`,
+        { cache: 'no-store' }
+      );
+
+      const job = await res.json();
+      updateProgress(job);
+
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'aborted') {
+        clearInterval(poller);
+        showResult(job);
+      }
+
+    } catch (e) {
+      console.error('Polling error:', e);
+    }
+  }, 500);
+}
+
+function updateProgress(job) {
+  const pct = job.pct || 0;
+  progressBar.value = pct;
+  progressPct.textContent = pct + '%';
+
+  if (job.log && job.log.length > 0) {
+    progressLog.textContent = job.log.join('\n');
+    progressLog.scrollTop = progressLog.scrollHeight;
+  }
+}
+
+function showResult(job) {
+  // Re-enable form
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Start Review';
+
+  // Show result section
+  resultSection.style.display = 'block';
+
+  if (job.status === 'failed') {
+    errorSection.style.display = 'block';
+    successSection.style.display = 'none';
+    errorMessage.textContent = job.error || 'Unknown error';
+  } else {
+    errorSection.style.display = 'none';
+    successSection.style.display = 'block';
+
+    const result = job.result || {};
+    resultSummary.textContent = result.summary || 'Review completed';
+
+    if (result.comparison) {
+      comparisonData = result.comparison;
+      renderComparison(comparisonData);
+    }
+  }
+}
+
+function renderComparison(comparison) {
+  // Render stats
+  const summary = comparison.summary || {};
+  statsSection.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">${summary.total_products || 0}</div>
+      <div class="stat-label">Total Products</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${summary.matched_by_code || 0}</div>
+      <div class="stat-label">Matched by Code</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${summary.matched_by_description || 0}</div>
+      <div class="stat-label">Matched by Description</div>
+    </div>
+  `;
+
+  // Add org columns to table header
+  const orgNames = comparison.org_names || [];
+  const thead = comparisonTable.querySelector('thead tr');
+
+  // Remove existing org columns
+  while (thead.children.length > 2) {
+    thead.removeChild(thead.lastChild);
+  }
+
+  // Add org columns
+  orgNames.forEach(orgName => {
+    const th = document.createElement('th');
+    th.textContent = orgName;
+    th.style.textAlign = 'right';
+    thead.appendChild(th);
+  });
+
+  // Render table rows
+  renderTableRows(comparison);
+
+  // Add event listeners for filtering
+  searchInput.addEventListener('input', () => renderTableRows(comparison));
+  showMismatchOnly.addEventListener('change', () => renderTableRows(comparison));
+}
+
+function renderTableRows(comparison) {
+  const products = comparison.products || [];
+  const orgNames = comparison.org_names || [];
+  const searchTerm = searchInput.value.toLowerCase();
+  const mismatchOnly = showMismatchOnly.checked;
+
+  comparisonTableBody.innerHTML = '';
+
+  products.forEach(product => {
+    // Apply search filter
+    if (searchTerm) {
+      const code = (product.code || '').toLowerCase();
+      const desc = (product.description || '').toLowerCase();
+      if (!code.includes(searchTerm) && !desc.includes(searchTerm)) {
+        return;
+      }
+    }
+
+    // Check if there's a mismatch
+    const discountValues = orgNames.map(org => product.discounts[org]).filter(v => v != null);
+    const hasMismatch = discountValues.length > 1 && !discountValues.every(v => v === discountValues[0]);
+
+    // Apply mismatch filter
+    if (mismatchOnly && !hasMismatch) {
+      return;
+    }
+
+    const tr = document.createElement('tr');
+
+    // Code column
+    const codeTd = document.createElement('td');
+    codeTd.className = 'code-col';
+    codeTd.textContent = product.code || '-';
+    tr.appendChild(codeTd);
+
+    // Description column
+    const descTd = document.createElement('td');
+    descTd.className = 'desc-col';
+    descTd.textContent = product.description || '-';
+    descTd.title = product.description || '';
+    tr.appendChild(descTd);
+
+    // Org discount columns
+    orgNames.forEach(orgName => {
+      const discountTd = document.createElement('td');
+      discountTd.className = 'discount-col';
+
+      const discount = product.discounts[orgName];
+      if (discount == null) {
+        discountTd.textContent = '-';
+        discountTd.classList.add('discount-empty');
+      } else {
+        discountTd.textContent = discount.toFixed(1) + '%';
+        if (hasMismatch) {
+          discountTd.classList.add('discount-mismatch');
+        } else if (discountValues.length > 0) {
+          discountTd.classList.add('discount-match');
+        }
+      }
+
+      tr.appendChild(discountTd);
+    });
+
+    comparisonTableBody.appendChild(tr);
+  });
+}
+</script>
+{% endblock %}
