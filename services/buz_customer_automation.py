@@ -220,12 +220,12 @@ class BuzCustomerAutomation:
         finally:
             await page.close()
 
-    async def search_customer(self, page: Page, company_name: str, email: str) -> Optional[str]:
+    async def search_customer(self, page: Page, company_name: str, email: str) -> Optional[tuple[str, str]]:
         """
         Search for customer by company name and email
 
         Returns:
-            Customer name if found, None otherwise
+            (customer_name, customer_pkid) if found, None otherwise
         """
         self.result.add_step(f"Searching for customer: {company_name}")
 
@@ -259,19 +259,25 @@ class BuzCustomerAutomation:
                     row = results.nth(i)
                     row_text = await row.text_content()
                     if email.lower() in row_text.lower():
-                        # Get customer name from 3rd column (index 2) - it's inside an <a> tag
+                        # Get customer name and PKID from 3rd column (index 2) - it's inside an <a> tag
                         customer_name_link = row.locator('td').nth(2).locator('a')
                         customer_name = await customer_name_link.text_content()
-                        self.result.add_step(f"Matched customer by email: {customer_name.strip()}")
-                        return customer_name.strip()
+                        # Extract PKID from href (format: /Contacts/Customer/Edit/{pkid})
+                        href = await customer_name_link.get_attribute('href')
+                        customer_pkid = href.split('/')[-1] if href else None
+                        self.result.add_step(f"Matched customer by email: {customer_name.strip()} (ID: {customer_pkid})")
+                        return (customer_name.strip(), customer_pkid)
 
             # Single result or no email match - use first result
             first_row = results.first
-            # Customer name is in 3rd column (index 2) inside an <a> tag
+            # Customer name and PKID are in 3rd column (index 2) inside an <a> tag
             customer_name_link = first_row.locator('td').nth(2).locator('a')
             customer_name = await customer_name_link.text_content()
-            self.result.add_step(f"Using customer: {customer_name.strip()}")
-            return customer_name.strip()
+            # Extract PKID from href (format: /Contacts/Customer/Edit/{pkid})
+            href = await customer_name_link.get_attribute('href')
+            customer_pkid = href.split('/')[-1] if href else None
+            self.result.add_step(f"Using customer: {customer_name.strip()} (ID: {customer_pkid})")
+            return (customer_name.strip(), customer_pkid)
 
         # No results by company name - try email search
         self.result.add_step("No results by company name, trying email search")
@@ -292,21 +298,24 @@ class BuzCustomerAutomation:
             # Get actual data rows (rows with class dxgvDataRow_Bootstrap)
             results = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
             first_row = results.first
-            # Customer name is in 3rd column (index 2) inside an <a> tag
+            # Customer name and PKID are in 3rd column (index 2) inside an <a> tag
             customer_name_link = first_row.locator('td').nth(2).locator('a')
             customer_name = await customer_name_link.text_content()
-            self.result.add_step(f"Found customer by email: {customer_name.strip()}")
-            return customer_name.strip()
+            # Extract PKID from href (format: /Contacts/Customer/Edit/{pkid})
+            href = await customer_name_link.get_attribute('href')
+            customer_pkid = href.split('/')[-1] if href else None
+            self.result.add_step(f"Found customer by email: {customer_name.strip()} (ID: {customer_pkid})")
+            return (customer_name.strip(), customer_pkid)
 
         self.result.add_step("Customer not found")
         return None
 
-    async def create_customer(self, page: Page, customer_data: CustomerData) -> str:
+    async def create_customer(self, page: Page, customer_data: CustomerData) -> tuple[str, str]:
         """
         Create a new customer
 
         Returns:
-            Customer name (company name)
+            (customer_name, customer_pkid)
         """
         self.result.add_step(f"Creating customer: {customer_data.company_name}")
 
@@ -357,12 +366,21 @@ class BuzCustomerAutomation:
         await page.click('button:has-text("Save"), input[value="Save"]')
         await page.wait_for_load_state('networkidle')
 
-        self.result.add_step(f"Customer created: {customer_data.company_name}")
-        return customer_data.company_name
+        # Extract customer PKID from URL (redirects to /Contacts/Customer/Edit/{pkid})
+        current_url = page.url
+        customer_pkid = current_url.split('/')[-1] if '/' in current_url else None
 
-    async def create_user(self, customer_name: str, customer_data: CustomerData) -> bool:
+        self.result.add_step(f"Customer created: {customer_data.company_name} (ID: {customer_pkid})")
+        return (customer_data.company_name, customer_pkid)
+
+    async def create_user(self, customer_name: str, customer_pkid: str, customer_data: CustomerData) -> bool:
         """
         Create a new user linked to the customer
+
+        Args:
+            customer_name: Customer company name
+            customer_pkid: Customer primary key ID (GUID)
+            customer_data: Customer data from Zendesk
 
         Returns:
             True if successful
@@ -394,46 +412,11 @@ class BuzCustomerAutomation:
             await group_select.select_option(label='Customers')
             self.result.add_step("Selected 'Customers' group")
 
-            # Handle finicky customer name autocomplete
-            self.result.add_step(f"Entering customer name with slow typing: {customer_name}")
-            customer_input = page.locator('input#customers')
-
-            # Try typing the customer name with retry logic
-            # The Angular autocomplete is very finicky and sometimes needs multiple attempts
-            max_attempts = 2
-            dropdown_item = None
-
-            for attempt in range(max_attempts):
-                if attempt > 0:
-                    # Clear the field slowly before retrying
-                    self.result.add_step(f"Dropdown not found, clearing and retrying (attempt {attempt + 1}/{max_attempts})...")
-                    await customer_input.click()
-                    await customer_input.fill('')  # Clear field
-                    await page.wait_for_timeout(500)
-
-                # Type the FULL customer name slowly, character by character
-                # Use slower typing on retry attempts
-                delay = 150 if attempt == 0 else 250
-                for char in customer_name:
-                    await customer_input.type(char, delay=delay)
-                    await page.wait_for_timeout(50)
-
-                # Wait for dropdown to appear
-                await page.wait_for_timeout(2000)
-
-                # Look for dropdown with customer name
-                dropdown_item = page.locator(f'[role="option"]:has-text("{customer_name}"), li:has-text("{customer_name}")')
-
-                if await dropdown_item.count() > 0:
-                    # Found it!
-                    await dropdown_item.first.click()
-                    self.result.add_step(f"✓ Selected customer from autocomplete: {customer_name}")
-                    break
-            else:
-                # Customer field is REQUIRED - cannot save without it
-                error_msg = f"Failed to find customer '{customer_name}' in autocomplete dropdown after {max_attempts} attempts. Customer field is required."
-                self.result.add_step(f"ERROR: {error_msg}")
-                raise Exception(error_msg)
+            # Bypass finicky customer autocomplete by directly setting the hidden PKID field
+            # This is much more reliable than trying to work with the Angular autocomplete
+            self.result.add_step(f"Setting customer: {customer_name} (ID: {customer_pkid})")
+            await page.fill('input#customerPkId', customer_pkid)
+            self.result.add_step(f"✓ Customer linked successfully")
 
             # Click Save User button
             await page.click('button#save-button')
@@ -479,15 +462,16 @@ class BuzCustomerAutomation:
         try:
             await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
 
-            customer_name = await self.search_customer(page, customer_data.company_name, customer_data.email)
+            result = await self.search_customer(page, customer_data.company_name, customer_data.email)
 
-            if customer_name:
+            if result:
+                customer_name, customer_pkid = result
                 self.result.customer_existed = True
                 self.result.customer_name = customer_name
                 self.result.add_step(f"✓ Customer exists: {customer_name}")
             else:
                 # Create customer
-                customer_name = await self.create_customer(page, customer_data)
+                customer_name, customer_pkid = await self.create_customer(page, customer_data)
                 self.result.customer_created = True
                 self.result.customer_name = customer_name
                 self.result.add_step(f"✓ Customer created: {customer_name}")
@@ -496,7 +480,7 @@ class BuzCustomerAutomation:
             await page.close()
 
         # Step 4: Create user
-        success = await self.create_user(customer_name, customer_data)
+        success = await self.create_user(customer_name, customer_pkid, customer_data)
         if success:
             self.result.user_created = True
             self.result.add_step(f"✓ User created: {customer_data.email}")
