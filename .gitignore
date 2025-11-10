@@ -1,9 +1,7 @@
 # Secret stuff
 .env
 .env.local
-credentials/service_account.json
-credentials/dummy_service_account.json
-credentials/unleashed.json
+credentials/
 .secrets/
 
 # Python prod Virtual Environment
