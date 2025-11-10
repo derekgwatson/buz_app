@@ -409,8 +409,9 @@ class BuzCustomerAutomation:
         await group_select.select_option(label='Wholesale')
         self.result.add_step("Selected 'Wholesale' customer group")
 
-        # Fill in company name
-        await page.fill('input#CompanyName, input[name="CompanyName"]', customer_data.company_name)
+        # Fill in company name (field is called "Descn" - description)
+        await page.fill('input#Descn', customer_data.company_name)
+        self.result.add_step(f"Filled in company: {customer_data.company_name}")
 
         # Fill in billing details (first and last name)
         await page.fill('input#BillingDetails_FirstName', customer_data.first_name)
