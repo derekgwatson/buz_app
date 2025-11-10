@@ -49,6 +49,7 @@ class BuzCustomerAutomation:
 
     STORAGE_STATE_PATH = Path(".secrets/buz_storage_state.json")
     USER_MANAGEMENT_URL = "https://console1.buzmanager.com/myorg/user-management/users"
+    INVITE_USER_URL = "https://console1.buzmanager.com/myorg/user-management/inviteuser/new"
     CUSTOMERS_URL = "https://go.buzmanager.com/Contacts/Customers"
     ORG_SELECTOR_URL = "https://console.buzmanager.com/mybuz/organizations"
 
@@ -370,16 +371,8 @@ class BuzCustomerAutomation:
 
         page = await self.context.new_page()
         try:
-            await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
-
-            # Select 'customers' from dropdown (Angular select with special value binding)
-            # There are 2 selects, we want the one with Employees/Customers (not Active/Deactivated)
-            select_element = page.locator('select.form-control').filter(has_text='Employees')
-            await select_element.select_option(label='Customers')
-
-            # Click Invite User (it's an <a> tag styled as a button)
-            await page.click('a:has-text("Invite User"), button:has-text("Invite User")')
-            await page.wait_for_load_state('networkidle')
+            # Navigate directly to the Invite User page
+            await page.goto(self.INVITE_USER_URL, wait_until='networkidle')
 
             # Fill in user details
             await page.fill('input#FirstName, input[name="FirstName"]', customer_data.first_name)
