@@ -123,29 +123,59 @@ class BuzCustomerAutomation:
         except:
             return None
 
-    async def switch_organization(self, org_name: str):
+    async def switch_organization(self, org_name: str, max_retries: int = 5):
         """
-        Switch to a specific Buz organization
+        Switch to a specific Buz organization and VERIFY the switch succeeded.
+        Will retry until confirmed in the correct org.
 
         Args:
             org_name: Name of the organization (e.g., "Watson Blinds", "Designer Drapes")
+            max_retries: Maximum number of times to retry switching (default 5)
         """
         self.result.add_step(f"Switching to Buz instance: {org_name}")
 
-        page = await self.context.new_page()
-        try:
-            await page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
+        for attempt in range(max_retries):
+            # Navigate to org selector and click the org
+            switch_page = await self.context.new_page()
+            try:
+                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
 
-            # Click the organization link in the table (not the heading)
-            # The table cell contains the org name, so target the link within a table cell
-            org_link = page.locator(f'td a:has-text("{org_name}")')
-            await org_link.click()
-            await page.wait_for_load_state('networkidle')
+                # Click the organization link in the table
+                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
+                await org_link.click()
+                await switch_page.wait_for_load_state('networkidle')
+            finally:
+                await switch_page.close()
 
-            self.result.add_step(f"✓ Switched to: {org_name}")
+            # Now VERIFY we actually switched by checking a page in the org
+            verify_page = await self.context.new_page()
+            try:
+                # Navigate to user management to check which org we're in
+                await verify_page.goto("https://console1.buzmanager.com/myorg/user-management/users", wait_until='networkidle')
+                await verify_page.wait_for_timeout(500)  # Let page settle
 
-        finally:
-            await page.close()
+                # Check which org we're actually in
+                current_org = await self.get_current_organization(verify_page)
+
+                if current_org == org_name:
+                    # Success! We're in the correct org
+                    if attempt > 0:
+                        self.result.add_step(f"✓ Switched to {org_name} (after {attempt + 1} attempts)")
+                    else:
+                        self.result.add_step(f"✓ Switched to {org_name}")
+                    return  # Successfully switched
+                else:
+                    # Switch didn't work, log and retry
+                    if current_org is None:
+                        self.result.add_step(f"⚠️ Attempt {attempt + 1}: Switch failed, still on org selector")
+                    else:
+                        self.result.add_step(f"⚠️ Attempt {attempt + 1}: Switch failed, in '{current_org}' instead of '{org_name}'")
+                    # Loop will retry
+            finally:
+                await verify_page.close()
+
+        # If we get here, switching failed after all retries
+        raise Exception(f"Failed to switch to {org_name} after {max_retries} attempts")
 
     async def ensure_correct_organization(self, org_name: str):
         """
