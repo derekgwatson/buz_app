@@ -176,10 +176,15 @@ class BuzCustomerAutomation:
             await search_input.type(email, delay=50)  # Type with small delay to trigger events
             await page.wait_for_timeout(1500)
 
+            # DEBUG: Check what's in the search field
+            search_value = await search_input.input_value()
+            self.result.add_step(f"DEBUG: Search field contains: '{search_value}'")
+
             # Check if any results exist in the table after search filters
             # NOTE: User table uses plain tr elements (no special classes like customer table)
             results_table = page.locator('table tbody tr')
             count = await results_table.count()
+            self.result.add_step(f"DEBUG: Found {count} rows in user table after search")
 
             if count > 0:
                 self.result.add_step(f"User already exists (active) with email: {email}")
