@@ -180,54 +180,53 @@ class BuzCustomerAutomation:
         except:
             await page.close()
 
-    async def verify_not_on_org_selector(self, page: Page, intended_url: str, org_name: str):
+    async def verify_not_on_org_selector(self, page: Page, intended_url: str, org_name: str, max_retries: int = 5):
         """
         After navigating, verify we didn't land on the org selector page.
-        If we did, switch to correct org and navigate back to intended destination.
+        If we did, switch to correct org and navigate back - keep trying until it sticks.
 
         Args:
             page: The page we just navigated
             intended_url: Where we intended to go
             org_name: Organization we should be in
+            max_retries: Maximum number of times to retry switching (default 5)
         """
+        for attempt in range(max_retries):
+            current_org = await self.get_current_organization(page)
+
+            if current_org == org_name:
+                # We're in the correct org - success!
+                if attempt > 0:
+                    self.result.add_step(f"✓ Successfully in {org_name} (after {attempt} attempts)")
+                return  # All good, exit
+
+            # Not in correct org - need to switch
+            if current_org is None:
+                self.result.add_step(f"⚠️ Attempt {attempt + 1}: On org selector, switching to {org_name}")
+            else:
+                self.result.add_step(f"⚠️ Attempt {attempt + 1}: In wrong org '{current_org}', switching to {org_name}")
+
+            # Switch to correct org
+            switch_page = await self.context.new_page()
+            try:
+                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
+                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
+                await org_link.click()
+                await switch_page.wait_for_load_state('networkidle')
+            finally:
+                await switch_page.close()
+
+            # Navigate back to intended destination
+            await page.goto(intended_url, wait_until='networkidle')
+
+            # Wait a moment for page to settle
+            await page.wait_for_timeout(500)
+
+            # Loop will check again if we're in the right org
+
+        # If we get here, we've exceeded max retries
         current_org = await self.get_current_organization(page)
-
-        if current_org is None:
-            # We're on the org selector page - need to switch and retry
-            self.result.add_step(f"⚠️ Landed on org selector, switching to {org_name}")
-
-            # Switch to correct org
-            switch_page = await self.context.new_page()
-            try:
-                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
-                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
-                await org_link.click()
-                await switch_page.wait_for_load_state('networkidle')
-                self.result.add_step(f"✓ Switched to {org_name}")
-            finally:
-                await switch_page.close()
-
-            # Now navigate back to where we wanted to go
-            await page.goto(intended_url, wait_until='networkidle')
-            self.result.add_step(f"✓ Navigated back to: {intended_url}")
-        elif current_org != org_name:
-            # In wrong org
-            self.result.add_step(f"⚠️ In wrong org '{current_org}', switching to {org_name}")
-
-            # Switch to correct org
-            switch_page = await self.context.new_page()
-            try:
-                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
-                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
-                await org_link.click()
-                await switch_page.wait_for_load_state('networkidle')
-                self.result.add_step(f"✓ Switched to {org_name}")
-            finally:
-                await switch_page.close()
-
-            # Navigate back to where we wanted to go
-            await page.goto(intended_url, wait_until='networkidle')
-            self.result.add_step(f"✓ Navigated back to: {intended_url}")
+        raise Exception(f"Failed to switch to {org_name} after {max_retries} attempts. Currently in: {current_org or 'org selector'}")
 
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str], Optional[str]]:
         """
