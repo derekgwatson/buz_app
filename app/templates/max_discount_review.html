@@ -134,6 +134,15 @@
     background: #353535;
   }
 
+  .comparison-table tr.regional-mismatch {
+    border-left: 4px solid #dc2626;
+    background: #2d1a1a;
+  }
+
+  .comparison-table tr.regional-mismatch:hover {
+    background: #3d1a1a;
+  }
+
   .comparison-table .code-col {
     font-family: monospace;
     font-weight: 500;
@@ -520,6 +529,8 @@ function renderTableRows(comparison) {
 
     // Detect if only Canberra differs from regional stores
     let canberraDiffers = false;
+    let regionalMismatch = false;
+
     if (hasMismatch) {
       const regionalOrgs = ['Tweed', 'Batemans Bay', 'Shoalhaven', 'Wagga Wagga'];
       const canberraDiscount = product.discounts['Watson Blinds (Canberra)'];
@@ -527,8 +538,14 @@ function renderTableRows(comparison) {
         .map(org => product.discounts[org])
         .filter(v => v != null);
 
+      // Check if regional stores differ from each other (SERIOUS ISSUE)
+      if (regionalDiscounts.length > 1) {
+        const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
+        regionalMismatch = !allRegionalSame;
+      }
+
       // Check if all regional stores have the same value, and Canberra is different
-      if (canberraDiscount != null && regionalDiscounts.length > 0) {
+      if (!regionalMismatch && canberraDiscount != null && regionalDiscounts.length > 0) {
         const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
         const canberraIsDifferent = canberraDiscount !== regionalDiscounts[0];
         canberraDiffers = allRegionalSame && canberraIsDifferent;
@@ -541,6 +558,11 @@ function renderTableRows(comparison) {
     }
 
     const tr = document.createElement('tr');
+
+    // Highlight rows where regional stores differ (most serious issue)
+    if (regionalMismatch) {
+      tr.classList.add('regional-mismatch');
+    }
 
     // Code column
     const codeTd = document.createElement('td');
