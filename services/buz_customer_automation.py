@@ -156,18 +156,16 @@ class BuzCustomerAutomation:
         try:
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
 
-            # Select 'customers' from the dropdown (Angular select with special value binding)
-            # There are 2 selects, we want the one with Employees/Customers (not Active/Deactivated)
-            user_type_select = page.locator('select.form-control').filter(has_text='Employees')
-            await user_type_select.select_option(label='Customers')
-            self.result.add_step("Selected 'Customers' user type")
+            # DON'T filter by user type - we need to check ALL users regardless of group
+            # If a user exists with this email in ANY group, we can't create a new one
+            # The user type dropdown defaults to showing all users
 
             # Get the active/deactivated dropdown
             status_select = page.locator('select.form-control').filter(has_text='Active users')
 
-            # First check active users
+            # First check active users (regardless of type)
             await status_select.select_option(label='Active users')
-            self.result.add_step("Checking active users")
+            self.result.add_step("Checking active users (all types)")
 
             # Type email into search field (type slowly to trigger Angular events)
             search_input = page.locator('input#search-text, input[placeholder*="Name, user name or email"]')
