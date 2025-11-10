@@ -220,6 +220,32 @@ class BuzCustomerAutomation:
         finally:
             await page.close()
 
+    async def get_customer_pkid(self, page: Page, customer_code: str) -> str:
+        """
+        Navigate to customer details page and extract PKID from New Sale button
+
+        Args:
+            page: Playwright page object
+            customer_code: Customer code (e.g., "MYCO2000.1")
+
+        Returns:
+            Customer PKID (GUID)
+        """
+        # Navigate to customer details page using the code
+        details_url = f"https://go.buzmanager.com/Contacts/Customers/Details?Code={customer_code}"
+        await page.goto(details_url, wait_until='networkidle')
+
+        # Find the "New Sale" button and extract PKID from its href
+        new_sale_link = page.locator('a:has-text("New Sale")')
+        href = await new_sale_link.get_attribute('href')
+
+        # Extract PKID from URL parameter: /Sales/NewSale?customerPkId={pkid}
+        if href and 'customerPkId=' in href:
+            customer_pkid = href.split('customerPkId=')[-1]
+            return customer_pkid
+        else:
+            raise Exception(f"Could not find customer PKID for code {customer_code}")
+
     async def search_customer(self, page: Page, company_name: str, email: str) -> Optional[tuple[str, str]]:
         """
         Search for customer by company name and email
@@ -259,24 +285,28 @@ class BuzCustomerAutomation:
                     row = results.nth(i)
                     row_text = await row.text_content()
                     if email.lower() in row_text.lower():
-                        # Get customer name and PKID from 3rd column (index 2) - it's inside an <a> tag
+                        # Get customer code from 2nd column (index 1)
+                        customer_code = await row.locator('td').nth(1).text_content()
+                        customer_code = customer_code.strip()
+                        # Get customer name from 3rd column (index 2) - it's inside an <a> tag
                         customer_name_link = row.locator('td').nth(2).locator('a')
                         customer_name = await customer_name_link.text_content()
-                        # Extract PKID from href (format: /Contacts/Customer/Edit/{pkid})
-                        href = await customer_name_link.get_attribute('href')
-                        customer_pkid = href.split('/')[-1] if href else None
-                        self.result.add_step(f"Matched customer by email: {customer_name.strip()} (ID: {customer_pkid})")
+                        # Navigate to customer details to get PKID
+                        customer_pkid = await self.get_customer_pkid(page, customer_code)
+                        self.result.add_step(f"Matched customer by email: {customer_name.strip()} (Code: {customer_code}, ID: {customer_pkid})")
                         return (customer_name.strip(), customer_pkid)
 
             # Single result or no email match - use first result
             first_row = results.first
-            # Customer name and PKID are in 3rd column (index 2) inside an <a> tag
+            # Get customer code from 2nd column (index 1)
+            customer_code = await first_row.locator('td').nth(1).text_content()
+            customer_code = customer_code.strip()
+            # Get customer name from 3rd column (index 2) inside an <a> tag
             customer_name_link = first_row.locator('td').nth(2).locator('a')
             customer_name = await customer_name_link.text_content()
-            # Extract PKID from href (format: /Contacts/Customer/Edit/{pkid})
-            href = await customer_name_link.get_attribute('href')
-            customer_pkid = href.split('/')[-1] if href else None
-            self.result.add_step(f"Using customer: {customer_name.strip()} (ID: {customer_pkid})")
+            # Navigate to customer details to get PKID
+            customer_pkid = await self.get_customer_pkid(page, customer_code)
+            self.result.add_step(f"Using customer: {customer_name.strip()} (Code: {customer_code}, ID: {customer_pkid})")
             return (customer_name.strip(), customer_pkid)
 
         # No results by company name - try email search
@@ -298,13 +328,15 @@ class BuzCustomerAutomation:
             # Get actual data rows (rows with class dxgvDataRow_Bootstrap)
             results = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
             first_row = results.first
-            # Customer name and PKID are in 3rd column (index 2) inside an <a> tag
+            # Get customer code from 2nd column (index 1)
+            customer_code = await first_row.locator('td').nth(1).text_content()
+            customer_code = customer_code.strip()
+            # Get customer name from 3rd column (index 2) inside an <a> tag
             customer_name_link = first_row.locator('td').nth(2).locator('a')
             customer_name = await customer_name_link.text_content()
-            # Extract PKID from href (format: /Contacts/Customer/Edit/{pkid})
-            href = await customer_name_link.get_attribute('href')
-            customer_pkid = href.split('/')[-1] if href else None
-            self.result.add_step(f"Found customer by email: {customer_name.strip()} (ID: {customer_pkid})")
+            # Navigate to customer details to get PKID
+            customer_pkid = await self.get_customer_pkid(page, customer_code)
+            self.result.add_step(f"Found customer by email: {customer_name.strip()} (Code: {customer_code}, ID: {customer_pkid})")
             return (customer_name.strip(), customer_pkid)
 
         self.result.add_step("Customer not found")
@@ -366,12 +398,18 @@ class BuzCustomerAutomation:
         await page.click('button:has-text("Save"), input[value="Save"]')
         await page.wait_for_load_state('networkidle')
 
-        # Extract customer PKID from URL (redirects to /Contacts/Customer/Edit/{pkid})
-        current_url = page.url
-        customer_pkid = current_url.split('/')[-1] if '/' in current_url else None
+        # After creating, we need to find the customer code and get the PKID
+        # Navigate back to customer list to search for the customer we just created
+        await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
 
-        self.result.add_step(f"Customer created: {customer_data.company_name} (ID: {customer_pkid})")
-        return (customer_data.company_name, customer_pkid)
+        # Search for the customer we just created to get the code and PKID
+        result = await self.search_customer(page, customer_data.company_name, customer_data.email)
+        if not result:
+            raise Exception(f"Failed to find customer after creation: {customer_data.company_name}")
+
+        customer_name, customer_pkid = result
+        self.result.add_step(f"Customer created: {customer_name} (ID: {customer_pkid})")
+        return (customer_name, customer_pkid)
 
     async def create_user(self, customer_name: str, customer_pkid: str, customer_data: CustomerData) -> bool:
         """
