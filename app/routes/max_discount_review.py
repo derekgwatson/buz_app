@@ -151,3 +151,143 @@ def job_status(job_id):
         return jsonify({"error": "Job not found"}), 404
 
     return jsonify(job)
+
+
+@max_discount_review_bp.route("/generate-upload", methods=["POST"])
+@auth.login_required
+def generate_upload():
+    """
+    Generate upload Excel files for changed discounts.
+
+    Expects JSON:
+        changes: Dict of org_name -> list of changes
+        raw_result: Raw result data with file paths
+    """
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+
+    data = request.get_json()
+    changes_by_org = data.get("changes", {})
+    raw_result = data.get("raw_result", {})
+
+    if not changes_by_org:
+        return jsonify({"error": "No changes provided"}), 400
+
+    export_root = Path(current_app.config.get("EXPORT_ROOT", "exports"))
+    upload_dir = export_root / "max_discount_uploads" / uuid.uuid4().hex
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_files = []
+
+    try:
+        # Find the original files from raw_result
+        orgs_data = {org['org_name']: org for org in raw_result.get('orgs', [])}
+
+        for org_name, changes_list in changes_by_org.items():
+            if org_name not in orgs_data:
+                logger.warning(f"Org {org_name} not found in raw result")
+                continue
+
+            org_data = orgs_data[org_name]
+            source_file = org_data.get('file_path')
+
+            if not source_file or not Path(source_file).exists():
+                logger.error(f"Source file not found for {org_name}: {source_file}")
+                continue
+
+            # Load the original Excel file
+            wb = openpyxl.load_workbook(source_file)
+            ws = wb["Inventory Groups"]
+
+            # Create a new workbook for upload
+            upload_wb = openpyxl.Workbook()
+            upload_ws = upload_wb.active
+            upload_ws.title = "Inventory Groups"
+
+            # Copy header row (row 1)
+            header_row = list(ws[1])
+            for col_idx, cell in enumerate(header_row, 1):
+                upload_ws.cell(row=1, column=col_idx, value=cell.value)
+
+            # Track which product codes have been changed
+            changed_codes = {change['productCode'] for change in changes_list}
+
+            # Find and copy rows for changed products
+            upload_row = 2
+            for row_idx in range(2, ws.max_row + 1):
+                code = ws.cell(row=row_idx, column=3).value  # Column C = Code
+
+                if code in changed_codes:
+                    # Find the change for this product
+                    change = next((c for c in changes_list if c['productCode'] == code), None)
+
+                    if change:
+                        # Copy the entire row
+                        for col_idx in range(1, ws.max_column + 1):
+                            cell_value = ws.cell(row=row_idx, column=col_idx).value
+                            upload_ws.cell(row=upload_row, column=col_idx, value=cell_value)
+
+                        # Update max discount (column G = 7)
+                        new_discount_decimal = change['newValue'] / 100
+                        upload_ws.cell(row=upload_row, column=7, value=new_discount_decimal)
+
+                        # Set Operation to 'E' (column AE = 31)
+                        upload_ws.cell(row=upload_row, column=31, value='E')
+
+                        upload_row += 1
+
+            # Save the upload file
+            # Normalize org name for filename (remove special chars)
+            org_filename = org_name.replace(' ', '_').replace('(', '').replace(')', '')
+            upload_filename = f"upload_{org_filename}.xlsx"
+            upload_path = upload_dir / upload_filename
+            upload_wb.save(upload_path)
+
+            wb.close()
+            upload_wb.close()
+
+            generated_files.append({
+                'org_name': org_name,
+                'filename': upload_filename,
+                'path': str(upload_path),
+                'changes_count': len([c for c in changes_list if c['productCode'] in changed_codes])
+            })
+
+        # Generate download URLs
+        files_with_urls = []
+        for file_info in generated_files:
+            # Create a relative path for download
+            rel_path = Path(file_info['path']).relative_to(export_root)
+            download_url = url_for('max_discount_review.download_upload_file',
+                                   filepath=str(rel_path),
+                                   _external=False)
+            files_with_urls.append({
+                'org_name': file_info['org_name'],
+                'filename': file_info['filename'],
+                'download_url': download_url,
+                'changes_count': file_info['changes_count']
+            })
+
+        return jsonify({
+            "success": True,
+            "files": files_with_urls
+        })
+
+    except Exception as e:
+        logger.exception("Error generating upload files")
+        return jsonify({"error": str(e)}), 500
+
+
+@max_discount_review_bp.route("/download/<path:filepath>", methods=["GET"])
+@auth.login_required
+def download_upload_file(filepath):
+    """Download a generated upload file"""
+    from flask import send_file
+
+    export_root = Path(current_app.config.get("EXPORT_ROOT", "exports"))
+    file_path = export_root / filepath
+
+    if not file_path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    return send_file(file_path, as_attachment=True, download_name=file_path.name)

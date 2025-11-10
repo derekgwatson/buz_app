@@ -180,6 +180,50 @@
     color: #9ca3af;
   }
 
+  .comparison-table .discount-col[contenteditable="true"] {
+    cursor: text;
+    border: 1px solid transparent;
+    padding: 0.4rem 0.65rem;
+  }
+
+  .comparison-table .discount-col[contenteditable="true"]:hover {
+    border: 1px solid #555;
+    background: #333;
+  }
+
+  .comparison-table .discount-col[contenteditable="true"]:focus {
+    outline: none;
+    border: 1px solid #66d9ef;
+    background: #2d3748;
+  }
+
+  .comparison-table .discount-col.edited {
+    border: 2px solid #3b82f6 !important;
+    background: #1e3a5f !important;
+    font-weight: 600;
+  }
+
+  .changes-bar {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    display: none;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .changes-bar.visible {
+    display: flex;
+  }
+
+  .changes-count {
+    color: #3b82f6;
+    font-weight: 600;
+    font-size: 1.1rem;
+  }
+
   .filter-bar {
     margin-top: 1rem;
     padding: 1rem;
@@ -296,6 +340,12 @@
 
     <div class="stats" id="statsSection"></div>
 
+    <div class="changes-bar" id="changesBar">
+      <span class="changes-count" id="changesCount">0 changes</span>
+      <button type="button" class="btn btn-primary" id="generateUploadBtn">Generate Upload Files</button>
+      <button type="button" class="btn" id="resetChangesBtn" style="background: #6b7280;">Reset All Changes</button>
+    </div>
+
     <div class="filter-bar">
       <label for="searchInput">Filter products:</label>
       <input type="text" id="searchInput" placeholder="Search by code or description...">
@@ -325,6 +375,8 @@
 let currentJobId = null;
 let poller = null;
 let comparisonData = null;
+let rawResultData = null; // Store raw result with file paths
+let changes = {}; // Track changes: { "org|code": { oldValue, newValue, product } }
 
 const form = document.getElementById('reviewForm');
 const submitBtn = document.getElementById('submitBtn');
@@ -342,6 +394,10 @@ const comparisonTable = document.getElementById('comparisonTable');
 const comparisonTableBody = document.getElementById('comparisonTableBody');
 const searchInput = document.getElementById('searchInput');
 const showMismatchOnly = document.getElementById('showMismatchOnly');
+const changesBar = document.getElementById('changesBar');
+const changesCount = document.getElementById('changesCount');
+const generateUploadBtn = document.getElementById('generateUploadBtn');
+const resetChangesBtn = document.getElementById('resetChangesBtn');
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -457,6 +513,8 @@ function showResult(job) {
 
     if (result.comparison) {
       comparisonData = result.comparison;
+      rawResultData = result.raw_result; // Store raw result with file paths
+      changes = {}; // Reset changes
       renderComparison(comparisonData);
     }
   }
@@ -531,25 +589,33 @@ function renderTableRows(comparison) {
     let canberraDiffers = false;
     let regionalMismatch = false;
 
-    if (hasMismatch) {
-      const regionalOrgs = ['Tweed', 'Batemans Bay', 'Shoalhaven', 'Wagga Wagga'];
-      const canberraDiscount = product.discounts['Watson Blinds (Canberra)'];
-      const regionalDiscounts = regionalOrgs
-        .map(org => product.discounts[org])
-        .filter(v => v != null);
+    const regionalOrgs = ['Tweed', 'Batemans Bay', 'Shoalhaven', 'Wagga Wagga'];
+    const canberraDiscount = product.discounts['Watson Blinds (Canberra)'];
+    const regionalDiscountsWithOrg = regionalOrgs.map(org => ({
+      org: org,
+      discount: product.discounts[org]
+    }));
+    const regionalDiscounts = regionalDiscountsWithOrg
+      .map(item => item.discount)
+      .filter(v => v != null);
 
-      // Check if regional stores differ from each other (SERIOUS ISSUE)
-      if (regionalDiscounts.length > 1) {
-        const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
-        regionalMismatch = !allRegionalSame;
-      }
+    // Check if regional stores differ from each other (SERIOUS ISSUE)
+    // This includes: different values OR some have values while others don't
+    const regionalOrgsWithData = regionalDiscountsWithOrg.filter(item => item.discount != null);
+    if (regionalOrgsWithData.length > 0 && regionalOrgsWithData.length < regionalOrgs.length) {
+      // Some regional stores have this group, others don't - MISMATCH
+      regionalMismatch = true;
+    } else if (regionalDiscounts.length > 1) {
+      // All regional stores have data, but values differ
+      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
+      regionalMismatch = !allRegionalSame;
+    }
 
-      // Check if all regional stores have the same value, and Canberra is different
-      if (!regionalMismatch && canberraDiscount != null && regionalDiscounts.length > 0) {
-        const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
-        const canberraIsDifferent = canberraDiscount !== regionalDiscounts[0];
-        canberraDiffers = allRegionalSame && canberraIsDifferent;
-      }
+    // Check if all regional stores have the same value, and Canberra is different
+    if (hasMismatch && !regionalMismatch && canberraDiscount != null && regionalDiscounts.length > 0) {
+      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
+      const canberraIsDifferent = canberraDiscount !== regionalDiscounts[0];
+      canberraDiffers = allRegionalSame && canberraIsDifferent;
     }
 
     // Apply mismatch filter
@@ -587,7 +653,19 @@ function renderTableRows(comparison) {
         discountTd.textContent = '-';
         discountTd.classList.add('discount-empty');
       } else {
+        // Make cell editable
+        discountTd.contentEditable = 'true';
         discountTd.textContent = discount.toFixed(1) + '%';
+        discountTd.dataset.orgName = orgName;
+        discountTd.dataset.productCode = product.code || '';
+        discountTd.dataset.originalValue = discount.toFixed(1);
+
+        // Check if this cell has been edited
+        const changeKey = `${orgName}|${product.code}`;
+        if (changes[changeKey]) {
+          discountTd.classList.add('edited');
+        }
+
         if (hasMismatch) {
           // Apply amber color if only Canberra differs, red otherwise
           if (canberraDiffers) {
@@ -606,5 +684,147 @@ function renderTableRows(comparison) {
     comparisonTableBody.appendChild(tr);
   });
 }
+
+// Handle editing of discount cells
+comparisonTableBody.addEventListener('blur', (e) => {
+  if (e.target.classList.contains('discount-col') && e.target.contentEditable === 'true') {
+    handleCellEdit(e.target);
+  }
+}, true);
+
+// Handle Enter key to finish editing
+comparisonTableBody.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.classList.contains('discount-col')) {
+    e.preventDefault();
+    e.target.blur();
+  }
+});
+
+function handleCellEdit(cell) {
+  const orgName = cell.dataset.orgName;
+  const productCode = cell.dataset.productCode;
+  const originalValue = parseFloat(cell.dataset.originalValue);
+
+  // Parse the edited value
+  let newText = cell.textContent.trim().replace('%', '');
+  let newValue = parseFloat(newText);
+
+  // Validate input
+  if (isNaN(newValue) || newValue < 0 || newValue > 100) {
+    alert('Please enter a valid percentage between 0 and 100');
+    cell.textContent = originalValue.toFixed(1) + '%';
+    return;
+  }
+
+  // Update display
+  cell.textContent = newValue.toFixed(1) + '%';
+
+  const changeKey = `${orgName}|${productCode}`;
+
+  // Check if value changed
+  if (Math.abs(newValue - originalValue) < 0.01) {
+    // No real change, remove from changes
+    delete changes[changeKey];
+    cell.classList.remove('edited');
+  } else {
+    // Track the change
+    const product = comparisonData.products.find(p => p.code === productCode);
+    changes[changeKey] = {
+      orgName: orgName,
+      productCode: productCode,
+      product: product,
+      originalValue: originalValue,
+      newValue: newValue
+    };
+    cell.classList.add('edited');
+  }
+
+  updateChangesCounter();
+}
+
+function updateChangesCounter() {
+  const changeCount = Object.keys(changes).length;
+  changesCount.textContent = `${changeCount} change${changeCount !== 1 ? 's' : ''}`;
+
+  if (changeCount > 0) {
+    changesBar.classList.add('visible');
+  } else {
+    changesBar.classList.remove('visible');
+  }
+}
+
+// Reset all changes
+resetChangesBtn.addEventListener('click', () => {
+  if (Object.keys(changes).length === 0) return;
+
+  if (confirm('Are you sure you want to reset all changes?')) {
+    changes = {};
+    updateChangesCounter();
+    renderTableRows(comparisonData);
+  }
+});
+
+// Generate upload files
+generateUploadBtn.addEventListener('click', async () => {
+  if (Object.keys(changes).length === 0) {
+    alert('No changes to upload');
+    return;
+  }
+
+  generateUploadBtn.disabled = true;
+  generateUploadBtn.textContent = 'Generating...';
+
+  try {
+    // Group changes by org
+    const changesByOrg = {};
+    for (const [key, change] of Object.entries(changes)) {
+      const org = change.orgName;
+      if (!changesByOrg[org]) {
+        changesByOrg[org] = [];
+      }
+      changesByOrg[org].push(change);
+    }
+
+    // Send to backend to generate files
+    const response = await fetch('{{ url_for("max_discount_review.generate_upload") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        changes: changesByOrg,
+        raw_result: rawResultData
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate upload files');
+    }
+
+    const result = await response.json();
+
+    // Download each file
+    for (const file of result.files) {
+      const link = document.createElement('a');
+      link.href = file.download_url;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // Small delay between downloads
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    alert(`Generated ${result.files.length} upload file(s):\n${result.files.map(f => f.filename).join('\n')}`);
+
+  } catch (error) {
+    alert('Error generating upload files: ' + error.message);
+  } finally {
+    generateUploadBtn.disabled = false;
+    generateUploadBtn.textContent = 'Generate Upload Files';
+  }
+});
 </script>
 {% endblock %}
