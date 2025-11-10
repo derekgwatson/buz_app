@@ -8,6 +8,7 @@ This is a Flask web application for managing inventory, fabric synchronization, 
 - **Buz Manager** (blinds/curtains business management system) via web scraping and OData API
 - **Unleashed Software** (inventory management) via REST API
 - **Google Sheets** for data import/export and configuration
+- **Zendesk** (support ticketing) for automated customer creation
 
 The app uses a SQLite database for local caching and job tracking, with extensive Excel file processing for bulk operations.
 
@@ -53,6 +54,9 @@ Environment variables:
 - `USERS` - JSON string of authorized users for basic auth
 - `BUZ_LOGIN_BASE` - Buz Manager login endpoint (default: https://login.buzmanager.com)
 - `GSHEETS_CREDENTIALS` or `GOOGLE_APPLICATION_CREDENTIALS` - Path to Google service account JSON
+- `ZENDESK_SUBDOMAIN` - Zendesk subdomain (default: watsonblinds)
+- `ZENDESK_EMAIL` - Zendesk user email for API authentication
+- `ZENDESK_API_TOKEN` - Zendesk API token
 - `SENTRY_DSN` - Sentry error tracking DSN (optional, enables error tracking if set)
 - `SENTRY_TRACES_SAMPLE_RATE` - Sentry performance monitoring sample rate (default: 0.1 = 10%)
 - `FLASK_ENV` or `ENV` - Environment name for Sentry (development/staging/production)
@@ -84,6 +88,7 @@ Routes are organized into blueprints in `app/routes/`:
 - `discount_groups_bp` - Discount group management and sync
 - `lead_times_bp` - Lead time publishing for pre-Christmas cutoffs
 - `excel_tools_bp` - Excel file cleaning and processing utilities
+- `customer_automation_bp` - Automated customer and user creation from Zendesk tickets
 
 ### Service Layer
 
@@ -100,6 +105,12 @@ The `services/` directory contains all business logic, separated from routes:
 - `odata_client.py` - OData client for Buz Manager's OData feed
 - `unleashed_api.py` - UnleashedAPIClient with HMAC-SHA256 signature auth
 - `google_sheets_service.py` - GoogleSheetsService wrapping gspread with retry logic
+- `zendesk_service.py` - ZendeskService for fetching and parsing ticket data
+
+**Browser Automation:**
+- `buz_customer_automation.py` - Playwright-based automation for customer/user creation in Buz
+- `buz_cookies.py` - Cookie extraction utilities from Playwright storage state
+- `buz_export_inventory.py` - Inventory export via authenticated HTTP requests
 
 **Data Processing:**
 - `excel.py` - Excel file reading/writing with openpyxl
@@ -188,6 +199,21 @@ Jobs have statuses: `running`, `completed`, `failed`, `aborted`
 3. Validate that lead times and cutoffs resolve to same Buz inventory codes
 4. Generate HTML snippets for Buz homepage
 5. Inject lead times into Excel macro templates (Summary and Detailed)
+
+### Customer Automation from Zendesk Tickets
+1. Fetch Zendesk ticket by ID and parse customer data (name, address, email, phone)
+2. Check if user already exists in Buz (by email) - if yes, done
+3. Search for customer in Buz (by company name, then email)
+4. Create customer if not found (Wholesale group, with async address autocomplete)
+5. Create user linked to customer (with finicky async customer name autocomplete)
+
+**Playwright Automation Details:**
+- Uses stored authentication from `.secrets/buz_storage_state.json` (run `tools/buz_auth_bootstrap.py` first)
+- Handles two Buz subdomains: `go.buzmanager.com` (customers) and `console1.buzmanager.com` (users)
+- Implements slow typing strategy for finicky customer name autocomplete
+- Auto-detects mobile vs. landline phone numbers (mobile starts with 04)
+- Selects first result from async address autocomplete dropdown
+- Runs as background job with real-time progress updates
 
 ## Important Patterns
 

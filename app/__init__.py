@@ -8,7 +8,7 @@ from config import ProductionConfig
 from services.database import init_db_command, create_db_manager
 from services.config_service import ConfigManager
 from pathlib import Path
-from app.routes import main_routes_bp, fabrics_bp, discount_groups_bp, lead_times_bp, excel_tools_bp
+from app.routes import main_routes_bp, fabrics_bp, discount_groups_bp, lead_times_bp, excel_tools_bp, customer_automation_bp
 
 
 load_dotenv()
@@ -48,8 +48,9 @@ def init_sentry():
             # Attach stack traces to all messages
             attach_stacktrace=True,
 
-            # In development, still send errors even when Flask debug=True
-            debug=environment == "development",
+            # Disable Sentry's debug logging (very verbose, only needed when debugging Sentry itself)
+            # Set SENTRY_DEBUG=1 in .env to enable if needed
+            debug=os.getenv("SENTRY_DEBUG", "0") == "1",
         )
         logging.info(f"Sentry initialized for environment: {environment}")
     except ImportError:
@@ -173,6 +174,7 @@ def create_app(config_name: str = ""):
     app.register_blueprint(discount_groups_bp)
     app.register_blueprint(lead_times_bp)
     app.register_blueprint(excel_tools_bp)
+    app.register_blueprint(customer_automation_bp)
 
     # CLI
     app.cli.add_command(init_db_command)  # type: ignore
