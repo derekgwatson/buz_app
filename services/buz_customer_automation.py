@@ -55,31 +55,39 @@ class CustomerAutomationResult:
 class BuzCustomerAutomation:
     """Automate customer and user creation in Buz Manager"""
 
-    STORAGE_STATE_PATH = Path(".secrets/buz_storage_state.json")
     USER_MANAGEMENT_URL = "https://console1.buzmanager.com/myorg/user-management/users"
     INVITE_USER_URL = "https://console1.buzmanager.com/myorg/user-management/inviteuser/new"
     CUSTOMERS_URL = "https://go.buzmanager.com/Contacts/Customers"
-    ORG_SELECTOR_URL = "https://console.buzmanager.com/mybuz/organizations"
 
-    def __init__(self, headless: bool = True, keep_open: bool = False):
+    def __init__(self, storage_state_path: Path, headless: bool = True, keep_open: bool = False):
+        """
+        Initialize customer automation.
+
+        Args:
+            storage_state_path: Path to Playwright storage state JSON file for authentication
+            headless: Run browser in headless mode
+            keep_open: Keep browser open after completion for debugging
+        """
+        self.storage_state_path = storage_state_path
         self.headless = headless
         self.keep_open = keep_open
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
+        self.playwright = None
         self.result = CustomerAutomationResult()
 
     async def __aenter__(self):
         """Context manager entry - launch browser"""
-        if not self.STORAGE_STATE_PATH.exists():
+        if not self.storage_state_path.exists():
             raise FileNotFoundError(
-                f"Auth storage state not found at {self.STORAGE_STATE_PATH}. "
-                f"Run tools/buz_auth_bootstrap.py first."
+                f"Auth storage state not found at {self.storage_state_path}. "
+                f"Run tools/buz_auth_bootstrap.py <account_name> first."
             )
 
-        playwright = await async_playwright().__aenter__()
-        self.browser = await playwright.chromium.launch(headless=self.headless)
+        self.playwright = await async_playwright().__aenter__()
+        self.browser = await self.playwright.chromium.launch(headless=self.headless)
         self.context = await self.browser.new_context(
-            storage_state=str(self.STORAGE_STATE_PATH)
+            storage_state=str(self.storage_state_path)
         )
         return self
 
@@ -96,167 +104,34 @@ class BuzCustomerAutomation:
             self.result.add_step("Browser left open for debugging - manually close when done")
             # Don't sleep - let the function return so results can be shown immediately
 
-    async def get_current_organization(self, page: Page) -> Optional[str]:
+    async def switch_to_account(self, storage_state_path: Path, account_name: str):
         """
-        Check which organization we're currently in by reading the brand link.
-
-        Returns:
-            Organization name if in an org, None if on org selector page
-        """
-        try:
-            # Check if we're on the org selector page
-            my_buz_link = page.locator('a.navbar-brand.buz-brand:has-text("My BUZ")')
-            if await my_buz_link.count() > 0:
-                return None  # On org selector page
-
-            # Check for org brand link (Watson Blinds, Designer Drapes, etc.)
-            brand_link = page.locator('a.brand[style*="border-right"]')
-            if await brand_link.count() > 0:
-                org_name = await brand_link.text_content()
-                return org_name.strip()
-
-            # Fallback: check URL
-            if "mybuz/organizations" in page.url:
-                return None  # On org selector page
-
-            return None  # Unknown state
-        except:
-            return None
-
-    async def switch_organization(self, org_name: str, max_retries: int = 5):
-        """
-        Switch to a specific Buz organization and VERIFY the switch succeeded.
-        Will retry until confirmed in the correct org.
+        Switch to a different Buz account by creating a new browser context with different auth.
+        This is cleaner than navigating org selectors - each account is automatically in its org.
 
         Args:
-            org_name: Name of the organization (e.g., "Watson Blinds", "Designer Drapes")
-            max_retries: Maximum number of times to retry switching (default 5)
+            storage_state_path: Path to the new account's storage state file
+            account_name: Descriptive name of the account (for logging)
         """
-        self.result.add_step(f"Switching to Buz instance: {org_name}")
+        if not storage_state_path.exists():
+            raise FileNotFoundError(
+                f"Auth storage state not found at {storage_state_path}. "
+                f"Run tools/buz_auth_bootstrap.py {account_name.lower().replace(' ', '')} first."
+            )
 
-        for attempt in range(max_retries):
-            # Navigate to org selector and click the org
-            switch_page = await self.context.new_page()
-            try:
-                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
+        self.result.add_step(f"Switching to account: {account_name}")
 
-                # Click the organization link in the table
-                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
-                await org_link.click()
-                await switch_page.wait_for_load_state('networkidle')
-            finally:
-                await switch_page.close()
+        # Close current context
+        if self.context:
+            await self.context.close()
 
-            # Now VERIFY we actually switched by checking a page in the org
-            verify_page = await self.context.new_page()
-            try:
-                # Navigate to user management to check which org we're in
-                await verify_page.goto("https://console1.buzmanager.com/myorg/user-management/users", wait_until='networkidle')
-                await verify_page.wait_for_timeout(500)  # Let page settle
+        # Create new context with different authentication
+        self.context = await self.browser.new_context(
+            storage_state=str(storage_state_path)
+        )
+        self.storage_state_path = storage_state_path
 
-                # Check which org we're actually in
-                current_org = await self.get_current_organization(verify_page)
-
-                if current_org == org_name:
-                    # Success! We're in the correct org
-                    if attempt > 0:
-                        self.result.add_step(f"✓ Switched to {org_name} (after {attempt + 1} attempts)")
-                    else:
-                        self.result.add_step(f"✓ Switched to {org_name}")
-                    return  # Successfully switched
-                else:
-                    # Switch didn't work, log and retry
-                    if current_org is None:
-                        self.result.add_step(f"⚠️ Attempt {attempt + 1}: Switch failed, still on org selector")
-                    else:
-                        self.result.add_step(f"⚠️ Attempt {attempt + 1}: Switch failed, in '{current_org}' instead of '{org_name}'")
-                    # Loop will retry
-            finally:
-                await verify_page.close()
-
-        # If we get here, switching failed after all retries
-        raise Exception(f"Failed to switch to {org_name} after {max_retries} attempts")
-
-    async def ensure_correct_organization(self, org_name: str):
-        """
-        Check if we're in the correct org, and switch only if needed
-
-        Args:
-            org_name: Name of the organization to ensure we're in
-        """
-        page = await self.context.new_page()
-        try:
-            # Navigate to a page to check which org we're in
-            await page.goto("https://console1.buzmanager.com/myorg/user-management/users", wait_until='networkidle')
-
-            # Check which org we're currently in
-            current_org = await self.get_current_organization(page)
-
-            if current_org is None:
-                # On org selector page, need to select the org
-                self.result.add_step(f"On org selector page, selecting {org_name}")
-                await page.close()
-                await self.switch_organization(org_name)
-            elif current_org == org_name:
-                # Already in the correct org
-                self.result.add_step(f"✓ Already in {org_name} instance")
-                await page.close()
-            else:
-                # In wrong org, need to switch
-                self.result.add_step(f"Currently in '{current_org}', switching to {org_name}")
-                await page.close()
-                await self.switch_organization(org_name)
-
-        except:
-            await page.close()
-
-    async def verify_not_on_org_selector(self, page: Page, intended_url: str, org_name: str, max_retries: int = 5):
-        """
-        After navigating, verify we didn't land on the org selector page.
-        If we did, switch to correct org and navigate back - keep trying until it sticks.
-
-        Args:
-            page: The page we just navigated
-            intended_url: Where we intended to go
-            org_name: Organization we should be in
-            max_retries: Maximum number of times to retry switching (default 5)
-        """
-        for attempt in range(max_retries):
-            current_org = await self.get_current_organization(page)
-
-            if current_org == org_name:
-                # We're in the correct org - success!
-                if attempt > 0:
-                    self.result.add_step(f"✓ Successfully in {org_name} (after {attempt} attempts)")
-                return  # All good, exit
-
-            # Not in correct org - need to switch
-            if current_org is None:
-                self.result.add_step(f"⚠️ Attempt {attempt + 1}: On org selector, switching to {org_name}")
-            else:
-                self.result.add_step(f"⚠️ Attempt {attempt + 1}: In wrong org '{current_org}', switching to {org_name}")
-
-            # Switch to correct org
-            switch_page = await self.context.new_page()
-            try:
-                await switch_page.goto(self.ORG_SELECTOR_URL, wait_until='networkidle')
-                org_link = switch_page.locator(f'td a:has-text("{org_name}")')
-                await org_link.click()
-                await switch_page.wait_for_load_state('networkidle')
-            finally:
-                await switch_page.close()
-
-            # Navigate back to intended destination
-            await page.goto(intended_url, wait_until='networkidle')
-
-            # Wait a moment for page to settle
-            await page.wait_for_timeout(500)
-
-            # Loop will check again if we're in the right org
-
-        # If we get here, we've exceeded max retries
-        current_org = await self.get_current_organization(page)
-        raise Exception(f"Failed to switch to {org_name} after {max_retries} attempts. Currently in: {current_org or 'org selector'}")
+        self.result.add_step(f"✓ Switched to {account_name}")
 
     async def check_user_exists(self, email: str) -> tuple[bool, bool, Optional[str], Optional[str]]:
         """
@@ -651,13 +526,12 @@ class BuzCustomerAutomation:
             if not self.keep_open:
                 await page.close()
 
-    async def add_customer_from_ticket(self, customer_data: CustomerData, org_name: str) -> CustomerAutomationResult:
+    async def add_customer_from_ticket(self, customer_data: CustomerData) -> CustomerAutomationResult:
         """
         Complete workflow to add customer and user from Zendesk ticket data
 
         Args:
             customer_data: Customer information from Zendesk
-            org_name: Buz organization name (e.g., "Watson Blinds", "Designer Drapes")
 
         Steps:
         1. Check if user exists (optimization)
@@ -696,9 +570,6 @@ class BuzCustomerAutomation:
         page = await self.context.new_page()
         try:
             await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
-
-            # Verify we didn't land on org selector (Buz sometimes redirects there)
-            await self.verify_not_on_org_selector(page, self.CUSTOMERS_URL, org_name)
 
             result = await self.search_customer(page, customer_data.company_name, customer_data.email)
 
@@ -760,8 +631,22 @@ async def add_customer_from_zendesk_ticket(
 
     update(20, f"Ticket parsed. Customer: {customer_data.company_name}, Instances: {', '.join(customer_data.buz_instances)}")
 
+    # Helper function to get storage state path from instance name
+    def get_storage_state_path(instance_name: str) -> Path:
+        """
+        Convert instance name to storage state file path.
+        Example: "Watson Blinds" -> ".secrets/buz_storage_state_watsonblinds.json"
+        """
+        # Normalize: lowercase, remove spaces
+        normalized = instance_name.lower().replace(' ', '')
+        return Path(f".secrets/buz_storage_state_{normalized}.json")
+
+    # Get the storage state path for the first instance
+    first_instance = customer_data.buz_instances[0]
+    first_storage_path = get_storage_state_path(first_instance)
+
     # Process each Buz instance
-    async with BuzCustomerAutomation(headless=headless, keep_open=keep_open) as automation:
+    async with BuzCustomerAutomation(storage_state_path=first_storage_path, headless=headless, keep_open=keep_open) as automation:
         # Wrap the automation to provide progress updates
         original_add_step = automation.result.add_step
 
@@ -784,16 +669,12 @@ async def add_customer_from_zendesk_ticket(
                 automation.result.customer_created = False
                 automation.result.user_created = False
 
-            # Switch to the instance
-            if idx == 0:
-                # First instance: ensure we're in the right org (handles landing on org selector)
-                await automation.ensure_correct_organization(instance)
-            else:
-                # Subsequent instances: just switch normally
-                await automation.switch_organization(instance)
+                # Switch to different account (logout from first, login to second)
+                storage_path = get_storage_state_path(instance)
+                await automation.switch_to_account(storage_path, instance)
 
             # Run the workflow for this instance
-            result = await automation.add_customer_from_ticket(customer_data, instance)
+            result = await automation.add_customer_from_ticket(customer_data)
 
             # If processing multiple instances, continue to the next one
             if idx < len(customer_data.buz_instances) - 1:
