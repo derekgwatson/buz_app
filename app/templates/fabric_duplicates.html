@@ -6,15 +6,62 @@
 
     <h1>Find Duplicate Items</h1>
 
-    {% if output_path %}
-        <a href="{{ url_for('main_routes.download_file', filename=output_path) }}" class="btn btn-primary">
-            Download
-        </a>
+    {% if has_results %}
+        <!-- Results Section -->
+        <div class="alert alert-primary" role="alert">
+            <strong>Found {{ total_duplicates }} duplicate item(s)</strong> across {{ summary|length }} group(s)
+        </div>
+
+        <!-- Summary by Group -->
+        {% for group_name, data in summary.items() %}
+            <div class="card mb-3 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">{{ group_name }} <span class="badge badge-light">{{ data.count }} duplicate(s)</span></h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm table-hover">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th>Supplier Product Code</th>
+                                <th>Description</th>
+                                <th>Supplier</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in data.duplicates %}
+                                <tr>
+                                    <td>{{ item.get('SupplierProductCode', '') }}</td>
+                                    <td>{{ item.get('Description', '') }}</td>
+                                    <td>{{ item.get('Supplier', '') }}</td>
+                                </tr>
+                            {% endfor %}
+                            {% if data.count > 10 %}
+                                <tr>
+                                    <td colspan="3" class="text-muted font-italic">... and {{ data.count - 10 }} more</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endfor %}
+
+        <!-- Download Button -->
+        <form action="{{ url_for('main_routes.generate_duplicates_report') }}" method="POST" class="mt-3">
+            <input type="hidden" name="action" value="download">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-download"></i> Download Excel File
+            </button>
+            <a href="{{ url_for('main_routes.generate_duplicates_report') }}" class="btn btn-secondary">Start Over</a>
+        </form>
+
     {% else %}
+        <!-- Initial Form -->
         <form action="{{ url_for('main_routes.generate_duplicates_report') }}" method="POST">
+            <input type="hidden" name="action" value="find">
             <div class="alert alert-info" role="alert">
-                This will generate an upload file containing duplicate items.
-                The file is ready for upload to Buz but does not directly affect any data in your system.
+                This will find duplicate items and show you what was found.
+                You can then download an upload file for Buz if needed.
             </div>
 
             <p>

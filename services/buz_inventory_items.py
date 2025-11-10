@@ -1,5 +1,6 @@
 from openpyxl import Workbook
 from openpyxl.utils import get_column_letter
+from io import BytesIO
 import logging
 
 
@@ -82,6 +83,22 @@ class InventoryWorkbookCreator:
             return None  # Optional: return None to indicate no file was saved
         self.workbook.save(output_path)
         return self.workbook
+
+    def save_to_buffer(self):
+        """
+        Save the workbook to a BytesIO buffer for in-memory file generation.
+
+        Returns:
+            BytesIO: Buffer containing the Excel file, or None if no sheets exist.
+        """
+        if not self.sheets:
+            logger.info("No pricing updates found. No workbook created.")
+            return None
+
+        buffer = BytesIO()
+        self.workbook.save(buffer)
+        buffer.seek(0)
+        return buffer
 
     def auto_fit_columns(self):
         for sheet_name, sheet in self.sheets.items():
