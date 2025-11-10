@@ -237,8 +237,8 @@ class BuzCustomerAutomation:
         await company_input.fill(company_name)
         self.result.add_step(f"Entered company name: {company_name}")
 
-        # Click Display button (with search icon)
-        await page.click('button:has-text("Display"), input[value="Display"]')
+        # Click Display button (with search icon) - target by ID to avoid invisible duplicate
+        await page.click('button#AdvancedDisplay')
         await page.wait_for_load_state('networkidle')
 
         # Check for results
@@ -272,7 +272,7 @@ class BuzCustomerAutomation:
         await company_input.clear()
         email_input = page.locator('input[name="Email"], input#Email')
         await email_input.fill(email)
-        await page.click('button:has-text("Display"), input[value="Display"]')
+        await page.click('button#AdvancedDisplay')
         await page.wait_for_load_state('networkidle')
 
         count = await results.count()
