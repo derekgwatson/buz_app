@@ -431,22 +431,21 @@ class BuzCustomerAutomation:
                 await page.fill('input#BillingDetails_DirectPhone', customer_data.phone)
                 self.result.add_step(f"Added phone: {customer_data.phone}")
 
-        # Handle async address autocomplete
+        # Handle Google Places async address autocomplete
         self.result.add_step(f"Entering address: {customer_data.address}")
         address_input = page.locator('input#BillingDetails_FullAddress')
         await address_input.fill(customer_data.address)
 
-        # Wait for autocomplete dropdown to appear
+        # Wait for Google Places autocomplete to show suggestions
         await page.wait_for_timeout(1500)
 
-        # Look for autocomplete dropdown and select first result
-        # Common autocomplete patterns: ul.ui-autocomplete, .autocomplete-suggestions, etc.
-        dropdown = page.locator('ul.ui-autocomplete li:first-child, .autocomplete-suggestions div:first-child, [role="option"]:first-child')
-        if await dropdown.count() > 0:
-            await dropdown.first.click()
-            self.result.add_step("Selected address from autocomplete")
-        else:
-            self.result.add_step("No autocomplete dropdown appeared, using typed address")
+        # Use keyboard navigation to select first suggestion from Google Places
+        # Google Places dropdown doesn't use standard HTML, so use keyboard instead
+        await address_input.press('ArrowDown')  # Select first suggestion
+        await page.wait_for_timeout(300)
+        await address_input.press('Enter')      # Confirm selection
+        await page.wait_for_timeout(500)        # Wait for Google Places to populate fields
+        self.result.add_step("Selected address from Google Places autocomplete")
 
         # Click Save
         await page.click('button:has-text("Save"), input[value="Save"]')
