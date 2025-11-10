@@ -6,7 +6,7 @@ import logging
 import threading
 import uuid
 from pathlib import Path
-from flask import Blueprint, current_app, render_template, request, jsonify
+from flask import Blueprint, current_app, render_template, request, jsonify, url_for
 
 from services.auth import auth
 from services.job_service import create_job, update_job, get_job
