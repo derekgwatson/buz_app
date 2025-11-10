@@ -167,14 +167,14 @@ class BuzCustomerAutomation:
             await search_input.type(email, delay=50)  # Type with small delay to trigger events
             await page.wait_for_timeout(1500)
 
-            # Check if any results exist in the table after search filters
-            results_table = page.locator('table tbody tr')
-            count = await results_table.count()
+            # Get only data rows (not headers or empty rows)
+            data_rows = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
+            count = await data_rows.count()
 
             if count > 0:
                 self.result.add_step(f"User already exists (active) with email: {email}")
                 try:
-                    first_row = results_table.first
+                    first_row = data_rows.first
                     # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
@@ -187,9 +187,9 @@ class BuzCustomerAutomation:
             await status_select.select_option(label='Deactivated users')
             await page.wait_for_timeout(1500)
 
-            # Re-query the table after switching to deactivated
-            results_table = page.locator('table tbody tr')
-            count = await results_table.count()
+            # Get only data rows (not headers or empty rows)
+            data_rows = page.locator('table tbody tr.dxgvDataRow_Bootstrap')
+            count = await data_rows.count()
 
             if count > 0:
                 self.result.add_step(f"User found in deactivated users: {email}")
@@ -197,7 +197,7 @@ class BuzCustomerAutomation:
                 # Get customer name before reactivating
                 customer_name = None
                 try:
-                    first_row = results_table.first
+                    first_row = data_rows.first
                     # Customer name is in the first column inside an anchor tag
                     customer_name_link = first_row.locator('td:first-child a')
                     customer_name = await customer_name_link.text_content()
