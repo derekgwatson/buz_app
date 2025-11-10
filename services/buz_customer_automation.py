@@ -85,9 +85,10 @@ class BuzCustomerAutomation:
                 await self.browser.close()
         else:
             # Keep browser open for debugging
-            # User will need to manually close it
-            self.result.add_step("Browser left open for debugging (manual close required)")
-            pass
+            # Sleep for a long time to keep the thread alive (and browser subprocess alive)
+            self.result.add_step("Browser left open for debugging - sleeping 10 minutes to keep it alive (you can manually close the browser anytime)")
+            import asyncio
+            await asyncio.sleep(600)  # Sleep 10 minutes to keep browser alive
 
     async def switch_organization(self, org_name: str):
         """
