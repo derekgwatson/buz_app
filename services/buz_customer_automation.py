@@ -59,18 +59,16 @@ class BuzCustomerAutomation:
     INVITE_USER_URL = "https://console1.buzmanager.com/myorg/user-management/inviteuser/new"
     CUSTOMERS_URL = "https://go.buzmanager.com/Contacts/Customers"
 
-    def __init__(self, storage_state_path: Path, headless: bool = True, keep_open: bool = False):
+    def __init__(self, storage_state_path: Path, headless: bool = True):
         """
         Initialize customer automation.
 
         Args:
             storage_state_path: Path to Playwright storage state JSON file for authentication
             headless: Run browser in headless mode
-            keep_open: Keep browser open after completion for debugging
         """
         self.storage_state_path = storage_state_path
         self.headless = headless
-        self.keep_open = keep_open
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.playwright = None
@@ -93,16 +91,10 @@ class BuzCustomerAutomation:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit - close browser"""
-        if not self.keep_open:
-            if self.context:
-                await self.context.close()
-            if self.browser:
-                await self.browser.close()
-        else:
-            # Keep browser open for debugging - don't close it
-            # Browser subprocess will stay alive until manually closed or Flask app restarts
-            self.result.add_step("Browser left open for debugging - manually close when done")
-            # Don't sleep - let the function return so results can be shown immediately
+        if self.context:
+            await self.context.close()
+        if self.browser:
+            await self.browser.close()
 
     async def switch_to_account(self, storage_state_path: Path, account_name: str):
         """
@@ -475,11 +467,6 @@ class BuzCustomerAutomation:
             self.result.add_step(f"⚠️  Could not select from Google Places dropdown: {str(e)}")
             self.result.add_step("Continuing with typed address (lat/lng may be missing)...")
 
-        # Pause for manual inspection if debugging
-        if self.keep_open:
-            self.result.add_step("⏸️  PAUSED for inspection - check the form, then click 'Resume' in Playwright Inspector")
-            await page.pause()
-
         # Click Save
         await page.click('button:has-text("Save"), input[value="Save"]')
         await page.wait_for_load_state('networkidle')
@@ -647,7 +634,6 @@ class BuzCustomerAutomation:
 async def add_customer_from_zendesk_ticket(
     ticket_id: int,
     headless: bool = True,
-    keep_open: bool = False,
     job_update_callback=None
 ) -> CustomerAutomationResult:
     """
@@ -656,7 +642,6 @@ async def add_customer_from_zendesk_ticket(
     Args:
         ticket_id: Zendesk ticket ID
         headless: Run browser in headless mode
-        keep_open: Keep browser open after completion (for debugging)
         job_update_callback: Optional callback(pct, message) for job progress
 
     Returns:
@@ -692,7 +677,7 @@ async def add_customer_from_zendesk_ticket(
     first_storage_path = get_storage_state_path(first_instance)
 
     # Process each Buz instance
-    async with BuzCustomerAutomation(storage_state_path=first_storage_path, headless=headless, keep_open=keep_open) as automation:
+    async with BuzCustomerAutomation(storage_state_path=first_storage_path, headless=headless) as automation:
         # Wrap the automation to provide progress updates
         original_add_step = automation.result.add_step
 

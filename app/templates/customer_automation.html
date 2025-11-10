@@ -138,13 +138,6 @@
     </label>
   </div>
 
-  <div class="form-group">
-    <label>
-      <input type="checkbox" id="keep_open" name="keep_open" checked>
-      Keep browser open after completion (for debugging)
-    </label>
-  </div>
-
   <button type="submit" class="btn btn-primary" id="submitBtn">Start Automation</button>
 </form>
 
@@ -181,7 +174,6 @@ form.addEventListener('submit', async (e) => {
 
   const ticketId = document.getElementById('ticket_id').value;
   const headless = document.getElementById('headless').checked;
-  const keepOpen = document.getElementById('keep_open').checked;
 
   // Disable form
   submitBtn.disabled = true;
@@ -198,7 +190,6 @@ form.addEventListener('submit', async (e) => {
     const formData = new FormData();
     formData.append('ticket_id', ticketId);
     formData.append('headless', headless ? 'true' : 'false');
-    formData.append('keep_open', keepOpen ? 'true' : 'false');
 
     const response = await fetch('{{ url_for("customer_automation.add_from_zendesk") }}', {
       method: 'POST',
