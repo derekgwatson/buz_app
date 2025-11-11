@@ -196,15 +196,27 @@ def generate_upload():
                 logger.error(f"Source file not found for {org_name}: {source_file}")
                 continue
 
-            # Load the original Excel file with data_only=True to get calculated values instead of formulas
-            # This prevents formula corruption when cells contain formulas (starting with =)
-            wb = openpyxl.load_workbook(source_file, data_only=True)
+            # Load the original Excel file
+            wb = openpyxl.load_workbook(source_file)
             ws = wb["Inventory Groups"]
 
             # Create a new workbook for upload
             upload_wb = openpyxl.Workbook()
             upload_ws = upload_wb.active
             upload_ws.title = "Inventory Groups"
+
+            # Helper function to safely copy cell value (handle text starting with =)
+            def safe_copy_value(value):
+                """
+                Safely copy a cell value, handling text that starts with =
+                which Excel would interpret as a formula.
+                """
+                if value is None:
+                    return None
+                # If the value is a string starting with =, prefix with ' to make it literal text
+                if isinstance(value, str) and value.startswith('='):
+                    return "'" + value
+                return value
 
             # Copy header row (row 1)
             # Only copy up to column AE (31) which is the Operation column
@@ -213,7 +225,7 @@ def generate_upload():
                 target_cell = upload_ws.cell(row=1, column=col_idx)
 
                 # Copy cell value and basic properties
-                target_cell.value = source_cell.value
+                target_cell.value = safe_copy_value(source_cell.value)
                 if source_cell.has_style:
                     target_cell.font = copy(source_cell.font)
                     target_cell.border = copy(source_cell.border)
@@ -240,9 +252,8 @@ def generate_upload():
                             source_cell = ws.cell(row=row_idx, column=col_idx)
                             target_cell = upload_ws.cell(row=upload_row, column=col_idx)
 
-                            # Copy cell value only (not formulas)
-                            if source_cell.value is not None:
-                                target_cell.value = source_cell.value
+                            # Copy cell value, handling text that starts with =
+                            target_cell.value = safe_copy_value(source_cell.value)
 
                             # Copy cell styling if present
                             if source_cell.has_style:
