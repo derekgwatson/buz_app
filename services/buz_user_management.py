@@ -261,12 +261,15 @@ class BuzUserManagement:
         all_users = []
 
         try:
-            # Navigate to user management page
+            # First navigate to home screen to establish org context
+            # This prevents being pushed to the org switcher
+            self.result.add_step(f"Navigating to home screen...")
+            await page.goto("https://go.buzmanager.com", wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_timeout(1000)  # Give it a moment to settle
+
+            # Now navigate to user management page
             self.result.add_step(f"Navigating to user management page...")
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='domcontentloaded', timeout=30000)
-
-            # Handle org selector if present
-            await self.handle_org_selector_if_present(page, self.USER_MANAGEMENT_URL)
 
             # Wait for the page to load
             await page.wait_for_selector('table#userListTable', timeout=10000)
