@@ -344,14 +344,19 @@ class BuzMaxDiscountReview:
             self.result.add_step(f"Waiting for page to process file selection...")
             await page.wait_for_timeout(1000)  # Wait 1 second for JS to react
 
-            # Wait for upload button to become visible (it has class fileupload-exists which shows after file selection)
-            self.result.add_step(f"Waiting for upload button to appear...")
+            # Click upload button (force click since it might be hidden but functional)
+            self.result.add_step(f"Clicking upload button...")
             upload_button = page.locator('input#btnUpload[type="submit"]')
-            await upload_button.wait_for(state='visible', timeout=10000)
 
-            # Click upload button
-            self.result.add_step(f"Uploading file...")
-            await upload_button.click()
+            # Try to wait for it to be visible first, but if it stays hidden, force click it
+            try:
+                await upload_button.wait_for(state='visible', timeout=5000)
+                self.result.add_step(f"Upload button visible, clicking...")
+                await upload_button.click()
+            except Exception:
+                # Button exists but is hidden - force click it anyway
+                self.result.add_step(f"Upload button hidden, force clicking...")
+                await upload_button.click(force=True)
 
             # Wait for the select dropdown to populate
             self.result.add_step(f"Waiting for sheet selection...")
