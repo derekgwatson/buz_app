@@ -959,16 +959,20 @@ function renderTableRows(comparison) {
       } else {
         // Make cell editable
         fieldTd.contentEditable = 'true';
-        fieldTd.textContent = formatFieldValue(fieldValue, selectedField);
         fieldTd.dataset.orgName = orgName;
         fieldTd.dataset.productCode = product.code || '';
         fieldTd.dataset.originalValue = String(fieldValue);
         fieldTd.dataset.field = selectedField;
 
-        // Check if this cell has been edited
+        // Check if this cell has been edited - show new value if so
         const changeKey = `${orgName}|${product.code}|${selectedField}`;
         if (changes[changeKey]) {
+          // Show the edited value, not the original
+          fieldTd.textContent = formatFieldValue(changes[changeKey].newValue, selectedField);
           fieldTd.classList.add('edited');
+        } else {
+          // Show original value
+          fieldTd.textContent = formatFieldValue(fieldValue, selectedField);
         }
 
         if (hasMismatch) {
