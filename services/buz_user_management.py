@@ -263,17 +263,30 @@ class BuzUserManagement:
         try:
             # First navigate to home screen to establish org context
             self.result.add_step(f"Navigating to home screen...")
-            await page.goto("https://go.buzmanager.com", wait_until='domcontentloaded', timeout=30000)
-            await page.wait_for_timeout(1000)  # Give it a moment to settle
+            await page.goto("https://go.buzmanager.com", wait_until='networkidle', timeout=30000)
+            self.result.add_step(f"Home screen loaded at: {page.url}")
+            await page.wait_for_timeout(2000)  # Give it more time to settle
 
             # Now navigate to user management page via go.buzmanager.com URL
             # This redirects to console1.buzmanager.com/myorg/user-management/users
             self.result.add_step(f"Navigating to user management page...")
-            await page.goto(self.USER_MANAGEMENT_URL, wait_until='domcontentloaded', timeout=30000)
-            await page.wait_for_timeout(1000)  # Wait for redirect to complete
+            await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle', timeout=30000)
+            self.result.add_step(f"User page loaded at: {page.url}")
+
+            # Check if we ended up on the org selector page
+            if "mybuz/organizations" in page.url:
+                self.result.add_step(f"⚠️  On org selector page, clicking through...")
+                org_link = page.locator('td a').first
+                if await org_link.count() > 0:
+                    await org_link.click()
+                    await page.wait_for_load_state('networkidle', timeout=30000)
+                    self.result.add_step(f"After org selector: {page.url}")
+                else:
+                    raise Exception("On org selector but couldn't find org link")
 
             # Wait for the page to load
-            await page.wait_for_selector('table#userListTable', timeout=10000)
+            await page.wait_for_selector('table#userListTable', timeout=15000)
+            self.result.add_step(f"✓ User table found")
 
             # Set page size to 500 (maximum)
             self.result.add_step(f"Setting page size to 500...")
