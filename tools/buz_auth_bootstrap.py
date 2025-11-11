@@ -54,10 +54,26 @@ async def main(account_name: str = "default") -> None:
         await page.goto(START_URL)
         await page.wait_for_load_state('networkidle')
 
-        # Save storage state (now includes org selection)
+        # Also visit the console domain to capture those auth cookies
+        # The user management page is on console1.buzmanager.com which requires separate auth
+        print(">>> Visiting console domain to capture authentication...")
+        await page.goto("https://go.buzmanager.com/Settings/Users")
+        # Wait for redirect to console domain
+        await page.wait_for_timeout(3000)
+        print(f">>> Console page loaded at: {page.url}")
+
+        # Wait for the user table to appear (confirms we're authenticated)
+        try:
+            await page.wait_for_selector('table#userListTable', timeout=10000)
+            print(">>> ✓ Console authentication successful")
+        except Exception as e:
+            print(f">>> ⚠️  Warning: Could not find user table (may still be OK): {e}")
+
+        # Save storage state (now includes both go.buzmanager.com and console auth)
         await ctx.storage_state(path=str(state_path))
         print(f"\n✓ Saved auth state to: {state_path.resolve()}")
         print(f"✓ This account is now configured for: {account_name}")
+        print(f"✓ Includes authentication for both go.buzmanager.com and console1.buzmanager.com")
         await browser.close()
 
 
