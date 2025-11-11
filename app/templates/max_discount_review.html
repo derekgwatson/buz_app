@@ -673,17 +673,9 @@ function validateFieldValue(value, field) {
 fieldSelector.addEventListener('change', () => {
   selectedField = fieldSelector.value;
 
-  // Clear all changes when switching fields
-  changes = {};
-  generatedFilePaths = {};
+  // Don't clear changes - they have field info in them already
+  // Just update the changes counter to reflect current field
   updateChangesCounter();
-
-  // Hide all change-related UI
-  changesBar.classList.remove('visible');
-  previewChanges.classList.remove('visible');
-  uploadSection.classList.remove('visible');
-  downloadFiles.classList.remove('visible');
-  uploadResults.classList.remove('visible');
 
   // Re-render the table with the new field
   if (comparisonData) {
