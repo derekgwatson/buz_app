@@ -7,6 +7,7 @@ import threading
 import uuid
 from pathlib import Path
 from flask import Blueprint, current_app, render_template, request, jsonify, url_for
+from copy import copy
 
 from services.auth import auth
 from services.job_service import create_job, update_job, get_job
@@ -205,9 +206,20 @@ def generate_upload():
             upload_ws.title = "Inventory Groups"
 
             # Copy header row (row 1)
-            header_row = list(ws[1])
-            for col_idx, cell in enumerate(header_row, 1):
-                upload_ws.cell(row=1, column=col_idx, value=cell.value)
+            # Only copy up to column AE (31) which is the Operation column
+            for col_idx in range(1, 32):
+                source_cell = ws.cell(row=1, column=col_idx)
+                target_cell = upload_ws.cell(row=1, column=col_idx)
+
+                # Copy cell value and basic properties
+                target_cell.value = source_cell.value
+                if source_cell.has_style:
+                    target_cell.font = copy(source_cell.font)
+                    target_cell.border = copy(source_cell.border)
+                    target_cell.fill = copy(source_cell.fill)
+                    target_cell.number_format = copy(source_cell.number_format)
+                    target_cell.protection = copy(source_cell.protection)
+                    target_cell.alignment = copy(source_cell.alignment)
 
             # Track which product codes have been changed
             changed_codes = {change['productCode'] for change in changes_list}
@@ -222,10 +234,23 @@ def generate_upload():
                     change = next((c for c in changes_list if c['productCode'] == code), None)
 
                     if change:
-                        # Copy the entire row
-                        for col_idx in range(1, ws.max_column + 1):
-                            cell_value = ws.cell(row=row_idx, column=col_idx).value
-                            upload_ws.cell(row=upload_row, column=col_idx, value=cell_value)
+                        # Copy the entire row (up to column AE = 31)
+                        for col_idx in range(1, 32):
+                            source_cell = ws.cell(row=row_idx, column=col_idx)
+                            target_cell = upload_ws.cell(row=upload_row, column=col_idx)
+
+                            # Copy cell value only (not formulas)
+                            if source_cell.value is not None:
+                                target_cell.value = source_cell.value
+
+                            # Copy cell styling if present
+                            if source_cell.has_style:
+                                target_cell.font = copy(source_cell.font)
+                                target_cell.border = copy(source_cell.border)
+                                target_cell.fill = copy(source_cell.fill)
+                                target_cell.number_format = copy(source_cell.number_format)
+                                target_cell.protection = copy(source_cell.protection)
+                                target_cell.alignment = copy(source_cell.alignment)
 
                         # Update max discount (column G = 7) - store as number, not decimal
                         upload_ws.cell(row=upload_row, column=7, value=change['newValue'])
