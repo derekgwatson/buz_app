@@ -118,23 +118,31 @@ class MaxDiscountComparison:
 
         logger.info(f"Built comparison with {len(self.products)} products")
 
-        # Sort products by seq_no (use first available seq_no, preferably from Canberra)
+        # Sort products by seq_no (primary), then description (secondary)
         def get_sort_key(product: ProductDiscountRow):
             # Try to get seq_no from Canberra first
             canberra_seq = product.seq_nos.get('Canberra')
             if canberra_seq is not None:
-                return canberra_seq
+                seq_no = canberra_seq
+            else:
+                # Otherwise get first available seq_no
+                seq_no = None
+                for s in product.seq_nos.values():
+                    if s is not None:
+                        seq_no = s
+                        break
 
-            # Otherwise get first available seq_no
-            for seq_no in product.seq_nos.values():
-                if seq_no is not None:
-                    return seq_no
+                # If no seq_no, sort to end
+                if seq_no is None:
+                    seq_no = float('inf')
 
-            # If no seq_no, sort to end
-            return float('inf')
+            # Secondary sort by description (case-insensitive)
+            description = (product.description or '').lower()
+
+            return (seq_no, description)
 
         self.products.sort(key=get_sort_key)
-        logger.info(f"Sorted products by sequence number")
+        logger.info(f"Sorted products by sequence number and description")
 
     def to_dict(self) -> dict:
         """Convert comparison to dictionary for JSON serialization"""
