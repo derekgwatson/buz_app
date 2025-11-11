@@ -18,14 +18,22 @@ class ProductDiscountRow:
     # Discounts by org name
     discounts: Dict[str, Optional[float]]  # org_name -> discount_pct
 
+    # Sequence numbers by org name
+    seq_nos: Dict[str, Optional[int]] = None  # org_name -> seq_no
+
     # Match info
     matched_by_code: bool = True
+
+    def __post_init__(self):
+        if self.seq_nos is None:
+            self.seq_nos = {}
 
     def to_dict(self) -> dict:
         return {
             'code': self.code,
             'description': self.description,
             'discounts': self.discounts,
+            'seq_nos': self.seq_nos,
             'matched_by_code': self.matched_by_code
         }
 
@@ -91,8 +99,9 @@ class MaxDiscountComparison:
             if not code:
                 continue
 
-            # Get discounts from each org for this code
+            # Get discounts and seq_nos from each org for this code
             discounts = {}
+            seq_nos = {}
             description = None
 
             for org_discounts in self.review_result.orgs:
@@ -102,15 +111,18 @@ class MaxDiscountComparison:
                 if code in org_indices['by_code']:
                     ig = org_indices['by_code'][code]
                     discounts[org_name] = ig.max_discount_pct
+                    seq_nos[org_name] = ig.seq_no
                     if not description and ig.description:
                         description = ig.description
                 else:
                     discounts[org_name] = None
+                    seq_nos[org_name] = None
 
             self.products.append(ProductDiscountRow(
                 code=code,
                 description=description,
                 discounts=discounts,
+                seq_nos=seq_nos,
                 matched_by_code=True
             ))
             processed_codes.add(code)
@@ -133,8 +145,9 @@ class MaxDiscountComparison:
             if already_processed:
                 continue
 
-            # Get discounts from each org for this description
+            # Get discounts and seq_nos from each org for this description
             discounts = {}
+            seq_nos = {}
             code = None
 
             for org_discounts in self.review_result.orgs:
@@ -144,10 +157,12 @@ class MaxDiscountComparison:
                 if description in org_indices['by_desc']:
                     ig = org_indices['by_desc'][description]
                     discounts[org_name] = ig.max_discount_pct
+                    seq_nos[org_name] = ig.seq_no
                     if not code and ig.code:
                         code = ig.code
                 else:
                     discounts[org_name] = None
+                    seq_nos[org_name] = None
 
             # Only add if found in at least one org
             if any(d is not None for d in discounts.values()):
@@ -155,10 +170,29 @@ class MaxDiscountComparison:
                     code=code,
                     description=description,
                     discounts=discounts,
+                    seq_nos=seq_nos,
                     matched_by_code=False
                 ))
 
         logger.info(f"Built comparison with {len(self.products)} products")
+
+        # Sort products by seq_no (use first available seq_no, preferably from Canberra)
+        def get_sort_key(product: ProductDiscountRow):
+            # Try to get seq_no from Canberra first
+            canberra_seq = product.seq_nos.get('Watson Blinds (Canberra)')
+            if canberra_seq is not None:
+                return canberra_seq
+
+            # Otherwise get first available seq_no
+            for seq_no in product.seq_nos.values():
+                if seq_no is not None:
+                    return seq_no
+
+            # If no seq_no, sort to end
+            return float('inf')
+
+        self.products.sort(key=get_sort_key)
+        logger.info(f"Sorted products by sequence number")
 
     def to_dict(self) -> dict:
         """Convert comparison to dictionary for JSON serialization"""

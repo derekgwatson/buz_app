@@ -834,6 +834,10 @@ function renderTableRows(comparison) {
       canberraDiffers = allRegionalSame && canberraIsDifferent;
     }
 
+    // Check if seq_nos match across orgs
+    const seqNoValues = orgNames.map(org => product.seq_nos ? product.seq_nos[org] : null).filter(v => v != null);
+    const hasSeqNoMismatch = seqNoValues.length > 1 && !seqNoValues.every(v => v === seqNoValues[0]);
+
     // Apply mismatch filter
     if (mismatchOnly && !hasMismatch) {
       return;
@@ -849,7 +853,18 @@ function renderTableRows(comparison) {
     // Code column
     const codeTd = document.createElement('td');
     codeTd.className = 'code-col';
-    codeTd.textContent = product.code || '-';
+
+    // Add warning icon if seq_nos don't match
+    if (hasSeqNoMismatch) {
+      const warningIcon = document.createElement('span');
+      warningIcon.textContent = '⚠️ ';
+      warningIcon.title = 'Sequence numbers differ across organizations';
+      warningIcon.style.cursor = 'help';
+      codeTd.appendChild(warningIcon);
+    }
+
+    const codeText = document.createTextNode(product.code || '-');
+    codeTd.appendChild(codeText);
     tr.appendChild(codeTd);
 
     // Description column

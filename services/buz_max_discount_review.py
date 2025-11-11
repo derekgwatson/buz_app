@@ -20,6 +20,7 @@ class InventoryGroupDiscount:
     code: str
     description: str
     max_discount_pct: Optional[float]
+    seq_no: Optional[int] = None
 
     def __hash__(self):
         return hash(self.code)
@@ -274,11 +275,13 @@ class BuzMaxDiscountReview:
         for row in ws.iter_rows(min_row=2, values_only=True):
             # Column B = Description (index 1)
             # Column C = Code (index 2)
+            # Column E = Seq No (index 4)
             # Column G = Max Discount Percentage (index 6)
             # Column N = Can be ordered (index 13)
 
             description = row[1] if len(row) > 1 else None
             code = row[2] if len(row) > 2 else None
+            seq_no_raw = row[4] if len(row) > 4 else None
             max_discount = row[6] if len(row) > 6 else None
             can_be_ordered = row[13] if len(row) > 13 else None
 
@@ -289,6 +292,14 @@ class BuzMaxDiscountReview:
             # Skip rows where "Can be ordered" is not YES
             if can_be_ordered != "YES":
                 continue
+
+            # Parse seq no
+            seq_no = None
+            if seq_no_raw is not None:
+                try:
+                    seq_no = int(seq_no_raw)
+                except (ValueError, TypeError):
+                    pass
 
             # Parse max discount percentage
             # Buz stores percentages as the actual number (0.5 = 0.5%, 50 = 50%)
@@ -302,7 +313,8 @@ class BuzMaxDiscountReview:
             inventory_groups.append(InventoryGroupDiscount(
                 code=code or "",
                 description=description or "",
-                max_discount_pct=max_discount_pct
+                max_discount_pct=max_discount_pct,
+                seq_no=seq_no
             ))
 
         wb.close()
