@@ -22,7 +22,7 @@ max_discount_review_bp = Blueprint("max_discount_review", __name__, url_prefix="
 @auth.login_required
 def index():
     """Max discount review entry point"""
-    return render_template("max_discount_review.html")
+    return render_template("max_discount_review.html", is_development=current_app.config.get('DEBUG', False))
 
 
 @max_discount_review_bp.route("/start-review", methods=["POST"])
@@ -33,9 +33,12 @@ def start_review():
 
     Expects:
         orgs: (required) List of org keys to process
-        headless: (optional) Run browser in headless mode (default: true)
+        headless: (optional) Run browser in headless mode (default: true, forced in production)
     """
     headless = request.form.get("headless", "true").lower() in ("true", "1", "yes")
+    # Force headless mode in production (DEBUG=False)
+    if not current_app.config.get('DEBUG', False):
+        headless = True
 
     # Get selected orgs
     selected_orgs = request.form.getlist("orgs")
@@ -345,6 +348,10 @@ def upload_to_buz():
 
         file_paths = data.get('file_paths', {})  # Dict: org_key -> file_path
         headless = data.get('headless', True)
+
+        # Force headless mode in production (DEBUG=False)
+        if not current_app.config.get('DEBUG', False):
+            headless = True
 
         if not file_paths:
             return jsonify({"error": "No files to upload"}), 400

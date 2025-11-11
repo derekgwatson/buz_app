@@ -477,12 +477,14 @@
     </div>
   </div>
 
+  {% if is_development %}
   <div class="form-group">
     <label>
       <input type="checkbox" id="headless" name="headless" checked>
       Run in headless mode (no browser window)
     </label>
   </div>
+  {% endif %}
 
   <button type="submit" class="btn btn-primary" id="submitBtn">Start Review</button>
 </form>
@@ -612,7 +614,7 @@ const uploadResultsList = document.getElementById('uploadResultsList');
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const headless = document.getElementById('headless').checked;
+  const headless = document.getElementById('headless')?.checked ?? true; // Default to true in production
 
   // Get selected orgs
   const selectedOrgs = Array.from(document.querySelectorAll('input[name="orgs"]:checked'))
@@ -1133,7 +1135,7 @@ uploadToBuzBtn.addEventListener('click', async () => {
   progressLog.textContent = '';
 
   try {
-    const headless = document.getElementById('headless').checked;
+    const headless = document.getElementById('headless')?.checked ?? true; // Default to true in production
 
     const response = await fetch('{{ url_for("max_discount_review.upload_to_buz") }}', {
       method: 'POST',
