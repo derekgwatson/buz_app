@@ -196,8 +196,9 @@ def generate_upload():
                 logger.error(f"Source file not found for {org_name}: {source_file}")
                 continue
 
-            # Load the original Excel file
-            wb = openpyxl.load_workbook(source_file)
+            # Load the original Excel file with data_only=True to get calculated values instead of formulas
+            # This prevents formula corruption when cells contain formulas (starting with =)
+            wb = openpyxl.load_workbook(source_file, data_only=True)
             ws = wb["Inventory Groups"]
 
             # Create a new workbook for upload
