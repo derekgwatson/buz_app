@@ -443,12 +443,37 @@
 {% endblock %}
 
 {% block content %}
-<h2>Max Discount Review</h2>
+<h2>Inventory Group Field Review</h2>
 
 <p class="info">
-  Review and compare maximum discount percentages across all Buz organizations.
-  This tool will download the current inventory group settings from each org and display them side-by-side.
+  Compare and align inventory group fields across all Buz organizations.
+  This tool downloads current inventory group settings and displays them side-by-side for easy comparison and bulk updates.
 </p>
+
+<details style="margin-bottom: 1.5rem; padding: 1rem; background: #2a2a2a; border: 1px solid #444; border-radius: 0.5rem;">
+  <summary style="cursor: pointer; font-weight: 600; color: #66d9ef; user-select: none;">
+    💡 How to Use
+  </summary>
+  <div style="margin-top: 1rem; color: #e0e0e0; line-height: 1.6;">
+    <ol style="margin-left: 1.5rem;">
+      <li><strong>Run Review:</strong> Select orgs and click "Start Review" to download current settings from each Buz organization</li>
+      <li><strong>Select Field:</strong> Use the "Field to compare" dropdown to choose which field to view/edit:
+        <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+          <li><strong>Max Discount %</strong> - Align discount percentages</li>
+          <li><strong>Seq No</strong> - Fix sequence number mismatches (hover ⚠️ icon to see which org differs)</li>
+          <li><strong>Can be ordered</strong> - Ensure consistent YES/NO settings</li>
+        </ul>
+      </li>
+      <li><strong>Edit Values:</strong> Click any cell to edit. Blue highlight = changed. Color coding shows mismatches (red = regional differ, amber = only Canberra differs, green = all match)</li>
+      <li><strong>Switch Fields:</strong> Change dropdown to work on different fields. Your edits persist across all fields.</li>
+      <li><strong>Review Changes:</strong> Click "Generate Upload Files" to see a preview. Switch fields to see changes for each field separately.</li>
+      <li><strong>Upload:</strong> Click "Upload to Buz" to automatically apply changes, or download files to upload manually</li>
+    </ol>
+    <p style="margin-top: 1rem; padding: 0.75rem; background: #1e3a1e; border-left: 3px solid #22c55e; border-radius: 0.25rem;">
+      <strong>Tip:</strong> You can edit multiple fields in one session, then upload all changes at once!
+    </p>
+  </div>
+</details>
 
 <form id="reviewForm">
   <div class="form-group">
