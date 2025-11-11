@@ -334,47 +334,54 @@ def download_upload_file(filepath):
 @auth.login_required
 def upload_to_buz():
     """Upload generated files to Buz"""
-    from services.buz_max_discount_review import upload_max_discount_files
+    try:
+        logger.info("Upload to Buz route called")
+        from services.buz_max_discount_review import upload_max_discount_files
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+        data = request.get_json()
+        logger.info(f"Received data: {data}")
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
 
-    file_paths = data.get('file_paths', {})  # Dict: org_key -> file_path
-    headless = data.get('headless', True)
+        file_paths = data.get('file_paths', {})  # Dict: org_key -> file_path
+        headless = data.get('headless', True)
 
-    if not file_paths:
-        return jsonify({"error": "No files to upload"}), 400
+        if not file_paths:
+            return jsonify({"error": "No files to upload"}), 400
 
-    # Create a new job
-    job_id = str(uuid.uuid4())
-    db = create_db_manager()
-    create_job(job_id, db)
+        # Create a new job
+        job_id = str(uuid.uuid4())
+        db = create_db_manager()
+        create_job(job_id, db)
 
-    # Run upload in background thread
-    def run_upload():
-        try:
-            # Convert file paths to Path objects
-            upload_files = {org_key: Path(fp) for org_key, fp in file_paths.items()}
+        # Run upload in background thread
+        def run_upload():
+            try:
+                # Convert file paths to Path objects
+                upload_files = {org_key: Path(fp) for org_key, fp in file_paths.items()}
 
-            def job_callback(pct, message):
-                update_job(job_id, pct=pct, message=message, db=db)
+                def job_callback(pct, message):
+                    update_job(job_id, pct=pct, message=message, db=db)
 
-            # Run the async upload
-            result = asyncio.run(upload_max_discount_files(
-                upload_files=upload_files,
-                headless=headless,
-                job_update_callback=job_callback
-            ))
+                # Run the async upload
+                result = asyncio.run(upload_max_discount_files(
+                    upload_files=upload_files,
+                    headless=headless,
+                    job_update_callback=job_callback
+                ))
 
-            # Mark job as done
-            update_job(job_id, pct=100, done=True, result=result, db=db)
+                # Mark job as done
+                update_job(job_id, pct=100, done=True, result=result, db=db)
 
-        except Exception as e:
-            logger.exception("Upload to Buz failed")
-            update_job(job_id, error=str(e), done=True, db=db)
+            except Exception as e:
+                logger.exception("Upload to Buz failed")
+                update_job(job_id, error=str(e), done=True, db=db)
 
-    thread = threading.Thread(target=run_upload, daemon=True)
-    thread.start()
+        thread = threading.Thread(target=run_upload, daemon=True)
+        thread.start()
 
-    return jsonify({"job_id": job_id})
+        return jsonify({"job_id": job_id})
+
+    except Exception as e:
+        logger.exception("Error in upload_to_buz route")
+        return jsonify({"error": f"Server error: {str(e)}"}), 500

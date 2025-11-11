@@ -524,7 +524,6 @@ async def upload_max_discount_files(
     update(0, "Starting upload to Buz")
 
     # Create a temp output dir (not actually used for this operation, but required by class)
-    import tempfile
     with tempfile.TemporaryDirectory() as temp_dir:
         output_dir = Path(temp_dir)
 
