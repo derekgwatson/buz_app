@@ -291,12 +291,20 @@ class BuzUserManagement:
             self.result.add_step(f"✓ Page size set to 500")
 
             # Combinations to scrape: active/inactive × employee/customer
-            combinations = [
-                (True, "employee", "0: true", "0: 0"),    # Active employees
-                (False, "employee", "1: false", "0: 0"),  # Inactive employees
-                (True, "customer", "0: true", "1: 5"),    # Active customers
-                (False, "customer", "1: false", "1: 5"),  # Inactive customers
-            ]
+            # Note: Only Canberra has customers, other orgs only have employees
+            if org_key == 'canberra':
+                combinations = [
+                    (True, "employee", "0: true", "0: 0"),    # Active employees
+                    (False, "employee", "1: false", "0: 0"),  # Inactive employees
+                    (True, "customer", "0: true", "1: 5"),    # Active customers
+                    (False, "customer", "1: false", "1: 5"),  # Inactive customers
+                ]
+            else:
+                # Other orgs only have employees
+                combinations = [
+                    (True, "employee", "0: true", "0: 0"),    # Active employees
+                    (False, "employee", "1: false", "0: 0"),  # Inactive employees
+                ]
 
             for is_active, user_type, active_value, type_value in combinations:
                 status_text = "Active" if is_active else "Inactive"
