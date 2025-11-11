@@ -677,6 +677,11 @@ fieldSelector.addEventListener('change', () => {
   // Just update the changes counter to reflect current field
   updateChangesCounter();
 
+  // Re-render preview if it's visible
+  if (previewChanges.classList.contains('visible')) {
+    renderPreviewChanges();
+  }
+
   // Re-render the table with the new field
   if (comparisonData) {
     renderTableRows(comparisonData);
@@ -1083,6 +1088,64 @@ function updateChangesCounter() {
   }
 }
 
+function renderPreviewChanges() {
+  // Filter changes to show only the currently selected field
+  previewChangesBody.innerHTML = '';
+
+  let filteredCount = 0;
+  for (const [key, change] of Object.entries(changes)) {
+    // Only show changes for the currently selected field
+    if (change.field !== selectedField) {
+      continue;
+    }
+
+    filteredCount++;
+    const tr = document.createElement('tr');
+
+    const orgTd = document.createElement('td');
+    orgTd.textContent = change.orgName;
+    tr.appendChild(orgTd);
+
+    const codeTd = document.createElement('td');
+    codeTd.textContent = change.productCode;
+    codeTd.style.fontFamily = 'monospace';
+    tr.appendChild(codeTd);
+
+    const descTd = document.createElement('td');
+    descTd.textContent = change.product.description || '-';
+    tr.appendChild(descTd);
+
+    const oldTd = document.createElement('td');
+    oldTd.className = 'old-value';
+    oldTd.textContent = formatFieldValue(change.originalValue, change.field);
+    tr.appendChild(oldTd);
+
+    const arrowTd = document.createElement('td');
+    arrowTd.className = 'arrow';
+    arrowTd.textContent = '→';
+    tr.appendChild(arrowTd);
+
+    const newTd = document.createElement('td');
+    newTd.className = 'new-value';
+    newTd.textContent = formatFieldValue(change.newValue, change.field);
+    tr.appendChild(newTd);
+
+    previewChangesBody.appendChild(tr);
+  }
+
+  // Update preview header to show filtered count
+  const previewTitle = previewChanges.querySelector('h4');
+  if (previewTitle) {
+    const fieldNames = {
+      'max_discount': 'Max Discount',
+      'seq_no': 'Seq No',
+      'can_be_ordered': 'Can be ordered'
+    };
+    const totalChanges = Object.keys(changes).length;
+    previewTitle.textContent = `Preview Changes - ${fieldNames[selectedField]} (${filteredCount} of ${totalChanges} total)`;
+  }
+}
+
 // Reset all changes
 resetChangesBtn.addEventListener('click', () => {
   if (Object.keys(changes).length === 0) return;
@@ -1157,42 +1220,8 @@ generateUploadBtn.addEventListener('click', async () => {
       }
     });
 
-    // Show preview of changes
-    previewChangesBody.innerHTML = '';
-    for (const [key, change] of Object.entries(changes)) {
-      const tr = document.createElement('tr');
-
-      const orgTd = document.createElement('td');
-      orgTd.textContent = change.orgName;
-      tr.appendChild(orgTd);
-
-      const codeTd = document.createElement('td');
-      codeTd.textContent = change.productCode;
-      codeTd.style.fontFamily = 'monospace';
-      tr.appendChild(codeTd);
-
-      const descTd = document.createElement('td');
-      descTd.textContent = change.product.description || '-';
-      tr.appendChild(descTd);
-
-      const oldTd = document.createElement('td');
-      oldTd.className = 'old-value';
-      oldTd.textContent = formatFieldValue(change.originalValue, change.field);
-      tr.appendChild(oldTd);
-
-      const arrowTd = document.createElement('td');
-      arrowTd.className = 'arrow';
-      arrowTd.textContent = '→';
-      tr.appendChild(arrowTd);
-
-      const newTd = document.createElement('td');
-      newTd.className = 'new-value';
-      newTd.textContent = formatFieldValue(change.newValue, change.field);
-      tr.appendChild(newTd);
-
-      previewChangesBody.appendChild(tr);
-    }
-
+    // Show preview of changes (filtered by selected field)
+    renderPreviewChanges();
     previewChanges.classList.add('visible');
 
     // Show download links
