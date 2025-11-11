@@ -549,6 +549,15 @@
       <ul id="uploadResultsList"></ul>
     </div>
 
+    <div class="filter-bar" style="margin-bottom: 0.5rem;">
+      <label for="fieldSelector" style="font-weight: 600;">Field to compare:</label>
+      <select id="fieldSelector" style="padding: 0.5rem; margin-left: 0.5rem; background: #333; color: #e0e0e0; border: 1px solid #555; border-radius: 0.375rem;">
+        <option value="max_discount">Max Discount %</option>
+        <option value="seq_no">Seq No</option>
+        <option value="can_be_ordered">Can be ordered</option>
+      </select>
+    </div>
+
     <div class="filter-bar">
       <label for="searchInput">Filter products:</label>
       <input type="text" id="searchInput" placeholder="Search by code or description...">
@@ -579,11 +588,13 @@ let currentJobId = null;
 let poller = null;
 let comparisonData = null;
 let rawResultData = null; // Store raw result with file paths
-let changes = {}; // Track changes: { "org|code": { oldValue, newValue, product } }
+let changes = {}; // Track changes: { "org|code|field": { oldValue, newValue, product, field } }
 let generatedFilePaths = {}; // Store generated file paths for upload: { org_key: file_path }
+let selectedField = 'max_discount'; // Currently selected field
 
 const form = document.getElementById('reviewForm');
 const submitBtn = document.getElementById('submitBtn');
+const fieldSelector = document.getElementById('fieldSelector');
 const progressSection = document.getElementById('progressSection');
 const progressBar = document.getElementById('progressBar');
 const progressPct = document.getElementById('progressPct');
@@ -610,6 +621,75 @@ const uploadSection = document.getElementById('uploadSection');
 const uploadToBuzBtn = document.getElementById('uploadToBuzBtn');
 const uploadResults = document.getElementById('uploadResults');
 const uploadResultsList = document.getElementById('uploadResultsList');
+
+// Helper functions for field access
+function getFieldValue(product, field, orgName) {
+  if (field === 'max_discount') {
+    return product.discounts?.[orgName];
+  } else if (field === 'seq_no') {
+    return product.seq_nos?.[orgName];
+  } else if (field === 'can_be_ordered') {
+    return product.can_be_ordered?.[orgName];
+  }
+  return null;
+}
+
+function formatFieldValue(value, field) {
+  if (value == null) return '-';
+  if (field === 'max_discount') {
+    return value.toFixed(1) + '%';
+  } else if (field === 'seq_no') {
+    return value.toString();
+  } else if (field === 'can_be_ordered') {
+    return value || '-';
+  }
+  return String(value);
+}
+
+function parseFieldValue(text, field) {
+  text = text.trim().replace('%', '');
+  if (field === 'max_discount') {
+    return parseFloat(text);
+  } else if (field === 'seq_no') {
+    return parseInt(text);
+  } else if (field === 'can_be_ordered') {
+    return text.toUpperCase();
+  }
+  return text;
+}
+
+function validateFieldValue(value, field) {
+  if (field === 'max_discount') {
+    return !isNaN(value) && value >= 0 && value <= 100;
+  } else if (field === 'seq_no') {
+    return !isNaN(value) && value >= 0 && Number.isInteger(value);
+  } else if (field === 'can_be_ordered') {
+    return value === 'YES' || value === 'NO';
+  }
+  return true;
+}
+
+// Field selector change handler
+fieldSelector.addEventListener('change', () => {
+  selectedField = fieldSelector.value;
+
+  // Clear all changes when switching fields
+  changes = {};
+  generatedFilePaths = {};
+  updateChangesCounter();
+
+  // Hide all change-related UI
+  changesBar.classList.remove('visible');
+  previewChanges.classList.remove('visible');
+  uploadSection.classList.remove('visible');
+  downloadFiles.classList.remove('visible');
+  uploadResults.classList.remove('visible');
+
+  // Re-render the table with the new field
+  if (comparisonData) {
+    renderTableRows(comparisonData);
+  }
+});
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -789,40 +869,40 @@ function renderTableRows(comparison) {
       }
     }
 
-    // Check if there's a mismatch
-    const discountValues = orgNames.map(org => product.discounts[org]).filter(v => v != null);
-    const hasMismatch = discountValues.length > 1 && !discountValues.every(v => v === discountValues[0]);
+    // Check if there's a mismatch (using selected field)
+    const fieldValues = orgNames.map(org => getFieldValue(product, selectedField, org)).filter(v => v != null);
+    const hasMismatch = fieldValues.length > 1 && !fieldValues.every(v => v === fieldValues[0]);
 
     // Detect if only Canberra differs from regional stores
     let canberraDiffers = false;
     let regionalMismatch = false;
 
     const regionalOrgs = ['Tweed', 'Batemans Bay', 'Shoalhaven', 'Wagga Wagga'];
-    const canberraDiscount = product.discounts['Canberra'];
-    const regionalDiscountsWithOrg = regionalOrgs.map(org => ({
+    const canberraValue = getFieldValue(product, selectedField, 'Canberra');
+    const regionalValuesWithOrg = regionalOrgs.map(org => ({
       org: org,
-      discount: product.discounts[org]
+      value: getFieldValue(product, selectedField, org)
     }));
-    const regionalDiscounts = regionalDiscountsWithOrg
-      .map(item => item.discount)
+    const regionalValues = regionalValuesWithOrg
+      .map(item => item.value)
       .filter(v => v != null);
 
     // Check if regional stores differ from each other (SERIOUS ISSUE)
     // This includes: different values OR some have values while others don't
-    const regionalOrgsWithData = regionalDiscountsWithOrg.filter(item => item.discount != null);
+    const regionalOrgsWithData = regionalValuesWithOrg.filter(item => item.value != null);
     if (regionalOrgsWithData.length > 0 && regionalOrgsWithData.length < regionalOrgs.length) {
       // Some regional stores have this group, others don't - MISMATCH
       regionalMismatch = true;
-    } else if (regionalDiscounts.length > 1) {
+    } else if (regionalValues.length > 1) {
       // All regional stores have data, but values differ
-      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
+      const allRegionalSame = regionalValues.every(v => v === regionalValues[0]);
       regionalMismatch = !allRegionalSame;
     }
 
     // Check if all regional stores have the same value, and Canberra is different
-    if (hasMismatch && !regionalMismatch && canberraDiscount != null && regionalDiscounts.length > 0) {
-      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
-      const canberraIsDifferent = canberraDiscount !== regionalDiscounts[0];
+    if (hasMismatch && !regionalMismatch && canberraValue != null && regionalValues.length > 0) {
+      const allRegionalSame = regionalValues.every(v => v === regionalValues[0]);
+      const canberraIsDifferent = canberraValue !== regionalValues[0];
       canberraDiffers = allRegionalSame && canberraIsDifferent;
     }
 
@@ -875,42 +955,43 @@ function renderTableRows(comparison) {
     descTd.title = product.description || '';
     tr.appendChild(descTd);
 
-    // Org discount columns
+    // Org field columns (dynamically show selected field)
     orgNames.forEach(orgName => {
-      const discountTd = document.createElement('td');
-      discountTd.className = 'discount-col';
+      const fieldTd = document.createElement('td');
+      fieldTd.className = 'discount-col'; // Keep class name for styling
 
-      const discount = product.discounts[orgName];
-      if (discount == null) {
-        discountTd.textContent = '-';
-        discountTd.classList.add('discount-empty');
+      const fieldValue = getFieldValue(product, selectedField, orgName);
+      if (fieldValue == null) {
+        fieldTd.textContent = '-';
+        fieldTd.classList.add('discount-empty');
       } else {
         // Make cell editable
-        discountTd.contentEditable = 'true';
-        discountTd.textContent = discount.toFixed(1) + '%';
-        discountTd.dataset.orgName = orgName;
-        discountTd.dataset.productCode = product.code || '';
-        discountTd.dataset.originalValue = discount.toFixed(1);
+        fieldTd.contentEditable = 'true';
+        fieldTd.textContent = formatFieldValue(fieldValue, selectedField);
+        fieldTd.dataset.orgName = orgName;
+        fieldTd.dataset.productCode = product.code || '';
+        fieldTd.dataset.originalValue = String(fieldValue);
+        fieldTd.dataset.field = selectedField;
 
         // Check if this cell has been edited
-        const changeKey = `${orgName}|${product.code}`;
+        const changeKey = `${orgName}|${product.code}|${selectedField}`;
         if (changes[changeKey]) {
-          discountTd.classList.add('edited');
+          fieldTd.classList.add('edited');
         }
 
         if (hasMismatch) {
           // Apply amber color if only Canberra differs, red otherwise
           if (canberraDiffers) {
-            discountTd.classList.add('discount-canberra-differs');
+            fieldTd.classList.add('discount-canberra-differs');
           } else {
-            discountTd.classList.add('discount-mismatch');
+            fieldTd.classList.add('discount-mismatch');
           }
-        } else if (discountValues.length > 0) {
-          discountTd.classList.add('discount-match');
+        } else if (fieldValues.length > 0) {
+          fieldTd.classList.add('discount-match');
         }
       }
 
-      tr.appendChild(discountTd);
+      tr.appendChild(fieldTd);
     });
 
     comparisonTableBody.appendChild(tr);
@@ -935,26 +1016,46 @@ comparisonTableBody.addEventListener('keydown', (e) => {
 function handleCellEdit(cell) {
   const orgName = cell.dataset.orgName;
   const productCode = cell.dataset.productCode;
-  const originalValue = parseFloat(cell.dataset.originalValue);
+  const field = cell.dataset.field;
+  const originalValueStr = cell.dataset.originalValue;
 
-  // Parse the edited value
-  let newText = cell.textContent.trim().replace('%', '');
-  let newValue = parseFloat(newText);
+  // Parse the edited value based on field type
+  let newText = cell.textContent.trim();
+  let newValue = parseFieldValue(newText, field);
 
   // Validate input
-  if (isNaN(newValue) || newValue < 0 || newValue > 100) {
-    alert('Please enter a valid percentage between 0 and 100');
-    cell.textContent = originalValue.toFixed(1) + '%';
+  if (!validateFieldValue(newValue, field)) {
+    let errorMsg = 'Invalid value';
+    if (field === 'max_discount') {
+      errorMsg = 'Please enter a valid percentage between 0 and 100';
+    } else if (field === 'seq_no') {
+      errorMsg = 'Please enter a valid integer >= 0';
+    } else if (field === 'can_be_ordered') {
+      errorMsg = 'Please enter YES or NO';
+    }
+    alert(errorMsg);
+
+    // Restore original value
+    const originalValue = field === 'max_discount' ? parseFloat(originalValueStr) :
+                         field === 'seq_no' ? parseInt(originalValueStr) : originalValueStr;
+    cell.textContent = formatFieldValue(originalValue, field);
     return;
   }
 
   // Update display
-  cell.textContent = newValue.toFixed(1) + '%';
+  cell.textContent = formatFieldValue(newValue, field);
 
-  const changeKey = `${orgName}|${productCode}`;
+  const changeKey = `${orgName}|${productCode}|${field}`;
+
+  // Parse original value
+  const originalValue = field === 'max_discount' ? parseFloat(originalValueStr) :
+                       field === 'seq_no' ? parseInt(originalValueStr) : originalValueStr;
 
   // Check if value changed
-  if (Math.abs(newValue - originalValue) < 0.01) {
+  const hasChanged = field === 'max_discount' ? Math.abs(newValue - originalValue) >= 0.01 :
+                     newValue !== originalValue;
+
+  if (!hasChanged) {
     // No real change, remove from changes
     delete changes[changeKey];
     cell.classList.remove('edited');
@@ -965,6 +1066,7 @@ function handleCellEdit(cell) {
       orgName: orgName,
       productCode: productCode,
       product: product,
+      field: field,
       originalValue: originalValue,
       newValue: newValue
     };
@@ -1030,7 +1132,8 @@ generateUploadBtn.addEventListener('click', async () => {
       },
       body: JSON.stringify({
         changes: changesByOrg,
-        raw_result: rawResultData
+        raw_result: rawResultData,
+        field: selectedField  // Include which field is being updated
       })
     });
 
@@ -1078,7 +1181,7 @@ generateUploadBtn.addEventListener('click', async () => {
 
       const oldTd = document.createElement('td');
       oldTd.className = 'old-value';
-      oldTd.textContent = change.originalValue.toFixed(1) + '%';
+      oldTd.textContent = formatFieldValue(change.originalValue, change.field);
       tr.appendChild(oldTd);
 
       const arrowTd = document.createElement('td');
@@ -1088,7 +1191,7 @@ generateUploadBtn.addEventListener('click', async () => {
 
       const newTd = document.createElement('td');
       newTd.className = 'new-value';
-      newTd.textContent = change.newValue.toFixed(1) + '%';
+      newTd.textContent = formatFieldValue(change.newValue, change.field);
       tr.appendChild(newTd);
 
       previewChangesBody.appendChild(tr);
@@ -1237,13 +1340,19 @@ showResult = function(job) {
       if (result.success && result.edited > 0) {
         const orgName = orgKeyMap[orgKey];
 
-        // Update the discount values in comparisonData for this org
+        // Update the field values in comparisonData for this org
         for (const [key, change] of Object.entries(changes)) {
           if (change.orgName === orgName) {
-            // Find the product in comparisonData and update its discount
+            // Find the product in comparisonData and update the appropriate field
             const product = comparisonData.products.find(p => p.code === change.productCode);
             if (product) {
-              product.discounts[orgName] = change.newValue;
+              if (change.field === 'max_discount') {
+                product.discounts[orgName] = change.newValue;
+              } else if (change.field === 'seq_no') {
+                product.seq_nos[orgName] = change.newValue;
+              } else if (change.field === 'can_be_ordered') {
+                product.can_be_ordered[orgName] = change.newValue;
+              }
             }
           }
         }

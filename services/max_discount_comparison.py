@@ -15,11 +15,10 @@ class ProductDiscountRow:
     code: Optional[str]
     description: Optional[str]
 
-    # Discounts by org name
+    # Field values by org name
     discounts: Dict[str, Optional[float]]  # org_name -> discount_pct
-
-    # Sequence numbers by org name
     seq_nos: Dict[str, Optional[int]] = None  # org_name -> seq_no
+    can_be_ordered: Dict[str, Optional[str]] = None  # org_name -> "YES"/"NO"
 
     # Match info
     matched_by_code: bool = True
@@ -27,6 +26,8 @@ class ProductDiscountRow:
     def __post_init__(self):
         if self.seq_nos is None:
             self.seq_nos = {}
+        if self.can_be_ordered is None:
+            self.can_be_ordered = {}
 
     def to_dict(self) -> dict:
         return {
@@ -34,6 +35,7 @@ class ProductDiscountRow:
             'description': self.description,
             'discounts': self.discounts,
             'seq_nos': self.seq_nos,
+            'can_be_ordered': self.can_be_ordered,
             'matched_by_code': self.matched_by_code
         }
 
@@ -89,9 +91,10 @@ class MaxDiscountComparison:
             if not code:
                 continue
 
-            # Get discounts and seq_nos from each org for this code
+            # Get all field values from each org for this code
             discounts = {}
             seq_nos = {}
+            can_be_ordered_vals = {}
             description = None
 
             for org_discounts in self.review_result.orgs:
@@ -102,17 +105,20 @@ class MaxDiscountComparison:
                     ig = org_indices['by_code'][code]
                     discounts[org_name] = ig.max_discount_pct
                     seq_nos[org_name] = ig.seq_no
+                    can_be_ordered_vals[org_name] = ig.can_be_ordered
                     if not description and ig.description:
                         description = ig.description
                 else:
                     discounts[org_name] = None
                     seq_nos[org_name] = None
+                    can_be_ordered_vals[org_name] = None
 
             self.products.append(ProductDiscountRow(
                 code=code,
                 description=description,
                 discounts=discounts,
                 seq_nos=seq_nos,
+                can_be_ordered=can_be_ordered_vals,
                 matched_by_code=True
             ))
 

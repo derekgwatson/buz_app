@@ -21,6 +21,7 @@ class InventoryGroupDiscount:
     description: str
     max_discount_pct: Optional[float]
     seq_no: Optional[int] = None
+    can_be_ordered: Optional[str] = None  # "YES" or "NO"
 
     def __hash__(self):
         return hash(self.code)
@@ -314,7 +315,8 @@ class BuzMaxDiscountReview:
                 code=code or "",
                 description=description or "",
                 max_discount_pct=max_discount_pct,
-                seq_no=seq_no
+                seq_no=seq_no,
+                can_be_ordered=can_be_ordered
             ))
 
         wb.close()

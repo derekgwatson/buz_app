@@ -171,9 +171,22 @@ def generate_upload():
     data = request.get_json()
     changes_by_org = data.get("changes", {})
     raw_result = data.get("raw_result", {})
+    field = data.get("field", "max_discount")  # Which field is being updated
 
     if not changes_by_org:
         return jsonify({"error": "No changes provided"}), 400
+
+    # Field to column mapping
+    field_column_map = {
+        'max_discount': 7,   # Column G
+        'seq_no': 5,         # Column E
+        'can_be_ordered': 14  # Column N
+    }
+
+    if field not in field_column_map:
+        return jsonify({"error": f"Invalid field: {field}"}), 400
+
+    update_column = field_column_map[field]
 
     export_root = Path(current_app.config.get("EXPORT_ROOT", "exports"))
     upload_dir = export_root / "max_discount_uploads" / uuid.uuid4().hex
@@ -265,8 +278,8 @@ def generate_upload():
                                 target_cell.protection = copy(source_cell.protection)
                                 target_cell.alignment = copy(source_cell.alignment)
 
-                        # Update max discount (column G = 7) - store as number, not decimal
-                        upload_ws.cell(row=upload_row, column=7, value=change['newValue'])
+                        # Update the field value in the appropriate column
+                        upload_ws.cell(row=upload_row, column=update_column, value=change['newValue'])
 
                         # Set Operation to 'E' (column AE = 31)
                         upload_ws.cell(row=upload_row, column=31, value='E')
