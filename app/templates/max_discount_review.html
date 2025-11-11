@@ -1,0 +1,1262 @@
+{% extends "layout.html" %}
+{% block title %}Max Discount Review{% endblock %}
+
+{% block head %}
+<style>
+  .ok { color: #0a7f36; }
+  .warn { color: #b54708; }
+  .err { color: #b42318; }
+  .info { color: #026aa2; }
+  code { background: #f6f8fa; padding: 2px 6px; border-radius: 4px; }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 500;
+  }
+
+  .form-group input[type="checkbox"] {
+    margin-right: 0.5rem;
+  }
+
+  .btn {
+    padding: 0.6rem 1.2rem;
+    border: 0;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #1d4ed8;
+  }
+
+  .btn-primary:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  #progressSection {
+    display: none;
+    margin-top: 2rem;
+  }
+
+  #progressBar {
+    width: 100%;
+    max-width: 600px;
+    height: 30px;
+  }
+
+  #progressPct {
+    margin-top: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+  }
+
+  #progressLog {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  #resultSection {
+    display: none;
+    margin-top: 2rem;
+  }
+
+  #resultSection.error {
+    background: #3d1a1a;
+    border: 1px solid #dc2626;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    color: #fca5a5;
+  }
+
+  .result-summary {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: #1e3a1e;
+    border: 1px solid #22c55e;
+    border-radius: 0.5rem;
+    color: #86efac;
+    white-space: pre-line;
+  }
+
+  /* Comparison table */
+  .comparison-table {
+    margin-top: 1.5rem;
+    width: 100%;
+    max-height: 600px;
+    overflow: auto;
+  }
+
+  .comparison-table table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #2a2a2a;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+
+  .comparison-table th {
+    background: #1f1f1f;
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    color: #e0e0e0;
+    border-bottom: 2px solid #444;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .comparison-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #444;
+    color: #e0e0e0;
+  }
+
+  .comparison-table tr:hover {
+    background: #353535;
+  }
+
+  .comparison-table tr.regional-mismatch {
+    border-left: 4px solid #dc2626;
+    background: #2d1a1a;
+  }
+
+  .comparison-table tr.regional-mismatch:hover {
+    background: #3d1a1a;
+  }
+
+  .comparison-table .code-col {
+    font-family: monospace;
+    font-weight: 500;
+    color: #66d9ef;
+  }
+
+  .comparison-table .desc-col {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .comparison-table .discount-col {
+    text-align: right;
+    font-family: monospace;
+  }
+
+  .comparison-table .discount-match {
+    color: #86efac;
+    background: #1e3a1e;
+  }
+
+  .comparison-table .discount-canberra-differs {
+    color: #fbbf24;
+    background: #3d2e1a;
+  }
+
+  .comparison-table .discount-mismatch {
+    color: #fca5a5;
+    background: #3d1a1a;
+  }
+
+  .comparison-table .discount-empty {
+    color: #9ca3af;
+  }
+
+  .comparison-table .discount-col[contenteditable="true"] {
+    cursor: text;
+    border: 1px solid transparent;
+    padding: 0.4rem 0.65rem;
+  }
+
+  .comparison-table .discount-col[contenteditable="true"]:hover {
+    border: 1px solid #555;
+    background: #333;
+  }
+
+  .comparison-table .discount-col[contenteditable="true"]:focus {
+    outline: none;
+    border: 1px solid #66d9ef;
+    background: #2d3748;
+  }
+
+  .comparison-table .discount-col.edited {
+    border: 2px solid #3b82f6 !important;
+    background: #1e3a5f !important;
+    font-weight: 600;
+  }
+
+  .changes-bar {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    display: none;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .changes-bar.visible {
+    display: flex;
+  }
+
+  .changes-count {
+    color: #3b82f6;
+    font-weight: 600;
+    font-size: 1.1rem;
+  }
+
+  .download-files {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #1e3a1e;
+    border: 1px solid #22c55e;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .download-files.visible {
+    display: block;
+  }
+
+  .download-files h4 {
+    margin: 0 0 0.75rem 0;
+    color: #86efac;
+  }
+
+  .download-files ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .download-files li {
+    margin: 0.5rem 0;
+  }
+
+  .download-files a {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: #2563eb;
+    color: white;
+    text-decoration: none;
+    border-radius: 0.375rem;
+    font-weight: 500;
+  }
+
+  .download-files a:hover {
+    background: #1d4ed8;
+  }
+
+  .download-files .file-info {
+    color: #86efac;
+    font-size: 0.875rem;
+    margin-left: 0.5rem;
+  }
+
+  .preview-changes {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .preview-changes.visible {
+    display: block;
+  }
+
+  .preview-changes h4 {
+    margin: 0 0 0.75rem 0;
+    color: #e0e0e0;
+  }
+
+  .preview-changes table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+  }
+
+  .preview-changes th {
+    background: #1f1f1f;
+    padding: 0.5rem;
+    text-align: left;
+    font-weight: 600;
+    color: #e0e0e0;
+    border-bottom: 2px solid #444;
+  }
+
+  .preview-changes td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #444;
+    color: #e0e0e0;
+  }
+
+  .preview-changes .arrow {
+    color: #3b82f6;
+    font-weight: 600;
+  }
+
+  .preview-changes .old-value {
+    color: #fca5a5;
+  }
+
+  .preview-changes .new-value {
+    color: #86efac;
+  }
+
+  .upload-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .upload-section.visible {
+    display: block;
+  }
+
+  .upload-section .btn-upload {
+    background: #16a34a;
+  }
+
+  .upload-section .btn-upload:hover {
+    background: #15803d;
+  }
+
+  .upload-results {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #1e3a1e;
+    border: 1px solid #22c55e;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .upload-results.visible {
+    display: block;
+  }
+
+  .upload-results h4 {
+    margin: 0 0 0.75rem 0;
+    color: #86efac;
+  }
+
+  .upload-results ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .upload-results li {
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: #2a2a2a;
+    border-radius: 0.375rem;
+  }
+
+  .upload-results .org-name {
+    font-weight: 600;
+    color: #66d9ef;
+  }
+
+  .upload-results .success {
+    color: #86efac;
+  }
+
+  .upload-results .error {
+    color: #fca5a5;
+  }
+
+  .filter-bar {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    color: #e0e0e0;
+  }
+
+  .filter-bar input {
+    padding: 0.5rem;
+    border: 1px solid #555;
+    border-radius: 0.375rem;
+    width: 300px;
+    max-width: 100%;
+    background: #333;
+    color: #e0e0e0;
+  }
+
+  .filter-bar label {
+    margin-right: 0.5rem;
+    font-weight: 500;
+    color: #e0e0e0;
+  }
+
+  .stats {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  .stat-card {
+    flex: 1;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+  }
+
+  .stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #66d9ef;
+  }
+
+  .stat-card .stat-label {
+    color: #9ca3af;
+    font-size: 0.875rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>Max Discount Review</h2>
+
+<p class="info">
+  Review and compare maximum discount percentages across all Buz organizations.
+  This tool will download the current inventory group settings from each org and display them side-by-side.
+</p>
+
+<form id="reviewForm">
+  <div class="form-group">
+    <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Select Organizations:</label>
+    <div style="margin-left: 1rem;">
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="canberra" checked>
+        Watson Blinds (Canberra)
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="tweed" checked>
+        Tweed
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="bay" checked>
+        Batemans Bay
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="shoalhaven" checked>
+        Shoalhaven
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="wagga" checked>
+        Wagga Wagga
+      </label>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label>
+      <input type="checkbox" id="headless" name="headless" checked>
+      Run in headless mode (no browser window)
+    </label>
+  </div>
+
+  <button type="submit" class="btn btn-primary" id="submitBtn">Start Review</button>
+</form>
+
+<div id="progressSection">
+  <h3>Progress</h3>
+  <progress id="progressBar" max="100" value="0"></progress>
+  <div id="progressPct">0%</div>
+  <pre id="progressLog"></pre>
+</div>
+
+<div id="resultSection">
+  <h3 id="resultTitle">Results</h3>
+
+  <div id="errorSection" style="display: none;">
+    <div class="result-summary error" id="errorMessage"></div>
+  </div>
+
+  <div id="successSection" style="display: none;">
+    <div class="result-summary" id="resultSummary"></div>
+
+    <div class="stats" id="statsSection"></div>
+
+    <div class="changes-bar" id="changesBar">
+      <span class="changes-count" id="changesCount">0 changes</span>
+      <button type="button" class="btn btn-primary" id="generateUploadBtn">Generate Upload Files</button>
+      <button type="button" class="btn" id="resetChangesBtn" style="background: #6b7280;">Reset All Changes</button>
+    </div>
+
+    <div class="preview-changes" id="previewChanges">
+      <h4>Preview Changes</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th>Product Code</th>
+            <th>Description</th>
+            <th>Current</th>
+            <th></th>
+            <th>New</th>
+          </tr>
+        </thead>
+        <tbody id="previewChangesBody">
+        </tbody>
+      </table>
+    </div>
+
+    <div class="download-files" id="downloadFiles">
+      <h4>Generated Upload Files</h4>
+      <ul id="downloadFilesList"></ul>
+    </div>
+
+    <div class="upload-section" id="uploadSection">
+      <button type="button" class="btn btn-primary btn-upload" id="uploadToBuzBtn">Upload to Buz</button>
+      <p style="color: #9ca3af; font-size: 0.875rem; margin-top: 0.5rem;">
+        This will automatically upload the changes to each Buz organization.
+      </p>
+    </div>
+
+    <div class="upload-results" id="uploadResults">
+      <h4>Upload Results</h4>
+      <ul id="uploadResultsList"></ul>
+    </div>
+
+    <div class="filter-bar">
+      <label for="searchInput">Filter products:</label>
+      <input type="text" id="searchInput" placeholder="Search by code or description...">
+      <label style="margin-left: 1rem;">
+        <input type="checkbox" id="showMismatchOnly">
+        Show mismatches only
+      </label>
+    </div>
+
+    <div class="comparison-table">
+      <table id="comparisonTable">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Description</th>
+            <!-- Org columns will be added dynamically -->
+          </tr>
+        </thead>
+        <tbody id="comparisonTableBody">
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentJobId = null;
+let poller = null;
+let comparisonData = null;
+let rawResultData = null; // Store raw result with file paths
+let changes = {}; // Track changes: { "org|code": { oldValue, newValue, product } }
+let generatedFilePaths = {}; // Store generated file paths for upload: { org_key: file_path }
+
+const form = document.getElementById('reviewForm');
+const submitBtn = document.getElementById('submitBtn');
+const progressSection = document.getElementById('progressSection');
+const progressBar = document.getElementById('progressBar');
+const progressPct = document.getElementById('progressPct');
+const progressLog = document.getElementById('progressLog');
+const resultSection = document.getElementById('resultSection');
+const errorSection = document.getElementById('errorSection');
+const successSection = document.getElementById('successSection');
+const errorMessage = document.getElementById('errorMessage');
+const resultSummary = document.getElementById('resultSummary');
+const statsSection = document.getElementById('statsSection');
+const comparisonTable = document.getElementById('comparisonTable');
+const comparisonTableBody = document.getElementById('comparisonTableBody');
+const searchInput = document.getElementById('searchInput');
+const showMismatchOnly = document.getElementById('showMismatchOnly');
+const changesBar = document.getElementById('changesBar');
+const changesCount = document.getElementById('changesCount');
+const generateUploadBtn = document.getElementById('generateUploadBtn');
+const resetChangesBtn = document.getElementById('resetChangesBtn');
+const downloadFiles = document.getElementById('downloadFiles');
+const downloadFilesList = document.getElementById('downloadFilesList');
+const previewChanges = document.getElementById('previewChanges');
+const previewChangesBody = document.getElementById('previewChangesBody');
+const uploadSection = document.getElementById('uploadSection');
+const uploadToBuzBtn = document.getElementById('uploadToBuzBtn');
+const uploadResults = document.getElementById('uploadResults');
+const uploadResultsList = document.getElementById('uploadResultsList');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const headless = document.getElementById('headless').checked;
+
+  // Get selected orgs
+  const selectedOrgs = Array.from(document.querySelectorAll('input[name="orgs"]:checked'))
+    .map(cb => cb.value);
+
+  // Validate at least one org is selected
+  if (selectedOrgs.length === 0) {
+    alert('Please select at least one organization');
+    return;
+  }
+
+  // Disable form
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Starting...';
+
+  // Hide previous results
+  resultSection.style.display = 'none';
+  downloadFiles.classList.remove('visible');
+  previewChanges.classList.remove('visible');
+  uploadSection.classList.remove('visible');
+  uploadResults.classList.remove('visible');
+  progressSection.style.display = 'block';
+  progressBar.value = 0;
+  progressPct.textContent = '0%';
+  progressLog.textContent = '';
+
+  try {
+    const formData = new FormData();
+    formData.append('headless', headless ? 'true' : 'false');
+
+    // Add each selected org
+    selectedOrgs.forEach(org => {
+      formData.append('orgs', org);
+    });
+
+    const response = await fetch('{{ url_for("max_discount_review.start_review") }}', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to start review');
+    }
+
+    currentJobId = data.job_id;
+    startPolling();
+
+  } catch (error) {
+    alert('Error: ' + error.message);
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Start Review';
+    progressSection.style.display = 'none';
+  }
+});
+
+function startPolling() {
+  if (poller) clearInterval(poller);
+
+  poller = setInterval(async () => {
+    try {
+      const res = await fetch(
+        `{{ url_for("max_discount_review.job_status", job_id="JOB_ID") }}`.replace('JOB_ID', currentJobId) +
+        `?t=${Date.now()}`,
+        { cache: 'no-store' }
+      );
+
+      const job = await res.json();
+      updateProgress(job);
+
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'aborted') {
+        clearInterval(poller);
+        showResult(job);
+      }
+
+    } catch (e) {
+      console.error('Polling error:', e);
+    }
+  }, 500);
+}
+
+function updateProgress(job) {
+  const pct = job.pct || 0;
+  progressBar.value = pct;
+  progressPct.textContent = pct + '%';
+
+  if (job.log && job.log.length > 0) {
+    progressLog.textContent = job.log.join('\n');
+    progressLog.scrollTop = progressLog.scrollHeight;
+  }
+}
+
+function showResult(job) {
+  // Re-enable form
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Start Review';
+
+  // Show result section
+  resultSection.style.display = 'block';
+
+  if (job.status === 'failed') {
+    errorSection.style.display = 'block';
+    successSection.style.display = 'none';
+    errorMessage.textContent = job.error || 'Unknown error';
+  } else {
+    errorSection.style.display = 'none';
+    successSection.style.display = 'block';
+
+    const result = job.result || {};
+    resultSummary.textContent = result.summary || 'Review completed';
+
+    if (result.comparison) {
+      comparisonData = result.comparison;
+      rawResultData = result.raw_result; // Store raw result with file paths
+      changes = {}; // Reset changes
+      renderComparison(comparisonData);
+    }
+  }
+}
+
+function renderComparison(comparison) {
+  // Render stats
+  const summary = comparison.summary || {};
+  statsSection.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">${summary.total_products || 0}</div>
+      <div class="stat-label">Total Products</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${summary.matched_by_code || 0}</div>
+      <div class="stat-label">Matched by Code</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${summary.matched_by_description || 0}</div>
+      <div class="stat-label">Matched by Description</div>
+    </div>
+  `;
+
+  // Add org columns to table header
+  const orgNames = comparison.org_names || [];
+  const thead = comparisonTable.querySelector('thead tr');
+
+  // Remove existing org columns
+  while (thead.children.length > 2) {
+    thead.removeChild(thead.lastChild);
+  }
+
+  // Add org columns
+  orgNames.forEach(orgName => {
+    const th = document.createElement('th');
+    th.textContent = orgName;
+    th.style.textAlign = 'right';
+    thead.appendChild(th);
+  });
+
+  // Render table rows
+  renderTableRows(comparison);
+
+  // Add event listeners for filtering
+  searchInput.addEventListener('input', () => renderTableRows(comparison));
+  showMismatchOnly.addEventListener('change', () => renderTableRows(comparison));
+}
+
+function renderTableRows(comparison) {
+  const products = comparison.products || [];
+  const orgNames = comparison.org_names || [];
+  const searchTerm = searchInput.value.toLowerCase();
+  const mismatchOnly = showMismatchOnly.checked;
+
+  comparisonTableBody.innerHTML = '';
+
+  products.forEach(product => {
+    // Apply search filter
+    if (searchTerm) {
+      const code = (product.code || '').toLowerCase();
+      const desc = (product.description || '').toLowerCase();
+      if (!code.includes(searchTerm) && !desc.includes(searchTerm)) {
+        return;
+      }
+    }
+
+    // Check if there's a mismatch
+    const discountValues = orgNames.map(org => product.discounts[org]).filter(v => v != null);
+    const hasMismatch = discountValues.length > 1 && !discountValues.every(v => v === discountValues[0]);
+
+    // Detect if only Canberra differs from regional stores
+    let canberraDiffers = false;
+    let regionalMismatch = false;
+
+    const regionalOrgs = ['Tweed', 'Batemans Bay', 'Shoalhaven', 'Wagga Wagga'];
+    const canberraDiscount = product.discounts['Watson Blinds (Canberra)'];
+    const regionalDiscountsWithOrg = regionalOrgs.map(org => ({
+      org: org,
+      discount: product.discounts[org]
+    }));
+    const regionalDiscounts = regionalDiscountsWithOrg
+      .map(item => item.discount)
+      .filter(v => v != null);
+
+    // Check if regional stores differ from each other (SERIOUS ISSUE)
+    // This includes: different values OR some have values while others don't
+    const regionalOrgsWithData = regionalDiscountsWithOrg.filter(item => item.discount != null);
+    if (regionalOrgsWithData.length > 0 && regionalOrgsWithData.length < regionalOrgs.length) {
+      // Some regional stores have this group, others don't - MISMATCH
+      regionalMismatch = true;
+    } else if (regionalDiscounts.length > 1) {
+      // All regional stores have data, but values differ
+      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
+      regionalMismatch = !allRegionalSame;
+    }
+
+    // Check if all regional stores have the same value, and Canberra is different
+    if (hasMismatch && !regionalMismatch && canberraDiscount != null && regionalDiscounts.length > 0) {
+      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
+      const canberraIsDifferent = canberraDiscount !== regionalDiscounts[0];
+      canberraDiffers = allRegionalSame && canberraIsDifferent;
+    }
+
+    // Apply mismatch filter
+    if (mismatchOnly && !hasMismatch) {
+      return;
+    }
+
+    const tr = document.createElement('tr');
+
+    // Highlight rows where regional stores differ (most serious issue)
+    if (regionalMismatch) {
+      tr.classList.add('regional-mismatch');
+    }
+
+    // Code column
+    const codeTd = document.createElement('td');
+    codeTd.className = 'code-col';
+    codeTd.textContent = product.code || '-';
+    tr.appendChild(codeTd);
+
+    // Description column
+    const descTd = document.createElement('td');
+    descTd.className = 'desc-col';
+    descTd.textContent = product.description || '-';
+    descTd.title = product.description || '';
+    tr.appendChild(descTd);
+
+    // Org discount columns
+    orgNames.forEach(orgName => {
+      const discountTd = document.createElement('td');
+      discountTd.className = 'discount-col';
+
+      const discount = product.discounts[orgName];
+      if (discount == null) {
+        discountTd.textContent = '-';
+        discountTd.classList.add('discount-empty');
+      } else {
+        // Make cell editable
+        discountTd.contentEditable = 'true';
+        discountTd.textContent = discount.toFixed(1) + '%';
+        discountTd.dataset.orgName = orgName;
+        discountTd.dataset.productCode = product.code || '';
+        discountTd.dataset.originalValue = discount.toFixed(1);
+
+        // Check if this cell has been edited
+        const changeKey = `${orgName}|${product.code}`;
+        if (changes[changeKey]) {
+          discountTd.classList.add('edited');
+        }
+
+        if (hasMismatch) {
+          // Apply amber color if only Canberra differs, red otherwise
+          if (canberraDiffers) {
+            discountTd.classList.add('discount-canberra-differs');
+          } else {
+            discountTd.classList.add('discount-mismatch');
+          }
+        } else if (discountValues.length > 0) {
+          discountTd.classList.add('discount-match');
+        }
+      }
+
+      tr.appendChild(discountTd);
+    });
+
+    comparisonTableBody.appendChild(tr);
+  });
+}
+
+// Handle editing of discount cells
+comparisonTableBody.addEventListener('blur', (e) => {
+  if (e.target.classList.contains('discount-col') && e.target.contentEditable === 'true') {
+    handleCellEdit(e.target);
+  }
+}, true);
+
+// Handle Enter key to finish editing
+comparisonTableBody.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.classList.contains('discount-col')) {
+    e.preventDefault();
+    e.target.blur();
+  }
+});
+
+function handleCellEdit(cell) {
+  const orgName = cell.dataset.orgName;
+  const productCode = cell.dataset.productCode;
+  const originalValue = parseFloat(cell.dataset.originalValue);
+
+  // Parse the edited value
+  let newText = cell.textContent.trim().replace('%', '');
+  let newValue = parseFloat(newText);
+
+  // Validate input
+  if (isNaN(newValue) || newValue < 0 || newValue > 100) {
+    alert('Please enter a valid percentage between 0 and 100');
+    cell.textContent = originalValue.toFixed(1) + '%';
+    return;
+  }
+
+  // Update display
+  cell.textContent = newValue.toFixed(1) + '%';
+
+  const changeKey = `${orgName}|${productCode}`;
+
+  // Check if value changed
+  if (Math.abs(newValue - originalValue) < 0.01) {
+    // No real change, remove from changes
+    delete changes[changeKey];
+    cell.classList.remove('edited');
+  } else {
+    // Track the change
+    const product = comparisonData.products.find(p => p.code === productCode);
+    changes[changeKey] = {
+      orgName: orgName,
+      productCode: productCode,
+      product: product,
+      originalValue: originalValue,
+      newValue: newValue
+    };
+    cell.classList.add('edited');
+  }
+
+  updateChangesCounter();
+}
+
+function updateChangesCounter() {
+  const changeCount = Object.keys(changes).length;
+  changesCount.textContent = `${changeCount} change${changeCount !== 1 ? 's' : ''}`;
+
+  if (changeCount > 0) {
+    changesBar.classList.add('visible');
+  } else {
+    changesBar.classList.remove('visible');
+  }
+}
+
+// Reset all changes
+resetChangesBtn.addEventListener('click', () => {
+  if (Object.keys(changes).length === 0) return;
+
+  if (confirm('Are you sure you want to reset all changes?')) {
+    changes = {};
+    generatedFilePaths = {};
+    updateChangesCounter();
+    renderTableRows(comparisonData);
+    downloadFiles.classList.remove('visible');
+    previewChanges.classList.remove('visible');
+    uploadSection.classList.remove('visible');
+    uploadResults.classList.remove('visible');
+  }
+});
+
+// Generate upload files
+generateUploadBtn.addEventListener('click', async () => {
+  if (Object.keys(changes).length === 0) {
+    alert('No changes to upload');
+    return;
+  }
+
+  generateUploadBtn.disabled = true;
+  generateUploadBtn.textContent = 'Generating...';
+
+  try {
+    // Group changes by org
+    const changesByOrg = {};
+    for (const [key, change] of Object.entries(changes)) {
+      const org = change.orgName;
+      if (!changesByOrg[org]) {
+        changesByOrg[org] = [];
+      }
+      changesByOrg[org].push(change);
+    }
+
+    // Send to backend to generate files
+    const response = await fetch('{{ url_for("max_discount_review.generate_upload") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        changes: changesByOrg,
+        raw_result: rawResultData
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate upload files');
+    }
+
+    const result = await response.json();
+
+    // Store file paths for upload
+    generatedFilePaths = {};
+    result.files.forEach(file => {
+      // Map org name to org key
+      const orgKeyMap = {
+        'Watson Blinds (Canberra)': 'canberra',
+        'Tweed': 'tweed',
+        'Batemans Bay': 'bay',
+        'Shoalhaven': 'shoalhaven',
+        'Wagga Wagga': 'wagga'
+      };
+      const orgKey = orgKeyMap[file.org_name];
+      if (orgKey) {
+        generatedFilePaths[orgKey] = file.path;
+      }
+    });
+
+    // Show preview of changes
+    previewChangesBody.innerHTML = '';
+    for (const [key, change] of Object.entries(changes)) {
+      const tr = document.createElement('tr');
+
+      const orgTd = document.createElement('td');
+      orgTd.textContent = change.orgName;
+      tr.appendChild(orgTd);
+
+      const codeTd = document.createElement('td');
+      codeTd.textContent = change.productCode;
+      codeTd.style.fontFamily = 'monospace';
+      tr.appendChild(codeTd);
+
+      const descTd = document.createElement('td');
+      descTd.textContent = change.product.description || '-';
+      tr.appendChild(descTd);
+
+      const oldTd = document.createElement('td');
+      oldTd.className = 'old-value';
+      oldTd.textContent = change.originalValue.toFixed(1) + '%';
+      tr.appendChild(oldTd);
+
+      const arrowTd = document.createElement('td');
+      arrowTd.className = 'arrow';
+      arrowTd.textContent = '→';
+      tr.appendChild(arrowTd);
+
+      const newTd = document.createElement('td');
+      newTd.className = 'new-value';
+      newTd.textContent = change.newValue.toFixed(1) + '%';
+      tr.appendChild(newTd);
+
+      previewChangesBody.appendChild(tr);
+    }
+
+    previewChanges.classList.add('visible');
+
+    // Show download links
+    downloadFilesList.innerHTML = '';
+    result.files.forEach(file => {
+      const li = document.createElement('li');
+      const link = document.createElement('a');
+      link.href = file.download_url;
+      link.download = file.filename;
+      link.textContent = `Download ${file.org_name}`;
+
+      const info = document.createElement('span');
+      info.className = 'file-info';
+      info.textContent = `(${file.changes_count} change${file.changes_count !== 1 ? 's' : ''})`;
+
+      li.appendChild(link);
+      li.appendChild(info);
+      downloadFilesList.appendChild(li);
+    });
+
+    downloadFiles.classList.add('visible');
+    uploadSection.classList.add('visible');
+
+    alert(`Generated ${result.files.length} upload file(s). Review changes below, then click "Upload to Buz" when ready.`);
+
+  } catch (error) {
+    alert('Error generating upload files: ' + error.message);
+  } finally {
+    generateUploadBtn.disabled = false;
+    generateUploadBtn.textContent = 'Generate Upload Files';
+  }
+});
+
+// Upload to Buz
+uploadToBuzBtn.addEventListener('click', async () => {
+  if (Object.keys(generatedFilePaths).length === 0) {
+    alert('No files to upload. Generate files first.');
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to upload changes to ${Object.keys(generatedFilePaths).length} organization(s)? This will modify the inventory groups in Buz.`)) {
+    return;
+  }
+
+  uploadToBuzBtn.disabled = true;
+  uploadToBuzBtn.textContent = 'Uploading...';
+
+  // Hide previous upload results
+  uploadResults.classList.remove('visible');
+
+  // Show progress section
+  progressSection.style.display = 'block';
+  progressBar.value = 0;
+  progressPct.textContent = '0%';
+  progressLog.textContent = '';
+
+  try {
+    const headless = document.getElementById('headless').checked;
+
+    const response = await fetch('{{ url_for("max_discount_review.upload_to_buz") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        file_paths: generatedFilePaths,
+        headless: headless
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start upload');
+    }
+
+    const data = await response.json();
+    currentJobId = data.job_id;
+
+    // Poll for upload progress
+    startPolling();
+
+  } catch (error) {
+    alert('Error starting upload: ' + error.message);
+    uploadToBuzBtn.disabled = false;
+    uploadToBuzBtn.textContent = 'Upload to Buz';
+    progressSection.style.display = 'none';
+  }
+});
+
+// Override showResult to also handle upload results
+const originalShowResult = showResult;
+showResult = function(job) {
+  originalShowResult(job);
+
+  // If this was an upload job, show upload results
+  if (job.result && job.result.results) {
+    uploadResultsList.innerHTML = '';
+
+    const orgKeyMap = {
+      'canberra': 'Watson Blinds (Canberra)',
+      'tweed': 'Tweed',
+      'bay': 'Batemans Bay',
+      'shoalhaven': 'Shoalhaven',
+      'wagga': 'Wagga Wagga'
+    };
+
+    for (const [orgKey, result] of Object.entries(job.result.results)) {
+      const li = document.createElement('li');
+
+      const orgSpan = document.createElement('span');
+      orgSpan.className = 'org-name';
+      orgSpan.textContent = orgKeyMap[orgKey] || orgKey;
+      li.appendChild(orgSpan);
+
+      li.appendChild(document.createTextNode(': '));
+
+      if (result.success) {
+        const successSpan = document.createElement('span');
+        successSpan.className = 'success';
+        successSpan.textContent = `✓ ${result.added} added, ${result.edited} edited`;
+        li.appendChild(successSpan);
+      } else if (result.error) {
+        const errorSpan = document.createElement('span');
+        errorSpan.className = 'error';
+        errorSpan.textContent = `✗ ${result.error}`;
+        li.appendChild(errorSpan);
+      }
+
+      uploadResultsList.appendChild(li);
+    }
+
+    uploadResults.classList.add('visible');
+    uploadToBuzBtn.disabled = false;
+    uploadToBuzBtn.textContent = 'Upload to Buz';
+
+    // Update the comparison data with the new values for successful uploads
+    let allSuccessful = true;
+    let successfulUploads = 0;
+
+    for (const [orgKey, result] of Object.entries(job.result.results)) {
+      if (result.success && result.edited > 0) {
+        const orgName = orgKeyMap[orgKey];
+
+        // Update the discount values in comparisonData for this org
+        for (const [key, change] of Object.entries(changes)) {
+          if (change.orgName === orgName) {
+            // Find the product in comparisonData and update its discount
+            const product = comparisonData.products.find(p => p.code === change.productCode);
+            if (product) {
+              product.discounts[orgName] = change.newValue;
+            }
+          }
+        }
+        successfulUploads++;
+      } else if (!result.success) {
+        allSuccessful = false;
+      }
+    }
+
+    // If all uploads were successful, clear changes and re-render
+    if (allSuccessful && successfulUploads > 0) {
+      // Clear the changes tracking
+      changes = {};
+      generatedFilePaths = {};
+
+      // Force a clean re-render of the comparison table with updated values
+      // This will recalculate color coding and remove edited highlights
+      renderComparison(comparisonData);
+
+      // Hide the upload-related sections
+      changesBar.classList.remove('visible');
+      previewChanges.classList.remove('visible');
+      uploadSection.classList.remove('visible');
+      downloadFiles.classList.remove('visible');
+
+      // Show success message
+      alert(`Successfully updated ${successfulUploads} organization(s). The comparison table has been refreshed with the new values.`);
+    } else if (!allSuccessful) {
+      alert('Some uploads failed. Please review the results above. The comparison table will not be updated until all uploads succeed.');
+    }
+  }
+};
+</script>
+{% endblock %}
