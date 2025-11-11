@@ -1,0 +1,694 @@
+{% extends "layout.html" %}
+{% block title %}User Management Review{% endblock %}
+
+{% block head %}
+<style>
+  .ok { color: #0a7f36; }
+  .warn { color: #b54708; }
+  .err { color: #b42318; }
+  .info { color: #026aa2; }
+  code { background: #f6f8fa; padding: 2px 6px; border-radius: 4px; }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: 500;
+  }
+
+  .form-group input[type="checkbox"] {
+    margin-right: 0.5rem;
+  }
+
+  .btn {
+    padding: 0.6rem 1.2rem;
+    border: 0;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #1d4ed8;
+  }
+
+  .btn-primary:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+  }
+
+  #progressSection {
+    display: none;
+    margin-top: 2rem;
+  }
+
+  #progressBar {
+    width: 100%;
+    max-width: 600px;
+    height: 30px;
+  }
+
+  #progressPct {
+    margin-top: 0.5rem;
+    font-size: 1.1rem;
+    font-weight: 500;
+  }
+
+  #progressLog {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.375rem;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  #resultSection {
+    display: none;
+    margin-top: 2rem;
+  }
+
+  #resultSection.error {
+    background: #3d1a1a;
+    border: 1px solid #dc2626;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    color: #fca5a5;
+  }
+
+  .result-summary {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: #1e3a1e;
+    border: 1px solid #22c55e;
+    border-radius: 0.5rem;
+    color: #86efac;
+    white-space: pre-line;
+  }
+
+  /* User table */
+  .user-table {
+    margin-top: 1.5rem;
+    width: 100%;
+    max-height: 700px;
+    overflow: auto;
+  }
+
+  .user-table table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #2a2a2a;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  }
+
+  .user-table th {
+    background: #1f1f1f;
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    color: #e0e0e0;
+    border-bottom: 2px solid #444;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .user-table td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #444;
+    color: #e0e0e0;
+    font-size: 0.875rem;
+  }
+
+  .user-table tr:hover {
+    background: #353535;
+  }
+
+  .user-table .email-col {
+    font-family: monospace;
+    font-weight: 500;
+    color: #66d9ef;
+    min-width: 200px;
+  }
+
+  .user-table .name-col {
+    min-width: 150px;
+  }
+
+  .user-table .org-col {
+    text-align: center;
+    min-width: 120px;
+    max-width: 150px;
+  }
+
+  .user-table .org-col.present {
+    background: #1e3a1e;
+  }
+
+  .user-table .org-col.absent {
+    background: #2a2a2a;
+    color: #666;
+  }
+
+  .user-details {
+    font-size: 0.75rem;
+    color: #9ca3af;
+    line-height: 1.3;
+  }
+
+  .user-details .badge {
+    display: inline-block;
+    padding: 0.15rem 0.4rem;
+    margin: 0.1rem;
+    background: #3b82f6;
+    color: white;
+    border-radius: 0.25rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  .user-details .badge.inactive {
+    background: #6b7280;
+  }
+
+  .user-details .badge.mfa {
+    background: #10b981;
+  }
+
+  .user-details .badge.employee {
+    background: #8b5cf6;
+  }
+
+  .user-details .badge.customer {
+    background: #f59e0b;
+  }
+
+  .filter-bar {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    color: #e0e0e0;
+  }
+
+  .filter-bar input {
+    padding: 0.5rem;
+    border: 1px solid #555;
+    border-radius: 0.375rem;
+    width: 300px;
+    max-width: 100%;
+    background: #333;
+    color: #e0e0e0;
+  }
+
+  .filter-bar label {
+    margin-right: 0.5rem;
+    font-weight: 500;
+    color: #e0e0e0;
+  }
+
+  .stats {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .stat-card {
+    flex: 1;
+    min-width: 150px;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+  }
+
+  .stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #66d9ef;
+  }
+
+  .stat-card .stat-label {
+    color: #9ca3af;
+    font-size: 0.875rem;
+  }
+
+  .user-table tr.multi-org {
+    border-left: 3px solid #3b82f6;
+  }
+
+  .user-table tr.inactive-all {
+    opacity: 0.6;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>User Management Review</h2>
+
+<p class="info">
+  Review all users across Buz organizations. This tool shows which users have access to which orgs,
+  their roles, MFA status, and activity.
+</p>
+
+<details style="margin-bottom: 1.5rem; padding: 1rem; background: #2a2a2a; border: 1px solid #444; border-radius: 0.5rem;">
+  <summary style="cursor: pointer; font-weight: 600; color: #66d9ef; user-select: none;">
+    💡 How to Use
+  </summary>
+  <div style="margin-top: 1rem; color: #e0e0e0; line-height: 1.6;">
+    <ol style="margin-left: 1.5rem;">
+      <li><strong>Run Review:</strong> Select orgs and click "Start Review" to scrape user data from each Buz organization</li>
+      <li><strong>View Results:</strong> Users are organized by email address. Each row shows which orgs the user has access to</li>
+      <li><strong>Filter Users:</strong> Use the search box to filter by name or email. Toggle checkboxes to show only specific user types</li>
+      <li><strong>Understand Colors:</strong>
+        <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+          <li>Green background = User has access to this org</li>
+          <li>Blue left border = User has access to multiple orgs</li>
+          <li>Faded row = User is inactive in all orgs they have access to</li>
+        </ul>
+      </li>
+      <li><strong>User Details:</strong> Hover over an org cell to see: group, MFA status, active/inactive, user type, last login</li>
+    </ol>
+    <p style="margin-top: 1rem; padding: 0.75rem; background: #3d2e1a; border-left: 3px solid #fbbf24; border-radius: 0.25rem;">
+      <strong>Note:</strong> This tool currently provides read-only access. Bulk editing functionality can be added in future versions.
+    </p>
+  </div>
+</details>
+
+<form id="reviewForm">
+  <div class="form-group">
+    <label style="display: block; margin-bottom: 0.5rem; font-weight: 600;">Select Organizations:</label>
+    <div style="margin-left: 1rem;">
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="canberra" checked>
+        Canberra
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="tweed" checked>
+        Tweed
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="bay" checked>
+        Batemans Bay
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="shoalhaven" checked>
+        Shoalhaven
+      </label>
+      <label style="display: block; margin: 0.3rem 0;">
+        <input type="checkbox" name="orgs" value="wagga" checked>
+        Wagga Wagga
+      </label>
+    </div>
+  </div>
+
+  {% if is_development %}
+  <div class="form-group">
+    <label>
+      <input type="checkbox" id="headless" name="headless" checked>
+      Run in headless mode (no browser window)
+    </label>
+  </div>
+  {% endif %}
+
+  <button type="submit" class="btn btn-primary" id="submitBtn">Start Review</button>
+</form>
+
+<div id="progressSection">
+  <h3>Progress</h3>
+  <progress id="progressBar" max="100" value="0"></progress>
+  <div id="progressPct">0%</div>
+  <pre id="progressLog"></pre>
+</div>
+
+<div id="resultSection">
+  <h3 id="resultTitle">Results</h3>
+
+  <div id="errorSection" style="display: none;">
+    <div class="result-summary error" id="errorMessage"></div>
+  </div>
+
+  <div id="successSection" style="display: none;">
+    <div class="result-summary" id="resultSummary"></div>
+
+    <div class="stats" id="statsSection"></div>
+
+    <div class="filter-bar">
+      <label for="searchInput">Filter users:</label>
+      <input type="text" id="searchInput" placeholder="Search by name or email...">
+      <label style="margin-left: 1rem;">
+        <input type="checkbox" id="showMultiOrgOnly">
+        Show multi-org users only
+      </label>
+      <label style="margin-left: 1rem;">
+        <input type="checkbox" id="showActiveOnly">
+        Show active users only
+      </label>
+    </div>
+
+    <div class="user-table">
+      <table id="userTable">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Full Name</th>
+            <!-- Org columns will be added dynamically -->
+          </tr>
+        </thead>
+        <tbody id="userTableBody">
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentJobId = null;
+let poller = null;
+let comparisonData = null;
+
+const form = document.getElementById('reviewForm');
+const submitBtn = document.getElementById('submitBtn');
+const progressSection = document.getElementById('progressSection');
+const progressBar = document.getElementById('progressBar');
+const progressPct = document.getElementById('progressPct');
+const progressLog = document.getElementById('progressLog');
+const resultSection = document.getElementById('resultSection');
+const errorSection = document.getElementById('errorSection');
+const successSection = document.getElementById('successSection');
+const errorMessage = document.getElementById('errorMessage');
+const resultSummary = document.getElementById('resultSummary');
+const statsSection = document.getElementById('statsSection');
+const userTable = document.getElementById('userTable');
+const userTableBody = document.getElementById('userTableBody');
+const searchInput = document.getElementById('searchInput');
+const showMultiOrgOnly = document.getElementById('showMultiOrgOnly');
+const showActiveOnly = document.getElementById('showActiveOnly');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const headless = document.getElementById('headless')?.checked ?? true;
+
+  // Get selected orgs
+  const selectedOrgs = Array.from(document.querySelectorAll('input[name="orgs"]:checked'))
+    .map(cb => cb.value);
+
+  // Validate at least one org is selected
+  if (selectedOrgs.length === 0) {
+    alert('Please select at least one organization');
+    return;
+  }
+
+  // Disable form
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Starting...';
+
+  // Hide previous results
+  resultSection.style.display = 'none';
+  progressSection.style.display = 'block';
+  progressBar.value = 0;
+  progressPct.textContent = '0%';
+  progressLog.textContent = '';
+
+  try {
+    const formData = new FormData();
+    formData.append('headless', headless ? 'true' : 'false');
+
+    // Add each selected org
+    selectedOrgs.forEach(org => {
+      formData.append('orgs', org);
+    });
+
+    const response = await fetch('{{ url_for("user_management.start_review") }}', {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to start review');
+    }
+
+    currentJobId = data.job_id;
+    startPolling();
+
+  } catch (error) {
+    alert('Error: ' + error.message);
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Start Review';
+    progressSection.style.display = 'none';
+  }
+});
+
+function startPolling() {
+  if (poller) clearInterval(poller);
+
+  poller = setInterval(async () => {
+    try {
+      const res = await fetch(
+        `{{ url_for("user_management.job_status", job_id="JOB_ID") }}`.replace('JOB_ID', currentJobId) +
+        `?t=${Date.now()}`,
+        { cache: 'no-store' }
+      );
+
+      const job = await res.json();
+      updateProgress(job);
+
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'aborted') {
+        clearInterval(poller);
+        showResult(job);
+      }
+
+    } catch (e) {
+      console.error('Polling error:', e);
+    }
+  }, 500);
+}
+
+function updateProgress(job) {
+  const pct = job.pct || 0;
+  progressBar.value = pct;
+  progressPct.textContent = pct + '%';
+
+  if (job.log && job.log.length > 0) {
+    progressLog.textContent = job.log.join('\n');
+    progressLog.scrollTop = progressLog.scrollHeight;
+  }
+}
+
+function showResult(job) {
+  // Re-enable form
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Start Review';
+
+  // Show result section
+  resultSection.style.display = 'block';
+
+  if (job.status === 'failed') {
+    errorSection.style.display = 'block';
+    successSection.style.display = 'none';
+    errorMessage.textContent = job.error || 'Unknown error';
+  } else {
+    errorSection.style.display = 'none';
+    successSection.style.display = 'block';
+
+    const result = job.result || {};
+    resultSummary.textContent = result.summary || 'Review completed';
+
+    if (result.comparison) {
+      comparisonData = result.comparison;
+      renderComparison(comparisonData);
+    }
+  }
+}
+
+function renderComparison(comparison) {
+  // Render stats
+  const summary = comparison.summary || {};
+  statsSection.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-value">${summary.total_unique_users || 0}</div>
+      <div class="stat-label">Unique Users</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${summary.users_in_multiple_orgs || 0}</div>
+      <div class="stat-label">Multi-Org Users</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${summary.users_with_active_access || 0}</div>
+      <div class="stat-label">Active Users</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${summary.users_with_inactive_access || 0}</div>
+      <div class="stat-label">Inactive Users</div>
+    </div>
+  `;
+
+  // Add org columns to table header
+  const orgNames = comparison.org_names || [];
+  const thead = userTable.querySelector('thead tr');
+
+  // Remove existing org columns
+  while (thead.children.length > 2) {
+    thead.removeChild(thead.lastChild);
+  }
+
+  // Add org columns
+  orgNames.forEach(orgName => {
+    const th = document.createElement('th');
+    th.textContent = orgName;
+    th.style.textAlign = 'center';
+    thead.appendChild(th);
+  });
+
+  // Render table rows
+  renderTableRows(comparison);
+
+  // Add event listeners for filtering
+  searchInput.addEventListener('input', () => renderTableRows(comparison));
+  showMultiOrgOnly.addEventListener('change', () => renderTableRows(comparison));
+  showActiveOnly.addEventListener('change', () => renderTableRows(comparison));
+}
+
+function renderTableRows(comparison) {
+  const users = comparison.users || [];
+  const orgNames = comparison.org_names || [];
+  const searchTerm = searchInput.value.toLowerCase();
+  const multiOrgOnly = showMultiOrgOnly.checked;
+  const activeOnly = showActiveOnly.checked;
+
+  userTableBody.innerHTML = '';
+
+  users.forEach(user => {
+    // Apply search filter
+    if (searchTerm) {
+      const email = (user.email || '').toLowerCase();
+      const name = (user.full_name || '').toLowerCase();
+      if (!email.includes(searchTerm) && !name.includes(searchTerm)) {
+        return;
+      }
+    }
+
+    // Apply multi-org filter
+    const orgCount = Object.keys(user.orgs || {}).length;
+    if (multiOrgOnly && orgCount <= 1) {
+      return;
+    }
+
+    // Check if user is active in any org
+    const hasActiveAccess = Object.values(user.orgs || {}).some(org => org.is_active);
+
+    // Apply active filter
+    if (activeOnly && !hasActiveAccess) {
+      return;
+    }
+
+    const tr = document.createElement('tr');
+
+    // Add classes for styling
+    if (orgCount > 1) {
+      tr.classList.add('multi-org');
+    }
+    if (!hasActiveAccess) {
+      tr.classList.add('inactive-all');
+    }
+
+    // Email column
+    const emailTd = document.createElement('td');
+    emailTd.className = 'email-col';
+    emailTd.textContent = user.email || '-';
+    tr.appendChild(emailTd);
+
+    // Full Name column
+    const nameTd = document.createElement('td');
+    nameTd.className = 'name-col';
+    nameTd.textContent = user.full_name || '-';
+    tr.appendChild(nameTd);
+
+    // Org columns
+    orgNames.forEach(orgName => {
+      const orgTd = document.createElement('td');
+      orgTd.className = 'org-col';
+
+      const orgData = user.orgs[orgName];
+      if (orgData) {
+        orgTd.classList.add('present');
+
+        // Build tooltip with user details
+        const details = [];
+        details.push(`Group: ${orgData.group || 'N/A'}`);
+        details.push(`MFA: ${orgData.mfa_enabled ? 'Enabled' : 'Disabled'}`);
+        details.push(`Status: ${orgData.is_active ? 'Active' : 'Inactive'}`);
+        details.push(`Type: ${orgData.user_type || 'N/A'}`);
+        details.push(`Last Session: ${orgData.last_session || 'Never'}`);
+        orgTd.title = details.join('\n');
+
+        // Build badges display
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'user-details';
+
+        // Group badge
+        const groupBadge = document.createElement('span');
+        groupBadge.className = 'badge';
+        groupBadge.textContent = orgData.group || 'N/A';
+        detailsDiv.appendChild(groupBadge);
+
+        // Status badge
+        if (orgData.is_active) {
+          const activeBadge = document.createElement('span');
+          activeBadge.className = 'badge';
+          activeBadge.textContent = '✓';
+          activeBadge.title = 'Active';
+          detailsDiv.appendChild(activeBadge);
+        } else {
+          const inactiveBadge = document.createElement('span');
+          inactiveBadge.className = 'badge inactive';
+          inactiveBadge.textContent = '✗';
+          inactiveBadge.title = 'Inactive';
+          detailsDiv.appendChild(inactiveBadge);
+        }
+
+        // MFA badge
+        if (orgData.mfa_enabled) {
+          const mfaBadge = document.createElement('span');
+          mfaBadge.className = 'badge mfa';
+          mfaBadge.textContent = 'MFA';
+          detailsDiv.appendChild(mfaBadge);
+        }
+
+        // Type badge
+        const typeBadge = document.createElement('span');
+        typeBadge.className = `badge ${orgData.user_type}`;
+        typeBadge.textContent = orgData.user_type === 'employee' ? 'Emp' : 'Cust';
+        detailsDiv.appendChild(typeBadge);
+
+        orgTd.appendChild(detailsDiv);
+      } else {
+        orgTd.classList.add('absent');
+        orgTd.textContent = '-';
+      }
+
+      tr.appendChild(orgTd);
+    });
+
+    userTableBody.appendChild(tr);
+  });
+}
+</script>
+{% endblock %}
