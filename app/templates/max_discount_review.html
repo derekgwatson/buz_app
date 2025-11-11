@@ -443,12 +443,37 @@
 {% endblock %}
 
 {% block content %}
-<h2>Max Discount Review</h2>
+<h2>Inventory Group Field Review</h2>
 
 <p class="info">
-  Review and compare maximum discount percentages across all Buz organizations.
-  This tool will download the current inventory group settings from each org and display them side-by-side.
+  Compare and align inventory group fields across all Buz organizations.
+  This tool downloads current inventory group settings and displays them side-by-side for easy comparison and bulk updates.
 </p>
+
+<details style="margin-bottom: 1.5rem; padding: 1rem; background: #2a2a2a; border: 1px solid #444; border-radius: 0.5rem;">
+  <summary style="cursor: pointer; font-weight: 600; color: #66d9ef; user-select: none;">
+    💡 How to Use
+  </summary>
+  <div style="margin-top: 1rem; color: #e0e0e0; line-height: 1.6;">
+    <ol style="margin-left: 1.5rem;">
+      <li><strong>Run Review:</strong> Select orgs and click "Start Review" to download current settings from each Buz organization</li>
+      <li><strong>Select Field:</strong> Use the "Field to compare" dropdown to choose which field to view/edit:
+        <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+          <li><strong>Max Discount %</strong> - Align discount percentages</li>
+          <li><strong>Seq No</strong> - Fix sequence number mismatches (hover ⚠️ icon to see which org differs)</li>
+          <li><strong>Can be ordered</strong> - Ensure consistent YES/NO settings</li>
+        </ul>
+      </li>
+      <li><strong>Edit Values:</strong> Click any cell to edit. Blue highlight = changed. Color coding shows mismatches (red = regional differ, amber = only Canberra differs, green = all match)</li>
+      <li><strong>Switch Fields:</strong> Change dropdown to work on different fields. Your edits persist across all fields.</li>
+      <li><strong>Review Changes:</strong> Click "Generate Upload Files" to see a preview. Switch fields to see changes for each field separately.</li>
+      <li><strong>Upload:</strong> Click "Upload to Buz" to automatically apply changes, or download files to upload manually</li>
+    </ol>
+    <p style="margin-top: 1rem; padding: 0.75rem; background: #1e3a1e; border-left: 3px solid #22c55e; border-radius: 0.25rem;">
+      <strong>Tip:</strong> You can edit multiple fields in one session, then upload all changes at once!
+    </p>
+  </div>
+</details>
 
 <form id="reviewForm">
   <div class="form-group">
@@ -456,7 +481,7 @@
     <div style="margin-left: 1rem;">
       <label style="display: block; margin: 0.3rem 0;">
         <input type="checkbox" name="orgs" value="canberra" checked>
-        Watson Blinds (Canberra)
+        Canberra
       </label>
       <label style="display: block; margin: 0.3rem 0;">
         <input type="checkbox" name="orgs" value="tweed" checked>
@@ -477,12 +502,14 @@
     </div>
   </div>
 
+  {% if is_development %}
   <div class="form-group">
     <label>
       <input type="checkbox" id="headless" name="headless" checked>
       Run in headless mode (no browser window)
     </label>
   </div>
+  {% endif %}
 
   <button type="submit" class="btn btn-primary" id="submitBtn">Start Review</button>
 </form>
@@ -547,6 +574,15 @@
       <ul id="uploadResultsList"></ul>
     </div>
 
+    <div class="filter-bar" style="margin-bottom: 0.5rem;">
+      <label for="fieldSelector" style="font-weight: 600;">Field to compare:</label>
+      <select id="fieldSelector" style="padding: 0.5rem; margin-left: 0.5rem; background: #333; color: #e0e0e0; border: 1px solid #555; border-radius: 0.375rem;">
+        <option value="max_discount">Max Discount %</option>
+        <option value="seq_no">Seq No</option>
+        <option value="can_be_ordered">Can be ordered</option>
+      </select>
+    </div>
+
     <div class="filter-bar">
       <label for="searchInput">Filter products:</label>
       <input type="text" id="searchInput" placeholder="Search by code or description...">
@@ -577,11 +613,13 @@ let currentJobId = null;
 let poller = null;
 let comparisonData = null;
 let rawResultData = null; // Store raw result with file paths
-let changes = {}; // Track changes: { "org|code": { oldValue, newValue, product } }
+let changes = {}; // Track changes: { "org|code|field": { oldValue, newValue, product, field } }
 let generatedFilePaths = {}; // Store generated file paths for upload: { org_key: file_path }
+let selectedField = 'max_discount'; // Currently selected field
 
 const form = document.getElementById('reviewForm');
 const submitBtn = document.getElementById('submitBtn');
+const fieldSelector = document.getElementById('fieldSelector');
 const progressSection = document.getElementById('progressSection');
 const progressBar = document.getElementById('progressBar');
 const progressPct = document.getElementById('progressPct');
@@ -609,10 +647,76 @@ const uploadToBuzBtn = document.getElementById('uploadToBuzBtn');
 const uploadResults = document.getElementById('uploadResults');
 const uploadResultsList = document.getElementById('uploadResultsList');
 
+// Helper functions for field access
+function getFieldValue(product, field, orgName) {
+  if (field === 'max_discount') {
+    return product.discounts?.[orgName];
+  } else if (field === 'seq_no') {
+    return product.seq_nos?.[orgName];
+  } else if (field === 'can_be_ordered') {
+    return product.can_be_ordered?.[orgName];
+  }
+  return null;
+}
+
+function formatFieldValue(value, field) {
+  if (value == null) return '-';
+  if (field === 'max_discount') {
+    return value.toFixed(1) + '%';
+  } else if (field === 'seq_no') {
+    return value.toString();
+  } else if (field === 'can_be_ordered') {
+    return value || '-';
+  }
+  return String(value);
+}
+
+function parseFieldValue(text, field) {
+  text = text.trim().replace('%', '');
+  if (field === 'max_discount') {
+    return parseFloat(text);
+  } else if (field === 'seq_no') {
+    return parseInt(text);
+  } else if (field === 'can_be_ordered') {
+    return text.toUpperCase();
+  }
+  return text;
+}
+
+function validateFieldValue(value, field) {
+  if (field === 'max_discount') {
+    return !isNaN(value) && value >= 0 && value <= 100;
+  } else if (field === 'seq_no') {
+    return !isNaN(value) && value >= 0 && Number.isInteger(value);
+  } else if (field === 'can_be_ordered') {
+    return value === 'YES' || value === 'NO';
+  }
+  return true;
+}
+
+// Field selector change handler
+fieldSelector.addEventListener('change', () => {
+  selectedField = fieldSelector.value;
+
+  // Don't clear changes - they have field info in them already
+  // Just update the changes counter to reflect current field
+  updateChangesCounter();
+
+  // Re-render preview if it's visible
+  if (previewChanges.classList.contains('visible')) {
+    renderPreviewChanges();
+  }
+
+  // Re-render the table with the new field
+  if (comparisonData) {
+    renderTableRows(comparisonData);
+  }
+});
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const headless = document.getElementById('headless').checked;
+  const headless = document.getElementById('headless')?.checked ?? true; // Default to true in production
 
   // Get selected orgs
   const selectedOrgs = Array.from(document.querySelectorAll('input[name="orgs"]:checked'))
@@ -740,15 +844,7 @@ function renderComparison(comparison) {
   statsSection.innerHTML = `
     <div class="stat-card">
       <div class="stat-value">${summary.total_products || 0}</div>
-      <div class="stat-label">Total Products</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value">${summary.matched_by_code || 0}</div>
-      <div class="stat-label">Matched by Code</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-value">${summary.matched_by_description || 0}</div>
-      <div class="stat-label">Matched by Description</div>
+      <div class="stat-label">Total Inventory Groups</div>
     </div>
   `;
 
@@ -795,42 +891,46 @@ function renderTableRows(comparison) {
       }
     }
 
-    // Check if there's a mismatch
-    const discountValues = orgNames.map(org => product.discounts[org]).filter(v => v != null);
-    const hasMismatch = discountValues.length > 1 && !discountValues.every(v => v === discountValues[0]);
+    // Check if there's a mismatch (using selected field)
+    const fieldValues = orgNames.map(org => getFieldValue(product, selectedField, org)).filter(v => v != null);
+    const hasMismatch = fieldValues.length > 1 && !fieldValues.every(v => v === fieldValues[0]);
 
     // Detect if only Canberra differs from regional stores
     let canberraDiffers = false;
     let regionalMismatch = false;
 
     const regionalOrgs = ['Tweed', 'Batemans Bay', 'Shoalhaven', 'Wagga Wagga'];
-    const canberraDiscount = product.discounts['Watson Blinds (Canberra)'];
-    const regionalDiscountsWithOrg = regionalOrgs.map(org => ({
+    const canberraValue = getFieldValue(product, selectedField, 'Canberra');
+    const regionalValuesWithOrg = regionalOrgs.map(org => ({
       org: org,
-      discount: product.discounts[org]
+      value: getFieldValue(product, selectedField, org)
     }));
-    const regionalDiscounts = regionalDiscountsWithOrg
-      .map(item => item.discount)
+    const regionalValues = regionalValuesWithOrg
+      .map(item => item.value)
       .filter(v => v != null);
 
     // Check if regional stores differ from each other (SERIOUS ISSUE)
     // This includes: different values OR some have values while others don't
-    const regionalOrgsWithData = regionalDiscountsWithOrg.filter(item => item.discount != null);
+    const regionalOrgsWithData = regionalValuesWithOrg.filter(item => item.value != null);
     if (regionalOrgsWithData.length > 0 && regionalOrgsWithData.length < regionalOrgs.length) {
       // Some regional stores have this group, others don't - MISMATCH
       regionalMismatch = true;
-    } else if (regionalDiscounts.length > 1) {
+    } else if (regionalValues.length > 1) {
       // All regional stores have data, but values differ
-      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
+      const allRegionalSame = regionalValues.every(v => v === regionalValues[0]);
       regionalMismatch = !allRegionalSame;
     }
 
     // Check if all regional stores have the same value, and Canberra is different
-    if (hasMismatch && !regionalMismatch && canberraDiscount != null && regionalDiscounts.length > 0) {
-      const allRegionalSame = regionalDiscounts.every(v => v === regionalDiscounts[0]);
-      const canberraIsDifferent = canberraDiscount !== regionalDiscounts[0];
+    if (hasMismatch && !regionalMismatch && canberraValue != null && regionalValues.length > 0) {
+      const allRegionalSame = regionalValues.every(v => v === regionalValues[0]);
+      const canberraIsDifferent = canberraValue !== regionalValues[0];
       canberraDiffers = allRegionalSame && canberraIsDifferent;
     }
+
+    // Check if seq_nos match across orgs
+    const seqNoValues = orgNames.map(org => product.seq_nos ? product.seq_nos[org] : null).filter(v => v != null);
+    const hasSeqNoMismatch = seqNoValues.length > 1 && !seqNoValues.every(v => v === seqNoValues[0]);
 
     // Apply mismatch filter
     if (mismatchOnly && !hasMismatch) {
@@ -847,7 +947,27 @@ function renderTableRows(comparison) {
     // Code column
     const codeTd = document.createElement('td');
     codeTd.className = 'code-col';
-    codeTd.textContent = product.code || '-';
+
+    // Add warning icon if seq_nos don't match
+    if (hasSeqNoMismatch) {
+      const warningIcon = document.createElement('span');
+      warningIcon.textContent = '⚠️ ';
+
+      // Build detailed tooltip showing seq_no for each org
+      const seqNoDetails = orgNames
+        .map(org => {
+          const seqNo = product.seq_nos ? product.seq_nos[org] : null;
+          return `${org}: ${seqNo !== null ? seqNo : 'N/A'}`;
+        })
+        .join('\n');
+
+      warningIcon.title = `Sequence numbers differ:\n${seqNoDetails}`;
+      warningIcon.style.cursor = 'help';
+      codeTd.appendChild(warningIcon);
+    }
+
+    const codeText = document.createTextNode(product.code || '-');
+    codeTd.appendChild(codeText);
     tr.appendChild(codeTd);
 
     // Description column
@@ -857,42 +977,47 @@ function renderTableRows(comparison) {
     descTd.title = product.description || '';
     tr.appendChild(descTd);
 
-    // Org discount columns
+    // Org field columns (dynamically show selected field)
     orgNames.forEach(orgName => {
-      const discountTd = document.createElement('td');
-      discountTd.className = 'discount-col';
+      const fieldTd = document.createElement('td');
+      fieldTd.className = 'discount-col'; // Keep class name for styling
 
-      const discount = product.discounts[orgName];
-      if (discount == null) {
-        discountTd.textContent = '-';
-        discountTd.classList.add('discount-empty');
+      const fieldValue = getFieldValue(product, selectedField, orgName);
+      if (fieldValue == null) {
+        fieldTd.textContent = '-';
+        fieldTd.classList.add('discount-empty');
       } else {
         // Make cell editable
-        discountTd.contentEditable = 'true';
-        discountTd.textContent = discount.toFixed(1) + '%';
-        discountTd.dataset.orgName = orgName;
-        discountTd.dataset.productCode = product.code || '';
-        discountTd.dataset.originalValue = discount.toFixed(1);
+        fieldTd.contentEditable = 'true';
+        fieldTd.dataset.orgName = orgName;
+        fieldTd.dataset.productCode = product.code || '';
+        fieldTd.dataset.originalValue = String(fieldValue);
+        fieldTd.dataset.field = selectedField;
 
-        // Check if this cell has been edited
-        const changeKey = `${orgName}|${product.code}`;
+        // Check if this cell has been edited - show new value if so
+        const changeKey = `${orgName}|${product.code}|${selectedField}`;
         if (changes[changeKey]) {
-          discountTd.classList.add('edited');
+          // Show the edited value, not the original
+          fieldTd.textContent = formatFieldValue(changes[changeKey].newValue, selectedField);
+          fieldTd.classList.add('edited');
+        } else {
+          // Show original value
+          fieldTd.textContent = formatFieldValue(fieldValue, selectedField);
         }
 
         if (hasMismatch) {
           // Apply amber color if only Canberra differs, red otherwise
           if (canberraDiffers) {
-            discountTd.classList.add('discount-canberra-differs');
+            fieldTd.classList.add('discount-canberra-differs');
           } else {
-            discountTd.classList.add('discount-mismatch');
+            fieldTd.classList.add('discount-mismatch');
           }
-        } else if (discountValues.length > 0) {
-          discountTd.classList.add('discount-match');
+        } else if (fieldValues.length > 0) {
+          fieldTd.classList.add('discount-match');
         }
       }
 
-      tr.appendChild(discountTd);
+      tr.appendChild(fieldTd);
     });
 
     comparisonTableBody.appendChild(tr);
@@ -917,26 +1042,46 @@ comparisonTableBody.addEventListener('keydown', (e) => {
 function handleCellEdit(cell) {
   const orgName = cell.dataset.orgName;
   const productCode = cell.dataset.productCode;
-  const originalValue = parseFloat(cell.dataset.originalValue);
+  const field = cell.dataset.field;
+  const originalValueStr = cell.dataset.originalValue;
 
-  // Parse the edited value
-  let newText = cell.textContent.trim().replace('%', '');
-  let newValue = parseFloat(newText);
+  // Parse the edited value based on field type
+  let newText = cell.textContent.trim();
+  let newValue = parseFieldValue(newText, field);
 
   // Validate input
-  if (isNaN(newValue) || newValue < 0 || newValue > 100) {
-    alert('Please enter a valid percentage between 0 and 100');
-    cell.textContent = originalValue.toFixed(1) + '%';
+  if (!validateFieldValue(newValue, field)) {
+    let errorMsg = 'Invalid value';
+    if (field === 'max_discount') {
+      errorMsg = 'Please enter a valid percentage between 0 and 100';
+    } else if (field === 'seq_no') {
+      errorMsg = 'Please enter a valid integer >= 0';
+    } else if (field === 'can_be_ordered') {
+      errorMsg = 'Please enter YES or NO';
+    }
+    alert(errorMsg);
+
+    // Restore original value
+    const originalValue = field === 'max_discount' ? parseFloat(originalValueStr) :
+                         field === 'seq_no' ? parseInt(originalValueStr) : originalValueStr;
+    cell.textContent = formatFieldValue(originalValue, field);
     return;
   }
 
   // Update display
-  cell.textContent = newValue.toFixed(1) + '%';
+  cell.textContent = formatFieldValue(newValue, field);
 
-  const changeKey = `${orgName}|${productCode}`;
+  const changeKey = `${orgName}|${productCode}|${field}`;
+
+  // Parse original value
+  const originalValue = field === 'max_discount' ? parseFloat(originalValueStr) :
+                       field === 'seq_no' ? parseInt(originalValueStr) : originalValueStr;
 
   // Check if value changed
-  if (Math.abs(newValue - originalValue) < 0.01) {
+  const hasChanged = field === 'max_discount' ? Math.abs(newValue - originalValue) >= 0.01 :
+                     newValue !== originalValue;
+
+  if (!hasChanged) {
     // No real change, remove from changes
     delete changes[changeKey];
     cell.classList.remove('edited');
@@ -947,6 +1092,7 @@ function handleCellEdit(cell) {
       orgName: orgName,
       productCode: productCode,
       product: product,
+      field: field,
       originalValue: originalValue,
       newValue: newValue
     };
@@ -964,6 +1110,64 @@ function updateChangesCounter() {
     changesBar.classList.add('visible');
   } else {
     changesBar.classList.remove('visible');
+  }
+}
+
+function renderPreviewChanges() {
+  // Filter changes to show only the currently selected field
+  previewChangesBody.innerHTML = '';
+
+  let filteredCount = 0;
+  for (const [key, change] of Object.entries(changes)) {
+    // Only show changes for the currently selected field
+    if (change.field !== selectedField) {
+      continue;
+    }
+
+    filteredCount++;
+    const tr = document.createElement('tr');
+
+    const orgTd = document.createElement('td');
+    orgTd.textContent = change.orgName;
+    tr.appendChild(orgTd);
+
+    const codeTd = document.createElement('td');
+    codeTd.textContent = change.productCode;
+    codeTd.style.fontFamily = 'monospace';
+    tr.appendChild(codeTd);
+
+    const descTd = document.createElement('td');
+    descTd.textContent = change.product.description || '-';
+    tr.appendChild(descTd);
+
+    const oldTd = document.createElement('td');
+    oldTd.className = 'old-value';
+    oldTd.textContent = formatFieldValue(change.originalValue, change.field);
+    tr.appendChild(oldTd);
+
+    const arrowTd = document.createElement('td');
+    arrowTd.className = 'arrow';
+    arrowTd.textContent = '→';
+    tr.appendChild(arrowTd);
+
+    const newTd = document.createElement('td');
+    newTd.className = 'new-value';
+    newTd.textContent = formatFieldValue(change.newValue, change.field);
+    tr.appendChild(newTd);
+
+    previewChangesBody.appendChild(tr);
+  }
+
+  // Update preview header to show filtered count
+  const previewTitle = previewChanges.querySelector('h4');
+  if (previewTitle) {
+    const fieldNames = {
+      'max_discount': 'Max Discount',
+      'seq_no': 'Seq No',
+      'can_be_ordered': 'Can be ordered'
+    };
+    const totalChanges = Object.keys(changes).length;
+    previewTitle.textContent = `Preview Changes - ${fieldNames[selectedField]} (${filteredCount} of ${totalChanges} total)`;
   }
 }
 
@@ -1012,7 +1216,8 @@ generateUploadBtn.addEventListener('click', async () => {
       },
       body: JSON.stringify({
         changes: changesByOrg,
-        raw_result: rawResultData
+        raw_result: rawResultData,
+        field: selectedField  // Include which field is being updated
       })
     });
 
@@ -1028,7 +1233,7 @@ generateUploadBtn.addEventListener('click', async () => {
     result.files.forEach(file => {
       // Map org name to org key
       const orgKeyMap = {
-        'Watson Blinds (Canberra)': 'canberra',
+        'Canberra': 'canberra',
         'Tweed': 'tweed',
         'Batemans Bay': 'bay',
         'Shoalhaven': 'shoalhaven',
@@ -1040,42 +1245,8 @@ generateUploadBtn.addEventListener('click', async () => {
       }
     });
 
-    // Show preview of changes
-    previewChangesBody.innerHTML = '';
-    for (const [key, change] of Object.entries(changes)) {
-      const tr = document.createElement('tr');
-
-      const orgTd = document.createElement('td');
-      orgTd.textContent = change.orgName;
-      tr.appendChild(orgTd);
-
-      const codeTd = document.createElement('td');
-      codeTd.textContent = change.productCode;
-      codeTd.style.fontFamily = 'monospace';
-      tr.appendChild(codeTd);
-
-      const descTd = document.createElement('td');
-      descTd.textContent = change.product.description || '-';
-      tr.appendChild(descTd);
-
-      const oldTd = document.createElement('td');
-      oldTd.className = 'old-value';
-      oldTd.textContent = change.originalValue.toFixed(1) + '%';
-      tr.appendChild(oldTd);
-
-      const arrowTd = document.createElement('td');
-      arrowTd.className = 'arrow';
-      arrowTd.textContent = '→';
-      tr.appendChild(arrowTd);
-
-      const newTd = document.createElement('td');
-      newTd.className = 'new-value';
-      newTd.textContent = change.newValue.toFixed(1) + '%';
-      tr.appendChild(newTd);
-
-      previewChangesBody.appendChild(tr);
-    }
-
+    // Show preview of changes (filtered by selected field)
+    renderPreviewChanges();
     previewChanges.classList.add('visible');
 
     // Show download links
@@ -1133,7 +1304,7 @@ uploadToBuzBtn.addEventListener('click', async () => {
   progressLog.textContent = '';
 
   try {
-    const headless = document.getElementById('headless').checked;
+    const headless = document.getElementById('headless')?.checked ?? true; // Default to true in production
 
     const response = await fetch('{{ url_for("max_discount_review.upload_to_buz") }}', {
       method: 'POST',
@@ -1175,7 +1346,7 @@ showResult = function(job) {
     uploadResultsList.innerHTML = '';
 
     const orgKeyMap = {
-      'canberra': 'Watson Blinds (Canberra)',
+      'canberra': 'Canberra',
       'tweed': 'Tweed',
       'bay': 'Batemans Bay',
       'shoalhaven': 'Shoalhaven',
@@ -1219,13 +1390,19 @@ showResult = function(job) {
       if (result.success && result.edited > 0) {
         const orgName = orgKeyMap[orgKey];
 
-        // Update the discount values in comparisonData for this org
+        // Update the field values in comparisonData for this org
         for (const [key, change] of Object.entries(changes)) {
           if (change.orgName === orgName) {
-            // Find the product in comparisonData and update its discount
+            // Find the product in comparisonData and update the appropriate field
             const product = comparisonData.products.find(p => p.code === change.productCode);
             if (product) {
-              product.discounts[orgName] = change.newValue;
+              if (change.field === 'max_discount') {
+                product.discounts[orgName] = change.newValue;
+              } else if (change.field === 'seq_no') {
+                product.seq_nos[orgName] = change.newValue;
+              } else if (change.field === 'can_be_ordered') {
+                product.can_be_ordered[orgName] = change.newValue;
+              }
             }
           }
         }

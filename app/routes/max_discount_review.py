@@ -22,7 +22,7 @@ max_discount_review_bp = Blueprint("max_discount_review", __name__, url_prefix="
 @auth.login_required
 def index():
     """Max discount review entry point"""
-    return render_template("max_discount_review.html")
+    return render_template("max_discount_review.html", is_development=current_app.config.get('DEBUG', False))
 
 
 @max_discount_review_bp.route("/start-review", methods=["POST"])
@@ -33,9 +33,12 @@ def start_review():
 
     Expects:
         orgs: (required) List of org keys to process
-        headless: (optional) Run browser in headless mode (default: true)
+        headless: (optional) Run browser in headless mode (default: true, forced in production)
     """
     headless = request.form.get("headless", "true").lower() in ("true", "1", "yes")
+    # Force headless mode in production (DEBUG=False)
+    if not current_app.config.get('DEBUG', False):
+        headless = True
 
     # Get selected orgs
     selected_orgs = request.form.getlist("orgs")
@@ -97,9 +100,7 @@ def start_review():
             # Build summary
             summary_lines = [
                 f"✓ Downloaded and parsed inventory groups from {len(result.orgs)} orgs",
-                f"✓ Found {comparison.to_dict()['summary']['total_products']} unique products",
-                f"  - {comparison.to_dict()['summary']['matched_by_code']} matched by code",
-                f"  - {comparison.to_dict()['summary']['matched_by_description']} matched by description"
+                f"✓ Found {comparison.to_dict()['summary']['total_products']} unique inventory groups",
             ]
 
             for org in result.orgs:
@@ -170,9 +171,22 @@ def generate_upload():
     data = request.get_json()
     changes_by_org = data.get("changes", {})
     raw_result = data.get("raw_result", {})
+    field = data.get("field", "max_discount")  # Which field is being updated
 
     if not changes_by_org:
         return jsonify({"error": "No changes provided"}), 400
+
+    # Field to column mapping
+    field_column_map = {
+        'max_discount': 7,   # Column G
+        'seq_no': 5,         # Column E
+        'can_be_ordered': 14  # Column N
+    }
+
+    if field not in field_column_map:
+        return jsonify({"error": f"Invalid field: {field}"}), 400
+
+    update_column = field_column_map[field]
 
     export_root = Path(current_app.config.get("EXPORT_ROOT", "exports"))
     upload_dir = export_root / "max_discount_uploads" / uuid.uuid4().hex
@@ -264,8 +278,8 @@ def generate_upload():
                                 target_cell.protection = copy(source_cell.protection)
                                 target_cell.alignment = copy(source_cell.alignment)
 
-                        # Update max discount (column G = 7) - store as number, not decimal
-                        upload_ws.cell(row=upload_row, column=7, value=change['newValue'])
+                        # Update the field value in the appropriate column
+                        upload_ws.cell(row=upload_row, column=update_column, value=change['newValue'])
 
                         # Set Operation to 'E' (column AE = 31)
                         upload_ws.cell(row=upload_row, column=31, value='E')
@@ -345,6 +359,10 @@ def upload_to_buz():
 
         file_paths = data.get('file_paths', {})  # Dict: org_key -> file_path
         headless = data.get('headless', True)
+
+        # Force headless mode in production (DEBUG=False)
+        if not current_app.config.get('DEBUG', False):
+            headless = True
 
         if not file_paths:
             return jsonify({"error": "No files to upload"}), 400

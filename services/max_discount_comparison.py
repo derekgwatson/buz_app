@@ -15,17 +15,27 @@ class ProductDiscountRow:
     code: Optional[str]
     description: Optional[str]
 
-    # Discounts by org name
+    # Field values by org name
     discounts: Dict[str, Optional[float]]  # org_name -> discount_pct
+    seq_nos: Dict[str, Optional[int]] = None  # org_name -> seq_no
+    can_be_ordered: Dict[str, Optional[str]] = None  # org_name -> "YES"/"NO"
 
     # Match info
     matched_by_code: bool = True
+
+    def __post_init__(self):
+        if self.seq_nos is None:
+            self.seq_nos = {}
+        if self.can_be_ordered is None:
+            self.can_be_ordered = {}
 
     def to_dict(self) -> dict:
         return {
             'code': self.code,
             'description': self.description,
             'discounts': self.discounts,
+            'seq_nos': self.seq_nos,
+            'can_be_ordered': self.can_be_ordered,
             'matched_by_code': self.matched_by_code
         }
 
@@ -48,8 +58,7 @@ class MaxDiscountComparison:
         Build comparison table by matching products across orgs.
 
         Matching strategy:
-        1. First match by code (column C)
-        2. If no code match, match by description (column B)
+        - Match by code (column C) only
         """
         logger.info("Building max discount comparison")
 
@@ -60,39 +69,32 @@ class MaxDiscountComparison:
 
             # Index by code
             by_code = {}
-            # Index by description (for fallback matching)
-            by_desc = {}
 
             for ig in org_discounts.inventory_groups:
                 if ig.code:
                     by_code[ig.code] = ig
-                if ig.description:
-                    by_desc[ig.description] = ig
 
             org_data[org_name] = {
-                'by_code': by_code,
-                'by_desc': by_desc
+                'by_code': by_code
             }
 
-        # Collect all unique codes and descriptions across all orgs
+        # Collect all unique codes across all orgs
         all_codes: Set[str] = set()
-        all_descriptions: Set[str] = set()
 
         for org_discounts in self.review_result.orgs:
             for ig in org_discounts.inventory_groups:
                 if ig.code:
                     all_codes.add(ig.code)
-                if ig.description:
-                    all_descriptions.add(ig.description)
 
-        # Build comparison rows by code first
-        processed_codes = set()
+        # Build comparison rows by code
         for code in sorted(all_codes):
             if not code:
                 continue
 
-            # Get discounts from each org for this code
+            # Get all field values from each org for this code
             discounts = {}
+            seq_nos = {}
+            can_be_ordered_vals = {}
             description = None
 
             for org_discounts in self.review_result.orgs:
@@ -102,63 +104,51 @@ class MaxDiscountComparison:
                 if code in org_indices['by_code']:
                     ig = org_indices['by_code'][code]
                     discounts[org_name] = ig.max_discount_pct
+                    seq_nos[org_name] = ig.seq_no
+                    can_be_ordered_vals[org_name] = ig.can_be_ordered
                     if not description and ig.description:
                         description = ig.description
                 else:
                     discounts[org_name] = None
+                    seq_nos[org_name] = None
+                    can_be_ordered_vals[org_name] = None
 
             self.products.append(ProductDiscountRow(
                 code=code,
                 description=description,
                 discounts=discounts,
+                seq_nos=seq_nos,
+                can_be_ordered=can_be_ordered_vals,
                 matched_by_code=True
             ))
-            processed_codes.add(code)
-
-        # Now handle descriptions that weren't matched by code
-        for description in sorted(all_descriptions):
-            if not description:
-                continue
-
-            # Check if this description belongs to a code we already processed
-            already_processed = False
-            for org_discounts in self.review_result.orgs:
-                for ig in org_discounts.inventory_groups:
-                    if ig.description == description and ig.code in processed_codes:
-                        already_processed = True
-                        break
-                if already_processed:
-                    break
-
-            if already_processed:
-                continue
-
-            # Get discounts from each org for this description
-            discounts = {}
-            code = None
-
-            for org_discounts in self.review_result.orgs:
-                org_name = org_discounts.org_name
-                org_indices = org_data[org_name]
-
-                if description in org_indices['by_desc']:
-                    ig = org_indices['by_desc'][description]
-                    discounts[org_name] = ig.max_discount_pct
-                    if not code and ig.code:
-                        code = ig.code
-                else:
-                    discounts[org_name] = None
-
-            # Only add if found in at least one org
-            if any(d is not None for d in discounts.values()):
-                self.products.append(ProductDiscountRow(
-                    code=code,
-                    description=description,
-                    discounts=discounts,
-                    matched_by_code=False
-                ))
 
         logger.info(f"Built comparison with {len(self.products)} products")
+
+        # Sort products by seq_no (primary), then description (secondary)
+        def get_sort_key(product: ProductDiscountRow):
+            # Try to get seq_no from Canberra first
+            canberra_seq = product.seq_nos.get('Canberra')
+            if canberra_seq is not None:
+                seq_no = canberra_seq
+            else:
+                # Otherwise get first available seq_no
+                seq_no = None
+                for s in product.seq_nos.values():
+                    if s is not None:
+                        seq_no = s
+                        break
+
+                # If no seq_no, sort to end
+                if seq_no is None:
+                    seq_no = float('inf')
+
+            # Secondary sort by description (case-insensitive)
+            description = (product.description or '').lower()
+
+            return (seq_no, description)
+
+        self.products.sort(key=get_sort_key)
+        logger.info(f"Sorted products by sequence number and description")
 
     def to_dict(self) -> dict:
         """Convert comparison to dictionary for JSON serialization"""
@@ -166,9 +156,7 @@ class MaxDiscountComparison:
             'org_names': [org.org_name for org in self.review_result.orgs],
             'products': [p.to_dict() for p in self.products],
             'summary': {
-                'total_products': len(self.products),
-                'matched_by_code': sum(1 for p in self.products if p.matched_by_code),
-                'matched_by_description': sum(1 for p in self.products if not p.matched_by_code)
+                'total_products': len(self.products)
             }
         }
 
