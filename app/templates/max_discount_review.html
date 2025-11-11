@@ -850,7 +850,16 @@ function renderTableRows(comparison) {
     if (hasSeqNoMismatch) {
       const warningIcon = document.createElement('span');
       warningIcon.textContent = '⚠️ ';
-      warningIcon.title = 'Sequence numbers differ across organizations';
+
+      // Build detailed tooltip showing seq_no for each org
+      const seqNoDetails = orgNames
+        .map(org => {
+          const seqNo = product.seq_nos ? product.seq_nos[org] : null;
+          return `${org}: ${seqNo !== null ? seqNo : 'N/A'}`;
+        })
+        .join('\n');
+
+      warningIcon.title = `Sequence numbers differ:\n${seqNoDetails}`;
       warningIcon.style.cursor = 'help';
       codeTd.appendChild(warningIcon);
     }
