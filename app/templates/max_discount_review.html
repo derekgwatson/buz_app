@@ -1241,8 +1241,9 @@ showResult = function(job) {
       changes = {};
       generatedFilePaths = {};
 
-      // Re-render the comparison table with updated values
-      renderTableRows(comparisonData);
+      // Force a clean re-render of the comparison table with updated values
+      // This will recalculate color coding and remove edited highlights
+      renderComparison(comparisonData);
 
       // Hide the upload-related sections
       changesBar.classList.remove('visible');
