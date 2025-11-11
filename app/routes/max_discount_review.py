@@ -100,9 +100,7 @@ def start_review():
             # Build summary
             summary_lines = [
                 f"✓ Downloaded and parsed inventory groups from {len(result.orgs)} orgs",
-                f"✓ Found {comparison.to_dict()['summary']['total_products']} unique products",
-                f"  - {comparison.to_dict()['summary']['matched_by_code']} matched by code",
-                f"  - {comparison.to_dict()['summary']['matched_by_description']} matched by description"
+                f"✓ Found {comparison.to_dict()['summary']['total_products']} unique inventory groups",
             ]
 
             for org in result.orgs:

@@ -56,8 +56,7 @@ class MaxDiscountComparison:
         Build comparison table by matching products across orgs.
 
         Matching strategy:
-        1. First match by code (column C)
-        2. If no code match, match by description (column B)
+        - Match by code (column C) only
         """
         logger.info("Building max discount comparison")
 
@@ -68,33 +67,24 @@ class MaxDiscountComparison:
 
             # Index by code
             by_code = {}
-            # Index by description (for fallback matching)
-            by_desc = {}
 
             for ig in org_discounts.inventory_groups:
                 if ig.code:
                     by_code[ig.code] = ig
-                if ig.description:
-                    by_desc[ig.description] = ig
 
             org_data[org_name] = {
-                'by_code': by_code,
-                'by_desc': by_desc
+                'by_code': by_code
             }
 
-        # Collect all unique codes and descriptions across all orgs
+        # Collect all unique codes across all orgs
         all_codes: Set[str] = set()
-        all_descriptions: Set[str] = set()
 
         for org_discounts in self.review_result.orgs:
             for ig in org_discounts.inventory_groups:
                 if ig.code:
                     all_codes.add(ig.code)
-                if ig.description:
-                    all_descriptions.add(ig.description)
 
-        # Build comparison rows by code first
-        processed_codes = set()
+        # Build comparison rows by code
         for code in sorted(all_codes):
             if not code:
                 continue
@@ -125,54 +115,6 @@ class MaxDiscountComparison:
                 seq_nos=seq_nos,
                 matched_by_code=True
             ))
-            processed_codes.add(code)
-
-        # Now handle descriptions that weren't matched by code
-        for description in sorted(all_descriptions):
-            if not description:
-                continue
-
-            # Check if this description belongs to a code we already processed
-            already_processed = False
-            for org_discounts in self.review_result.orgs:
-                for ig in org_discounts.inventory_groups:
-                    if ig.description == description and ig.code in processed_codes:
-                        already_processed = True
-                        break
-                if already_processed:
-                    break
-
-            if already_processed:
-                continue
-
-            # Get discounts and seq_nos from each org for this description
-            discounts = {}
-            seq_nos = {}
-            code = None
-
-            for org_discounts in self.review_result.orgs:
-                org_name = org_discounts.org_name
-                org_indices = org_data[org_name]
-
-                if description in org_indices['by_desc']:
-                    ig = org_indices['by_desc'][description]
-                    discounts[org_name] = ig.max_discount_pct
-                    seq_nos[org_name] = ig.seq_no
-                    if not code and ig.code:
-                        code = ig.code
-                else:
-                    discounts[org_name] = None
-                    seq_nos[org_name] = None
-
-            # Only add if found in at least one org
-            if any(d is not None for d in discounts.values()):
-                self.products.append(ProductDiscountRow(
-                    code=code,
-                    description=description,
-                    discounts=discounts,
-                    seq_nos=seq_nos,
-                    matched_by_code=False
-                ))
 
         logger.info(f"Built comparison with {len(self.products)} products")
 
@@ -200,9 +142,7 @@ class MaxDiscountComparison:
             'org_names': [org.org_name for org in self.review_result.orgs],
             'products': [p.to_dict() for p in self.products],
             'summary': {
-                'total_products': len(self.products),
-                'matched_by_code': sum(1 for p in self.products if p.matched_by_code),
-                'matched_by_description': sum(1 for p in self.products if not p.matched_by_code)
+                'total_products': len(self.products)
             }
         }
 
