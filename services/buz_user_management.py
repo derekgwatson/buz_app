@@ -261,14 +261,8 @@ class BuzUserManagement:
         all_users = []
 
         try:
-            # First navigate to home screen to establish org context
-            self.result.add_step(f"Navigating to home screen...")
-            await page.goto("https://go.buzmanager.com", wait_until='networkidle', timeout=30000)
-            self.result.add_step(f"Home screen loaded at: {page.url}")
-            await page.wait_for_timeout(2000)  # Give it more time to settle
-
-            # Now navigate to user management page via go.buzmanager.com URL
-            # This redirects to console1.buzmanager.com/myorg/user-management/users
+            # Navigate directly to user management page
+            # Since we now have console domain auth in storage state, this should work
             self.result.add_step(f"Navigating to user management page...")
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle', timeout=30000)
             self.result.add_step(f"User page loaded at: {page.url}")
@@ -289,9 +283,12 @@ class BuzUserManagement:
             self.result.add_step(f"✓ User table found")
 
             # Set page size to 500 (maximum)
+            # The selector is in a div.select-editable within col-sm-1
             self.result.add_step(f"Setting page size to 500...")
-            await page.select_option('select.ng-pristine.ng-valid.ng-touched', value='6: 500')
+            page_size_select = page.locator('div.select-editable select')
+            await page_size_select.select_option(value='6: 500')
             await page.wait_for_timeout(1000)  # Wait for page to update
+            self.result.add_step(f"✓ Page size set to 500")
 
             # Combinations to scrape: active/inactive × employee/customer
             combinations = [
