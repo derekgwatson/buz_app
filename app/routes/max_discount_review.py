@@ -227,9 +227,8 @@ def generate_upload():
                             cell_value = ws.cell(row=row_idx, column=col_idx).value
                             upload_ws.cell(row=upload_row, column=col_idx, value=cell_value)
 
-                        # Update max discount (column G = 7)
-                        new_discount_decimal = change['newValue'] / 100
-                        upload_ws.cell(row=upload_row, column=7, value=new_discount_decimal)
+                        # Update max discount (column G = 7) - store as number, not decimal
+                        upload_ws.cell(row=upload_row, column=7, value=change['newValue'])
 
                         # Set Operation to 'E' (column AE = 31)
                         upload_ws.cell(row=upload_row, column=31, value='E')

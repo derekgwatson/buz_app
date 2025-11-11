@@ -225,6 +225,54 @@
     font-size: 1.1rem;
   }
 
+  .download-files {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #1e3a1e;
+    border: 1px solid #22c55e;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .download-files.visible {
+    display: block;
+  }
+
+  .download-files h4 {
+    margin: 0 0 0.75rem 0;
+    color: #86efac;
+  }
+
+  .download-files ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .download-files li {
+    margin: 0.5rem 0;
+  }
+
+  .download-files a {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: #2563eb;
+    color: white;
+    text-decoration: none;
+    border-radius: 0.375rem;
+    font-weight: 500;
+  }
+
+  .download-files a:hover {
+    background: #1d4ed8;
+  }
+
+  .download-files .file-info {
+    color: #86efac;
+    font-size: 0.875rem;
+    margin-left: 0.5rem;
+  }
+
   .filter-bar {
     margin-top: 1rem;
     padding: 1rem;
@@ -347,6 +395,11 @@
       <button type="button" class="btn" id="resetChangesBtn" style="background: #6b7280;">Reset All Changes</button>
     </div>
 
+    <div class="download-files" id="downloadFiles">
+      <h4>Generated Upload Files</h4>
+      <ul id="downloadFilesList"></ul>
+    </div>
+
     <div class="filter-bar">
       <label for="searchInput">Filter products:</label>
       <input type="text" id="searchInput" placeholder="Search by code or description...">
@@ -399,6 +452,8 @@ const changesBar = document.getElementById('changesBar');
 const changesCount = document.getElementById('changesCount');
 const generateUploadBtn = document.getElementById('generateUploadBtn');
 const resetChangesBtn = document.getElementById('resetChangesBtn');
+const downloadFiles = document.getElementById('downloadFiles');
+const downloadFilesList = document.getElementById('downloadFilesList');
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -421,6 +476,7 @@ form.addEventListener('submit', async (e) => {
 
   // Hide previous results
   resultSection.style.display = 'none';
+  downloadFiles.classList.remove('visible');
   progressSection.style.display = 'block';
   progressBar.value = 0;
   progressPct.textContent = '0%';
@@ -762,6 +818,7 @@ resetChangesBtn.addEventListener('click', () => {
     changes = {};
     updateChangesCounter();
     renderTableRows(comparisonData);
+    downloadFiles.classList.remove('visible');
   }
 });
 
@@ -805,20 +862,27 @@ generateUploadBtn.addEventListener('click', async () => {
 
     const result = await response.json();
 
-    // Download each file
-    for (const file of result.files) {
+    // Show download links
+    downloadFilesList.innerHTML = '';
+    result.files.forEach(file => {
+      const li = document.createElement('li');
       const link = document.createElement('a');
       link.href = file.download_url;
       link.download = file.filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      link.textContent = `Download ${file.org_name}`;
 
-      // Small delay between downloads
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
+      const info = document.createElement('span');
+      info.className = 'file-info';
+      info.textContent = `(${file.changes_count} change${file.changes_count !== 1 ? 's' : ''})`;
 
-    alert(`Generated ${result.files.length} upload file(s):\n${result.files.map(f => f.filename).join('\n')}`);
+      li.appendChild(link);
+      li.appendChild(info);
+      downloadFilesList.appendChild(li);
+    });
+
+    downloadFiles.classList.add('visible');
+
+    alert(`Generated ${result.files.length} upload file(s). Click the download buttons below to save them.`);
 
   } catch (error) {
     alert('Error generating upload files: ' + error.message);
