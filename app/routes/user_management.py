@@ -44,7 +44,7 @@ def start_review():
         return jsonify({"error": "At least one organization must be selected"}), 400
 
     # Validate org keys
-    valid_orgs = ['canberra', 'tweed', 'bay', 'shoalhaven', 'wagga']
+    valid_orgs = ['canberra', 'tweed', 'dd', 'bay', 'shoalhaven', 'wagga']
     invalid_orgs = [org for org in selected_orgs if org not in valid_orgs]
     if invalid_orgs:
         return jsonify({"error": f"Invalid organizations: {', '.join(invalid_orgs)}"}), 400

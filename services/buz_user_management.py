@@ -82,6 +82,10 @@ class BuzUserManagement:
             'display_name': 'Tweed',
             'storage_state': '.secrets/buz_storage_state_tweed.json'
         },
+        'dd': {
+            'display_name': 'Designer Drapes',
+            'storage_state': '.secrets/buz_storage_state_dd.json'
+        },
         'bay': {
             'display_name': 'Batemans Bay',
             'storage_state': '.secrets/buz_storage_state_bay.json'
@@ -291,8 +295,8 @@ class BuzUserManagement:
             self.result.add_step(f"✓ Page size set to 500")
 
             # Combinations to scrape: active/inactive × employee/customer
-            # Note: Only Canberra and Tweed (Designer Drapes) have customers, other orgs only have employees
-            if org_key in ['canberra', 'tweed']:
+            # Note: Only Canberra and Designer Drapes have customers, other orgs only have employees
+            if org_key in ['canberra', 'dd']:
                 combinations = [
                     (True, "employee", "0: true", "0: 0"),    # Active employees
                     (False, "employee", "1: false", "0: 0"),  # Inactive employees
