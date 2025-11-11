@@ -340,6 +340,10 @@ class BuzMaxDiscountReview:
             file_input = page.locator('input#ImportFile[type="file"]')
             await file_input.set_input_files(str(file_path))
 
+            # Give the page JavaScript time to process the file selection and show the upload button
+            self.result.add_step(f"Waiting for page to process file selection...")
+            await page.wait_for_timeout(1000)  # Wait 1 second for JS to react
+
             # Wait for upload button to become visible (it has class fileupload-exists which shows after file selection)
             self.result.add_step(f"Waiting for upload button to appear...")
             upload_button = page.locator('input#btnUpload[type="submit"]')
