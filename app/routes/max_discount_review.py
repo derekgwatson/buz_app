@@ -351,7 +351,8 @@ def upload_to_buz():
 
         # Create a new job
         job_id = str(uuid.uuid4())
-        db = create_db_manager()
+        db_path = current_app.config["database"]
+        db = create_db_manager(db_path)
         create_job(job_id, db)
 
         # Run upload in background thread
