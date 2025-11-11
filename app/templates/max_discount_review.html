@@ -1210,6 +1210,51 @@ showResult = function(job) {
     uploadResults.classList.add('visible');
     uploadToBuzBtn.disabled = false;
     uploadToBuzBtn.textContent = 'Upload to Buz';
+
+    // Update the comparison data with the new values for successful uploads
+    let allSuccessful = true;
+    let successfulUploads = 0;
+
+    for (const [orgKey, result] of Object.entries(job.result.results)) {
+      if (result.success && result.edited > 0) {
+        const orgName = orgKeyMap[orgKey];
+
+        // Update the discount values in comparisonData for this org
+        for (const [key, change] of Object.entries(changes)) {
+          if (change.orgName === orgName) {
+            // Find the product in comparisonData and update its discount
+            const product = comparisonData.products.find(p => p.code === change.productCode);
+            if (product) {
+              product.discounts[orgName] = change.newValue;
+            }
+          }
+        }
+        successfulUploads++;
+      } else if (!result.success) {
+        allSuccessful = false;
+      }
+    }
+
+    // If all uploads were successful, clear changes and re-render
+    if (allSuccessful && successfulUploads > 0) {
+      // Clear the changes tracking
+      changes = {};
+      generatedFilePaths = {};
+
+      // Re-render the comparison table with updated values
+      renderTableRows(comparisonData);
+
+      // Hide the upload-related sections
+      changesBar.classList.remove('visible');
+      previewChanges.classList.remove('visible');
+      uploadSection.classList.remove('visible');
+      downloadFiles.classList.remove('visible');
+
+      // Show success message
+      alert(`Successfully updated ${successfulUploads} organization(s). The comparison table has been refreshed with the new values.`);
+    } else if (!allSuccessful) {
+      alert('Some uploads failed. Please review the results above. The comparison table will not be updated until all uploads succeed.');
+    }
   }
 };
 </script>
