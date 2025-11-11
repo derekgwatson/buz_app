@@ -273,6 +273,123 @@
     margin-left: 0.5rem;
   }
 
+  .preview-changes {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .preview-changes.visible {
+    display: block;
+  }
+
+  .preview-changes h4 {
+    margin: 0 0 0.75rem 0;
+    color: #e0e0e0;
+  }
+
+  .preview-changes table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.5rem;
+  }
+
+  .preview-changes th {
+    background: #1f1f1f;
+    padding: 0.5rem;
+    text-align: left;
+    font-weight: 600;
+    color: #e0e0e0;
+    border-bottom: 2px solid #444;
+  }
+
+  .preview-changes td {
+    padding: 0.5rem;
+    border-bottom: 1px solid #444;
+    color: #e0e0e0;
+  }
+
+  .preview-changes .arrow {
+    color: #3b82f6;
+    font-weight: 600;
+  }
+
+  .preview-changes .old-value {
+    color: #fca5a5;
+  }
+
+  .preview-changes .new-value {
+    color: #86efac;
+  }
+
+  .upload-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .upload-section.visible {
+    display: block;
+  }
+
+  .upload-section .btn-upload {
+    background: #16a34a;
+  }
+
+  .upload-section .btn-upload:hover {
+    background: #15803d;
+  }
+
+  .upload-results {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #1e3a1e;
+    border: 1px solid #22c55e;
+    border-radius: 0.5rem;
+    display: none;
+  }
+
+  .upload-results.visible {
+    display: block;
+  }
+
+  .upload-results h4 {
+    margin: 0 0 0.75rem 0;
+    color: #86efac;
+  }
+
+  .upload-results ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .upload-results li {
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: #2a2a2a;
+    border-radius: 0.375rem;
+  }
+
+  .upload-results .org-name {
+    font-weight: 600;
+    color: #66d9ef;
+  }
+
+  .upload-results .success {
+    color: #86efac;
+  }
+
+  .upload-results .error {
+    color: #fca5a5;
+  }
+
   .filter-bar {
     margin-top: 1rem;
     padding: 1rem;
@@ -395,9 +512,39 @@
       <button type="button" class="btn" id="resetChangesBtn" style="background: #6b7280;">Reset All Changes</button>
     </div>
 
+    <div class="preview-changes" id="previewChanges">
+      <h4>Preview Changes</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th>Product Code</th>
+            <th>Description</th>
+            <th>Current</th>
+            <th></th>
+            <th>New</th>
+          </tr>
+        </thead>
+        <tbody id="previewChangesBody">
+        </tbody>
+      </table>
+    </div>
+
     <div class="download-files" id="downloadFiles">
       <h4>Generated Upload Files</h4>
       <ul id="downloadFilesList"></ul>
+    </div>
+
+    <div class="upload-section" id="uploadSection">
+      <button type="button" class="btn btn-primary btn-upload" id="uploadToBuzBtn">Upload to Buz</button>
+      <p style="color: #9ca3af; font-size: 0.875rem; margin-top: 0.5rem;">
+        This will automatically upload the changes to each Buz organization.
+      </p>
+    </div>
+
+    <div class="upload-results" id="uploadResults">
+      <h4>Upload Results</h4>
+      <ul id="uploadResultsList"></ul>
     </div>
 
     <div class="filter-bar">
@@ -431,6 +578,7 @@ let poller = null;
 let comparisonData = null;
 let rawResultData = null; // Store raw result with file paths
 let changes = {}; // Track changes: { "org|code": { oldValue, newValue, product } }
+let generatedFilePaths = {}; // Store generated file paths for upload: { org_key: file_path }
 
 const form = document.getElementById('reviewForm');
 const submitBtn = document.getElementById('submitBtn');
@@ -454,6 +602,12 @@ const generateUploadBtn = document.getElementById('generateUploadBtn');
 const resetChangesBtn = document.getElementById('resetChangesBtn');
 const downloadFiles = document.getElementById('downloadFiles');
 const downloadFilesList = document.getElementById('downloadFilesList');
+const previewChanges = document.getElementById('previewChanges');
+const previewChangesBody = document.getElementById('previewChangesBody');
+const uploadSection = document.getElementById('uploadSection');
+const uploadToBuzBtn = document.getElementById('uploadToBuzBtn');
+const uploadResults = document.getElementById('uploadResults');
+const uploadResultsList = document.getElementById('uploadResultsList');
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -477,6 +631,9 @@ form.addEventListener('submit', async (e) => {
   // Hide previous results
   resultSection.style.display = 'none';
   downloadFiles.classList.remove('visible');
+  previewChanges.classList.remove('visible');
+  uploadSection.classList.remove('visible');
+  uploadResults.classList.remove('visible');
   progressSection.style.display = 'block';
   progressBar.value = 0;
   progressPct.textContent = '0%';
@@ -816,9 +973,13 @@ resetChangesBtn.addEventListener('click', () => {
 
   if (confirm('Are you sure you want to reset all changes?')) {
     changes = {};
+    generatedFilePaths = {};
     updateChangesCounter();
     renderTableRows(comparisonData);
     downloadFiles.classList.remove('visible');
+    previewChanges.classList.remove('visible');
+    uploadSection.classList.remove('visible');
+    uploadResults.classList.remove('visible');
   }
 });
 
@@ -862,6 +1023,61 @@ generateUploadBtn.addEventListener('click', async () => {
 
     const result = await response.json();
 
+    // Store file paths for upload
+    generatedFilePaths = {};
+    result.files.forEach(file => {
+      // Map org name to org key
+      const orgKeyMap = {
+        'Watson Blinds (Canberra)': 'canberra',
+        'Tweed': 'tweed',
+        'Batemans Bay': 'bay',
+        'Shoalhaven': 'shoalhaven',
+        'Wagga Wagga': 'wagga'
+      };
+      const orgKey = orgKeyMap[file.org_name];
+      if (orgKey) {
+        generatedFilePaths[orgKey] = file.path;
+      }
+    });
+
+    // Show preview of changes
+    previewChangesBody.innerHTML = '';
+    for (const [key, change] of Object.entries(changes)) {
+      const tr = document.createElement('tr');
+
+      const orgTd = document.createElement('td');
+      orgTd.textContent = change.orgName;
+      tr.appendChild(orgTd);
+
+      const codeTd = document.createElement('td');
+      codeTd.textContent = change.productCode;
+      codeTd.style.fontFamily = 'monospace';
+      tr.appendChild(codeTd);
+
+      const descTd = document.createElement('td');
+      descTd.textContent = change.product.description || '-';
+      tr.appendChild(descTd);
+
+      const oldTd = document.createElement('td');
+      oldTd.className = 'old-value';
+      oldTd.textContent = change.originalValue.toFixed(1) + '%';
+      tr.appendChild(oldTd);
+
+      const arrowTd = document.createElement('td');
+      arrowTd.className = 'arrow';
+      arrowTd.textContent = '→';
+      tr.appendChild(arrowTd);
+
+      const newTd = document.createElement('td');
+      newTd.className = 'new-value';
+      newTd.textContent = change.newValue.toFixed(1) + '%';
+      tr.appendChild(newTd);
+
+      previewChangesBody.appendChild(tr);
+    }
+
+    previewChanges.classList.add('visible');
+
     // Show download links
     downloadFilesList.innerHTML = '';
     result.files.forEach(file => {
@@ -881,8 +1097,9 @@ generateUploadBtn.addEventListener('click', async () => {
     });
 
     downloadFiles.classList.add('visible');
+    uploadSection.classList.add('visible');
 
-    alert(`Generated ${result.files.length} upload file(s). Click the download buttons below to save them.`);
+    alert(`Generated ${result.files.length} upload file(s). Review changes below, then click "Upload to Buz" when ready.`);
 
   } catch (error) {
     alert('Error generating upload files: ' + error.message);
@@ -891,5 +1108,109 @@ generateUploadBtn.addEventListener('click', async () => {
     generateUploadBtn.textContent = 'Generate Upload Files';
   }
 });
+
+// Upload to Buz
+uploadToBuzBtn.addEventListener('click', async () => {
+  if (Object.keys(generatedFilePaths).length === 0) {
+    alert('No files to upload. Generate files first.');
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to upload changes to ${Object.keys(generatedFilePaths).length} organization(s)? This will modify the inventory groups in Buz.`)) {
+    return;
+  }
+
+  uploadToBuzBtn.disabled = true;
+  uploadToBuzBtn.textContent = 'Uploading...';
+
+  // Hide previous upload results
+  uploadResults.classList.remove('visible');
+
+  // Show progress section
+  progressSection.style.display = 'block';
+  progressBar.value = 0;
+  progressPct.textContent = '0%';
+  progressLog.textContent = '';
+
+  try {
+    const headless = document.getElementById('headless').checked;
+
+    const response = await fetch('{{ url_for("max_discount_review.upload_to_buz") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        file_paths: generatedFilePaths,
+        headless: headless
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start upload');
+    }
+
+    const data = await response.json();
+    currentJobId = data.job_id;
+
+    // Poll for upload progress
+    startPolling();
+
+  } catch (error) {
+    alert('Error starting upload: ' + error.message);
+    uploadToBuzBtn.disabled = false;
+    uploadToBuzBtn.textContent = 'Upload to Buz';
+    progressSection.style.display = 'none';
+  }
+});
+
+// Override showResult to also handle upload results
+const originalShowResult = showResult;
+showResult = function(job) {
+  originalShowResult(job);
+
+  // If this was an upload job, show upload results
+  if (job.result && job.result.results) {
+    uploadResultsList.innerHTML = '';
+
+    const orgKeyMap = {
+      'canberra': 'Watson Blinds (Canberra)',
+      'tweed': 'Tweed',
+      'bay': 'Batemans Bay',
+      'shoalhaven': 'Shoalhaven',
+      'wagga': 'Wagga Wagga'
+    };
+
+    for (const [orgKey, result] of Object.entries(job.result.results)) {
+      const li = document.createElement('li');
+
+      const orgSpan = document.createElement('span');
+      orgSpan.className = 'org-name';
+      orgSpan.textContent = orgKeyMap[orgKey] || orgKey;
+      li.appendChild(orgSpan);
+
+      li.appendChild(document.createTextNode(': '));
+
+      if (result.success) {
+        const successSpan = document.createElement('span');
+        successSpan.className = 'success';
+        successSpan.textContent = `✓ ${result.added} added, ${result.edited} edited`;
+        li.appendChild(successSpan);
+      } else if (result.error) {
+        const errorSpan = document.createElement('span');
+        errorSpan.className = 'error';
+        errorSpan.textContent = `✗ ${result.error}`;
+        li.appendChild(errorSpan);
+      }
+
+      uploadResultsList.appendChild(li);
+    }
+
+    uploadResults.classList.add('visible');
+    uploadToBuzBtn.disabled = false;
+    uploadToBuzBtn.textContent = 'Upload to Buz';
+  }
+};
 </script>
 {% endblock %}

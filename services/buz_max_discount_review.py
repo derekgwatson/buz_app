@@ -310,6 +310,100 @@ class BuzMaxDiscountReview:
         self.result.add_step(f"✓ Parsed {len(inventory_groups)} orderable inventory groups")
         return inventory_groups
 
+    async def upload_inventory_groups_excel(self, org_key: str, file_path: Path) -> Dict[str, Any]:
+        """
+        Upload an Inventory Groups Excel file to Buz.
+
+        Args:
+            org_key: Key from ORGS dict
+            file_path: Path to the Excel file to upload
+
+        Returns:
+            Dict with upload results (added, edited counts)
+        """
+        org_config = self.ORGS[org_key]
+        org_name = org_config['display_name']
+
+        self.result.add_step(f"Uploading inventory groups to {org_name}")
+
+        page = await self.context.new_page()
+        try:
+            # Navigate to export/import page
+            self.result.add_step(f"Navigating to import page...")
+            await page.goto(self.EXPORT_IMPORT_URL, wait_until='domcontentloaded', timeout=30000)
+
+            # Check for org selector
+            await self.handle_org_selector_if_present(page, self.EXPORT_IMPORT_URL)
+
+            # Select the file
+            self.result.add_step(f"Selecting file: {file_path.name}")
+            file_input = page.locator('input#ImportFile[type="file"]')
+            await file_input.set_input_files(str(file_path))
+
+            # Click upload button
+            self.result.add_step(f"Uploading file...")
+            upload_button = page.locator('input#btnUpload[type="submit"]')
+            await upload_button.click()
+
+            # Wait for the select dropdown to populate
+            self.result.add_step(f"Waiting for sheet selection...")
+            await page.wait_for_selector('select#SelectSheets option[value="Inventory Groups"]', timeout=30000)
+
+            # Select "Inventory Groups" option
+            select_sheets = page.locator('select#SelectSheets')
+            await select_sheets.select_option('Inventory Groups')
+            self.result.add_step(f"Selected 'Inventory Groups' sheet")
+
+            # Click import button
+            self.result.add_step(f"Importing...")
+            import_button = page.locator('input#btnImport[type="submit"]')
+            await import_button.click()
+
+            # Wait for success message
+            await page.wait_for_selector('p[style*="white-space"]', timeout=60000)
+
+            # Parse the result messages
+            result_paragraphs = await page.locator('p[style*="white-space"]').all_text_contents()
+
+            results = {
+                'success': False,
+                'message': '',
+                'added': 0,
+                'edited': 0
+            }
+
+            for text in result_paragraphs:
+                self.result.add_step(f"Buz says: {text.strip()}")
+
+                if 'Save Successful' in text:
+                    results['success'] = True
+
+                # Parse "Inventory Groups - Added(X), Edited(Y)"
+                if 'Inventory Groups' in text and 'Added' in text:
+                    results['message'] = text.strip()
+                    # Extract numbers
+                    import re
+                    added_match = re.search(r'Added\s*\((\d+)\)', text)
+                    edited_match = re.search(r'Edited\s*\((\d+)\)', text)
+
+                    if added_match:
+                        results['added'] = int(added_match.group(1))
+                    if edited_match:
+                        results['edited'] = int(edited_match.group(1))
+
+            if results['success']:
+                self.result.add_step(f"✓ Upload successful: {results['added']} added, {results['edited']} edited")
+            else:
+                self.result.add_step(f"⚠️  Upload completed but no success message found")
+
+            return results
+
+        except Exception as e:
+            self.result.add_step(f"❌ Upload failed: {str(e)}")
+            raise
+        finally:
+            await page.close()
+
     async def review_max_discounts(self, selected_orgs: Optional[List[str]] = None) -> MaxDiscountReviewResult:
         """
         Download and parse max discounts from selected orgs.
@@ -404,3 +498,78 @@ async def review_max_discounts_all_orgs(
 
     update(100, "Complete")
     return result
+
+
+async def upload_max_discount_files(
+    upload_files: Dict[str, Path],
+    headless: bool = True,
+    job_update_callback=None
+) -> Dict[str, Any]:
+    """
+    Upload inventory group Excel files to multiple Buz orgs.
+
+    Args:
+        upload_files: Dict mapping org_key -> file_path
+        headless: Run browser in headless mode
+        job_update_callback: Optional callback(pct, message) for job progress
+
+    Returns:
+        Dict with upload results for each org
+    """
+    def update(pct: int, msg: str):
+        if job_update_callback:
+            job_update_callback(pct, msg)
+        logger.info(f"[{pct}%] {msg}")
+
+    update(0, "Starting upload to Buz")
+
+    # Create a temp output dir (not actually used for this operation, but required by class)
+    import tempfile
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output_dir = Path(temp_dir)
+
+        async with BuzMaxDiscountReview(output_dir=output_dir, headless=headless) as review:
+            # Wrap add_step to provide progress updates
+            original_add_step = review.result.add_step
+
+            def wrapped_add_step(message: str):
+                original_add_step(message)
+                # Estimate progress
+                step_count = len(review.result.steps)
+                pct = min(5 + (step_count * 5), 95)
+                update(pct, message)
+
+            review.result.add_step = wrapped_add_step
+
+            # Upload to each org
+            upload_results = {}
+            total_orgs = len(upload_files)
+
+            for idx, (org_key, file_path) in enumerate(upload_files.items()):
+                try:
+                    # Switch to org
+                    await review.switch_to_org(org_key)
+
+                    # Upload file
+                    result = await review.upload_inventory_groups_excel(org_key, file_path)
+                    upload_results[org_key] = result
+
+                    # Update progress
+                    progress = int(10 + ((idx + 1) / total_orgs) * 85)
+                    update(progress, f"Completed upload to {review.ORGS[org_key]['display_name']}")
+
+                except Exception as e:
+                    org_name = review.ORGS[org_key]['display_name']
+                    error_msg = f"Failed to upload to {org_name}: {str(e)}"
+                    review.result.add_step(f"❌ {error_msg}")
+                    upload_results[org_key] = {
+                        'success': False,
+                        'error': str(e)
+                    }
+
+        update(100, "Upload complete")
+
+        return {
+            'results': upload_results,
+            'steps': review.result.steps
+        }
