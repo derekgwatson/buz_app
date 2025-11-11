@@ -76,7 +76,7 @@ class BuzMaxDiscountReview:
     # Org configurations
     ORGS = {
         'canberra': {
-            'display_name': 'Watson Blinds (Canberra)',
+            'display_name': 'Canberra',
             'storage_state': '.secrets/buz_storage_state_canberra.json'
         },
         'tweed': {

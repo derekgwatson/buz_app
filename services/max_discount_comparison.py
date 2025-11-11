@@ -121,7 +121,7 @@ class MaxDiscountComparison:
         # Sort products by seq_no (use first available seq_no, preferably from Canberra)
         def get_sort_key(product: ProductDiscountRow):
             # Try to get seq_no from Canberra first
-            canberra_seq = product.seq_nos.get('Watson Blinds (Canberra)')
+            canberra_seq = product.seq_nos.get('Canberra')
             if canberra_seq is not None:
                 return canberra_seq
 
