@@ -291,15 +291,11 @@ class BuzMaxDiscountReview:
                 continue
 
             # Parse max discount percentage
+            # Buz stores percentages as the actual number (0.5 = 0.5%, 50 = 50%)
             max_discount_pct = None
             if max_discount is not None:
                 try:
-                    # Handle percentage format
-                    # If value is between 0 and 1 (exclusive), it's likely in decimal format (0.15 = 15%)
-                    # If value is >= 1, it's already a percentage (15 = 15%)
                     max_discount_pct = float(max_discount)
-                    if 0 < max_discount_pct < 1:
-                        max_discount_pct *= 100
                 except (ValueError, TypeError):
                     pass
 
