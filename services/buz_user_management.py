@@ -70,7 +70,7 @@ class UserManagementResult:
 class BuzUserManagement:
     """Scrape user data from Buz orgs"""
 
-    USER_MANAGEMENT_URL = "https://console1.buzmanager.com/myorg/user-management/users"
+    USER_MANAGEMENT_URL = "https://go.buzmanager.com/Settings/Users"  # Redirects to console URL
 
     # Org configurations
     ORGS = {
@@ -262,14 +262,15 @@ class BuzUserManagement:
 
         try:
             # First navigate to home screen to establish org context
-            # This prevents being pushed to the org switcher
             self.result.add_step(f"Navigating to home screen...")
             await page.goto("https://go.buzmanager.com", wait_until='domcontentloaded', timeout=30000)
             await page.wait_for_timeout(1000)  # Give it a moment to settle
 
-            # Now navigate to user management page
+            # Now navigate to user management page via go.buzmanager.com URL
+            # This redirects to console1.buzmanager.com/myorg/user-management/users
             self.result.add_step(f"Navigating to user management page...")
             await page.goto(self.USER_MANAGEMENT_URL, wait_until='domcontentloaded', timeout=30000)
+            await page.wait_for_timeout(1000)  # Wait for redirect to complete
 
             # Wait for the page to load
             await page.wait_for_selector('table#userListTable', timeout=10000)
