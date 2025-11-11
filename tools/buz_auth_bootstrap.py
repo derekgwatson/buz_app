@@ -57,17 +57,26 @@ async def main(account_name: str = "default") -> None:
         # Also visit the console domain to capture those auth cookies
         # The user management page is on console1.buzmanager.com which requires separate auth
         print(">>> Visiting console domain to capture authentication...")
-        await page.goto("https://go.buzmanager.com/Settings/Users")
-        # Wait for redirect to console domain
-        await page.wait_for_timeout(3000)
-        print(f">>> Console page loaded at: {page.url}")
 
-        # Wait for the user table to appear (confirms we're authenticated)
+        # Try going to the console URL via the go.buzmanager redirect
+        await page.goto("https://go.buzmanager.com/Settings/Users", wait_until='networkidle', timeout=60000)
+        print(f">>> After redirect, landed at: {page.url}")
+
+        # Check if we're on the console domain
+        if "console" not in page.url:
+            print(f">>> ⚠️  Warning: Not on console domain yet, at: {page.url}")
+
+        # Wait for the page to fully load and user table to appear
+        print(">>> Waiting for user table to confirm authentication...")
         try:
-            await page.wait_for_selector('table#userListTable', timeout=10000)
-            print(">>> ✓ Console authentication successful")
+            await page.wait_for_selector('table#userListTable', state='visible', timeout=15000)
+            print(">>> ✓ Console authentication successful - user table found!")
         except Exception as e:
-            print(f">>> ⚠️  Warning: Could not find user table (may still be OK): {e}")
+            print(f">>> ❌ ERROR: Could not find user table!")
+            print(f">>> Current URL: {page.url}")
+            print(f">>> This means console authentication likely FAILED")
+            print(f">>> You may need to manually visit the console page in the browser window")
+            raise Exception(f"Console authentication failed - user table not found at {page.url}")
 
         # Save storage state (now includes both go.buzmanager.com and console auth)
         await ctx.storage_state(path=str(state_path))
