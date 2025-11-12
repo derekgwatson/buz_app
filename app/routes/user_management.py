@@ -438,9 +438,7 @@ def batch_toggle_users():
         if change.get('org_key') not in valid_orgs:
             return jsonify({"error": f"Invalid org_key: {change.get('org_key')}"}), 400
 
-    # Force headless mode in production (DEBUG=False)
-    if not current_app.config.get('DEBUG', False):
-        headless = True
+    # Use headless value from request (allow headed mode for debugging)
 
     # Create background job
     job_id = uuid.uuid4().hex
