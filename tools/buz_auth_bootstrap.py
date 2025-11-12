@@ -50,27 +50,32 @@ async def main(account_name: str = "default") -> None:
             await page.wait_for_url(lambda url: url.startswith("https://go.buzmanager.com/"), timeout=120_000)
             print(">>> Org selected! Continuing...")
 
-        # Immediately navigate to users page to capture console authentication
-        # This ensures we get both go.buzmanager.com and console domain auth in one session
-        print(">>> Navigating to user management page to capture console authentication...")
-        await page.goto("https://go.buzmanager.com/Settings/Users", wait_until='networkidle', timeout=60000)
-        print(f">>> After navigation, landed at: {page.url}")
+        # Console authentication needs manual intervention
+        print("\n" + "="*80)
+        print(">>> MANUAL STEP REQUIRED TO CAPTURE CONSOLE AUTHENTICATION")
+        print("="*80)
+        print(">>> In the browser window, please:")
+        print(">>>   1. Navigate to Settings > Users (in the Buz menu)")
+        print(">>>   2. If prompted with another login, complete the authentication")
+        print(">>>   3. Wait for the user management page to fully load")
+        print(">>>")
+        print(">>> Once you see the user table on the screen, return here.")
+        print("="*80)
 
-        # Check if we're on the console domain
-        if "console" not in page.url:
-            print(f">>> ⚠️  Warning: Not on console domain yet, at: {page.url}")
+        # Wait for user confirmation
+        input("\n>>> Press ENTER when you're ready to continue (after navigating to Users page)... ")
 
-        # Wait for the page to fully load and user table to appear
-        print(">>> Waiting for user table to confirm authentication...")
+        print(">>> Checking for user table...")
         try:
-            await page.wait_for_selector('table#userListTable', state='visible', timeout=15000)
-            print(">>> ✓ Console authentication successful - user table found!")
+            # Give a generous timeout since user just confirmed
+            await page.wait_for_selector('table#userListTable', state='visible', timeout=10000)
+            print(f">>> ✓ Console authentication successful!")
+            print(f">>> Current URL: {page.url}")
         except Exception as e:
             print(f">>> ❌ ERROR: Could not find user table!")
             print(f">>> Current URL: {page.url}")
-            print(f">>> This means console authentication likely FAILED")
-            print(f">>> You may need to manually visit the console page in the browser window")
-            raise Exception(f"Console authentication failed - user table not found at {page.url}")
+            print(f">>> Make sure you've navigated to the Users page and can see the user list.")
+            raise Exception(f"Console authentication verification failed - user table not found at {page.url}")
 
         # Save storage state (now includes both go.buzmanager.com and console auth)
         await ctx.storage_state(path=str(state_path))
