@@ -527,20 +527,19 @@ async def toggle_user_active_status(
             # Click the label (the checkbox itself is hidden by CSS)
             # The label has a 'for' attribute matching the checkbox ID
             toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
+            await toggle_label.click()
 
-            # Wait for the network request that saves the toggle
-            async with page.expect_response(lambda response: '/User/' in response.url and response.request.method == 'POST') as response_info:
-                await toggle_label.click()
+            # Wait for the toggle to process and verify it changed
+            await page.wait_for_timeout(800)
 
-            response = await response_info.value
-
-            # Check if the save was successful
-            if response.status >= 200 and response.status < 300:
+            # Verify the checkbox state changed
+            new_checked_state = await toggle_checkbox.is_checked()
+            if new_checked_state != is_active:
                 result['success'] = True
                 result['new_state'] = not is_active
                 result['message'] = f"User {user_email} is now {'active' if result['new_state'] else 'inactive'}"
             else:
-                result['message'] = f"Toggle failed with HTTP status {response.status}"
+                result['message'] = f"Toggle failed - checkbox state did not change"
 
         except Exception as e:
             result['message'] = f"Error toggling user status: {str(e)}"
@@ -653,22 +652,21 @@ async def batch_toggle_users_for_org(
                         results.append(result)
                         continue
 
-                    # Click toggle and wait for save request to complete
+                    # Click toggle
                     toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
+                    await toggle_label.click()
 
-                    # Wait for the network request that saves the toggle
-                    async with page.expect_response(lambda response: '/User/' in response.url and response.request.method == 'POST') as response_info:
-                        await toggle_label.click()
+                    # Wait for the toggle to process and verify it changed
+                    await page.wait_for_timeout(800)
 
-                    response = await response_info.value
-
-                    # Check if the save was successful
-                    if response.status >= 200 and response.status < 300:
+                    # Verify the checkbox state changed
+                    new_checked_state = await toggle_checkbox.is_checked()
+                    if new_checked_state != is_active:
                         result['success'] = True
                         result['new_state'] = not is_active
                         result['message'] = f"User is now {'active' if result['new_state'] else 'inactive'}"
                     else:
-                        result['message'] = f"Toggle failed with status {response.status}"
+                        result['message'] = f"Toggle failed - checkbox state did not change"
 
                     results.append(result)
 
