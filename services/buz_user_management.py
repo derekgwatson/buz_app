@@ -629,11 +629,14 @@ async def batch_toggle_users_for_org(
 
                     # Clear search and type email
                     await search_input.clear()
-                    await page.wait_for_timeout(200)
+                    await page.wait_for_timeout(300)
                     await search_input.click()
-                    await search_input.press_sequentially(user_email, delay=20)
+                    await page.wait_for_timeout(100)
+                    await search_input.press_sequentially(user_email, delay=100)
+                    # Explicitly trigger input event for Angular
+                    await search_input.dispatch_event('input')
                     # Wait for Angular to filter - wait for table to stabilize
-                    await page.wait_for_timeout(800)
+                    await page.wait_for_timeout(1000)
 
                     # Find toggle
                     toggle_checkbox = page.locator(f'input.onoffswitch-checkbox[id="{user_email}"]')
@@ -656,10 +659,13 @@ async def batch_toggle_users_for_org(
                         await page.wait_for_timeout(500)
 
                         await search_input.clear()
-                        await page.wait_for_timeout(200)
+                        await page.wait_for_timeout(300)
                         await search_input.click()
-                        await search_input.press_sequentially(user_email, delay=20)
-                        await page.wait_for_timeout(800)
+                        await page.wait_for_timeout(100)
+                        await search_input.press_sequentially(user_email, delay=100)
+                        # Explicitly trigger input event for Angular
+                        await search_input.dispatch_event('input')
+                        await page.wait_for_timeout(1000)
 
                         checkbox_count = await toggle_checkbox.count()
                         logger.info(f"User {user_email}: found {checkbox_count} checkbox(es) in opposite state (active={not is_active})")
