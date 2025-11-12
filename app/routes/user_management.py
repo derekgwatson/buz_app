@@ -60,16 +60,43 @@ def start_review():
         """Background thread to run user management review"""
         db = create_db_manager(db_path)
         try:
+            import json
             org_names = ', '.join([org.title() for org in selected_orgs])
             update_job(job_id, 5, f"Starting user management review for: {org_names}", db=db)
+
+            # Check if there's existing cached data
+            existing_cache = None
+            update_job(job_id, 8, "Checking for existing cached data...", db=db)
+            try:
+                query = """
+                    SELECT result
+                    FROM jobs
+                    WHERE status = 'completed'
+                    AND result IS NOT NULL
+                    AND result LIKE '%comparison%'
+                    AND result LIKE '%user%'
+                    ORDER BY updated_at DESC
+                    LIMIT 1
+                """
+                cursor = db.execute_query(query)
+                rows = cursor.fetchall()
+                if rows:
+                    existing_cache = json.loads(rows[0][0])
+                    update_job(job_id, 10, "Found existing cache - will merge with new data", db=db)
+                else:
+                    update_job(job_id, 10, "No existing cache found - starting fresh", db=db)
+            except Exception as e:
+                logger.warning(f"Could not load existing cache: {e}")
+                update_job(job_id, 10, "Could not load cache - starting fresh", db=db)
 
             # Import and run the review
             from services.buz_user_management import review_users_all_orgs
             from services.user_management_comparison import build_user_comparison
 
             def job_callback(pct: int, message: str):
-                """Update job progress"""
-                update_job(job_id, pct, message, db=db)
+                """Update job progress (map to 10-80% range)"""
+                mapped_pct = 10 + int(pct * 0.7)
+                update_job(job_id, mapped_pct, message, db=db)
 
             # Run async function in new event loop
             loop = asyncio.new_event_loop()
@@ -85,6 +112,44 @@ def start_review():
             finally:
                 loop.close()
 
+            # Merge with existing cache if present
+            update_job(job_id, 85, "Merging with existing cache...", db=db)
+            if existing_cache and 'raw_result' in existing_cache:
+                # Get the new org names from the current review
+                new_org_names = {org.org_name for org in result.orgs}
+
+                # Keep existing orgs that weren't in the current review
+                existing_orgs = existing_cache['raw_result'].get('orgs', [])
+                kept_orgs = [org for org in existing_orgs if org.get('org_name') not in new_org_names]
+
+                # Add the newly reviewed orgs
+                all_orgs = kept_orgs + [org.to_dict() for org in result.orgs]
+
+                # Reconstruct the result object with all orgs
+                from services.buz_user_management import UserManagementResult, OrgUserData, UserRecord
+                merged_result = UserManagementResult(
+                    orgs=[
+                        OrgUserData(
+                            org_key=org.get('org_key', ''),
+                            org_name=org.get('org_name', ''),
+                            users=[
+                                UserRecord(
+                                    email=u.get('email', ''),
+                                    name=u.get('name', ''),
+                                    is_active=u.get('is_active', False),
+                                    user_type=u.get('user_type', 'employee')
+                                )
+                                for u in org.get('users', [])
+                            ]
+                        )
+                        for org in all_orgs
+                    ]
+                )
+                result = merged_result
+                update_job(job_id, 88, f"Merged: kept {len(kept_orgs)} existing org(s), added {len(new_org_names)} new org(s)", db=db)
+            else:
+                update_job(job_id, 88, "No merge needed - using fresh data", db=db)
+
             # Build comparison
             update_job(job_id, 90, "Building user comparison table", db=db)
             comparison = build_user_comparison(result)
@@ -92,8 +157,9 @@ def start_review():
             # Build summary
             total_users = sum(len(org.users) for org in result.orgs)
             summary_lines = [
-                f"✓ Scraped users from {len(result.orgs)} orgs",
-                f"✓ Found {total_users} total user records",
+                f"✓ Reviewed {len(selected_orgs)} org(s): {org_names}",
+                f"✓ Total cached data now includes {len(result.orgs)} org(s)",
+                f"✓ Total user records: {total_users}",
             ]
 
             for org in result.orgs:
@@ -189,6 +255,44 @@ def get_latest_result():
     }
 
     return jsonify(job)
+
+
+@user_management_bp.route("/clear-cache", methods=["POST"])
+@auth.login_required
+def clear_cache():
+    """Clear all cached user management data"""
+    db_path = current_app.config["database"]
+    db = create_db_manager(db_path)
+
+    try:
+        # Delete all completed user management jobs
+        query = """
+            DELETE FROM jobs
+            WHERE status = 'completed'
+            AND result IS NOT NULL
+            AND result LIKE '%comparison%'
+            AND result LIKE '%user%'
+        """
+        cursor = db.execute_query(query)
+        deleted_count = cursor.rowcount
+
+        logger.info(f"Cleared {deleted_count} cached user management job(s)")
+        return jsonify({
+            "success": True,
+            "message": f"Cleared {deleted_count} cached job(s)"
+        }), 200
+
+    except Exception as e:
+        logger.exception("Error clearing cache")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+    finally:
+        try:
+            db.close()
+        except Exception as e:
+            logger.warning(f"Error closing database: {e}")
 
 
 @user_management_bp.route("/toggle-user-status", methods=["POST"])
