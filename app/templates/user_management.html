@@ -1022,30 +1022,23 @@ async function applyBatchChanges() {
           clearInterval(pollInterval);
 
           if (job.status === 'completed' && job.result) {
-            // Update badges based on results
+            // Update comparison data with results
             for (const res of job.result.results || []) {
               const orgName = Object.keys(orgNameToKey).find(k => orgNameToKey[k] === res.org_key);
-              const changeKey = `${orgName}|${res.user_email}`;
-              const change = pendingChanges.get(changeKey);
 
-              if (change) {
-                const badge = change.badgeElement;
-                badge.className = res.new_state ? 'badge clickable' : 'badge inactive clickable';
-                badge.textContent = res.new_state ? '✓' : '✗';
-                badge.title = `${res.new_state ? 'Active' : 'Inactive'} (click to toggle)`;
-                badge.dataset.isActive = res.new_state;
-                badge.style.backgroundColor = '';
-
-                // Update the comparison data
-                const user = comparisonData.users.find(u => u.email === res.user_email);
-                if (user && user.orgs[orgName]) {
-                  user.orgs[orgName].is_active = res.new_state;
-                }
+              // Update the comparison data
+              const user = comparisonData.users.find(u => u.email === res.user_email);
+              if (user && user.orgs[orgName]) {
+                user.orgs[orgName].is_active = res.new_state;
               }
             }
 
+            // Clear pending changes
             pendingChanges.clear();
             updatePendingUI();
+
+            // Re-render the entire table to reflect all changes
+            renderTable();
           }
 
           applyBtn.disabled = false;
