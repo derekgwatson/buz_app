@@ -1026,23 +1026,33 @@ async function applyBatchChanges() {
           clearInterval(pollInterval);
 
           if (job.status === 'completed' && job.result) {
+            console.log('Batch toggle completed. Job result:', job.result);
+
             // Update comparison data with results
             for (const res of job.result.results || []) {
               const orgName = Object.keys(orgNameToKey).find(k => orgNameToKey[k] === res.org_key);
+              console.log(`Updating user ${res.user_email} in org ${orgName} to is_active=${res.new_state}`);
 
               // Update the comparison data
               const user = comparisonData.users.find(u => u.email === res.user_email);
               if (user && user.orgs[orgName]) {
+                console.log(`Found user in comparisonData, updating...`);
                 user.orgs[orgName].is_active = res.new_state;
+              } else {
+                console.warn(`User ${res.user_email} or org ${orgName} not found in comparisonData`);
               }
             }
+
+            console.log('Updated comparisonData:', comparisonData);
 
             // Clear pending changes
             pendingChanges.clear();
             updatePendingUI();
 
             // Re-render the entire table to reflect all changes
+            console.log('Calling renderTableRows...');
             renderTableRows(comparisonData);
+            console.log('Table re-rendered');
           }
 
           applyBtn.disabled = false;
