@@ -477,7 +477,7 @@ async def toggle_user_active_status(
             await page.wait_for_timeout(500)
 
             # Use the search field to filter by email
-            search_input = page.locator('input[ng-model="usersFilter.filterText"]')
+            search_input = page.locator('input#search-text')
             await search_input.fill(user_email)
             await page.wait_for_timeout(1000)  # Wait for Angular to filter
 
