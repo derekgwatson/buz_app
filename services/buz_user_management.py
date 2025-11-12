@@ -527,13 +527,20 @@ async def toggle_user_active_status(
             # Click the label (the checkbox itself is hidden by CSS)
             # The label has a 'for' attribute matching the checkbox ID
             toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
-            await toggle_label.click()
-            await page.wait_for_timeout(500)  # Wait for toggle animation
 
-            # New state is opposite of current state
-            result['success'] = True
-            result['new_state'] = not is_active
-            result['message'] = f"User {user_email} is now {'active' if result['new_state'] else 'inactive'}"
+            # Wait for the network request that saves the toggle
+            async with page.expect_response(lambda response: '/User/' in response.url and response.request.method == 'POST') as response_info:
+                await toggle_label.click()
+
+            response = await response_info.value
+
+            # Check if the save was successful
+            if response.status >= 200 and response.status < 300:
+                result['success'] = True
+                result['new_state'] = not is_active
+                result['message'] = f"User {user_email} is now {'active' if result['new_state'] else 'inactive'}"
+            else:
+                result['message'] = f"Toggle failed with HTTP status {response.status}"
 
         except Exception as e:
             result['message'] = f"Error toggling user status: {str(e)}"
@@ -646,14 +653,23 @@ async def batch_toggle_users_for_org(
                         results.append(result)
                         continue
 
-                    # Click toggle
+                    # Click toggle and wait for save request to complete
                     toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
-                    await toggle_label.click()
-                    await page.wait_for_timeout(300)
 
-                    result['success'] = True
-                    result['new_state'] = not is_active
-                    result['message'] = f"User is now {'active' if result['new_state'] else 'inactive'}"
+                    # Wait for the network request that saves the toggle
+                    async with page.expect_response(lambda response: '/User/' in response.url and response.request.method == 'POST') as response_info:
+                        await toggle_label.click()
+
+                    response = await response_info.value
+
+                    # Check if the save was successful
+                    if response.status >= 200 and response.status < 300:
+                        result['success'] = True
+                        result['new_state'] = not is_active
+                        result['message'] = f"User is now {'active' if result['new_state'] else 'inactive'}"
+                    else:
+                        result['message'] = f"Toggle failed with status {response.status}"
+
                     results.append(result)
 
                 except Exception as e:

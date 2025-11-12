@@ -446,16 +446,27 @@ def batch_toggle_users():
     job_id = uuid.uuid4().hex
     db_path = current_app.config["database"]
 
-    db = create_db_manager(db_path)
-    create_job(job_id, db=db)
+    # Create job and close the connection immediately
+    db = None
+    try:
+        db = create_db_manager(db_path)
+        create_job(job_id, db=db)
+    finally:
+        if db:
+            try:
+                db.close()
+            except Exception as e:
+                logger.warning(f"Error closing initial db connection: {e}")
 
     def run_batch_toggle():
         """Background thread to run batch toggle"""
-        db = create_db_manager(db_path)
+        db = None
         results = []
         errors = []
 
         try:
+            db = create_db_manager(db_path)
+
             from services.buz_user_management import batch_toggle_users_for_org
             import json
             from services.buz_user_management import BuzUserManagement
@@ -538,10 +549,7 @@ def batch_toggle_users():
             # Update cache once at the end with all changes
             if results:
                 update_job(job_id, 85, f"Updating cache with {len(results)} change(s)...", db=db)
-                cache_db = None
                 try:
-                    cache_db = create_db_manager(db_path)
-
                     # Query for the most recent completed user management job
                     query = """
                         SELECT id, result
@@ -554,7 +562,7 @@ def batch_toggle_users():
                         LIMIT 1
                     """
 
-                    cursor = cache_db.execute_query(query)
+                    cursor = db.execute_query(query)
                     rows = cursor.fetchall()
 
                     if rows:
@@ -593,19 +601,13 @@ def batch_toggle_users():
                                 SET result = ?
                                 WHERE id = ?
                             """
-                            cache_db.execute_query(update_query, (json.dumps(result_json), cache_job_id))
+                            db.execute_query(update_query, (json.dumps(result_json), cache_job_id))
                             logger.info(f"Updated cache with {len(results)} toggle(s)")
                             update_job(job_id, 95, "✓ Cache updated", db=db)
 
                 except Exception as cache_error:
                     logger.warning(f"Failed to update cache: {cache_error}")
                     update_job(job_id, 95, f"⚠ Failed to update cache: {str(cache_error)}", db=db)
-                finally:
-                    if cache_db:
-                        try:
-                            cache_db.close()
-                        except Exception as e:
-                            logger.warning(f"Error closing cache database: {e}")
 
             # Complete the job
             summary = f"Completed: {len(results)} successful, {len(errors)} failed"
@@ -627,15 +629,23 @@ def batch_toggle_users():
 
         except Exception as e:
             logger.exception(f"Batch toggle failed")
-            update_job(
-                job_id,
-                pct=0,
-                message=f"Error: {str(e)}",
-                error=str(e),
-                done=True,
-                result={"error": str(e)},
-                db=db
-            )
+            if db:
+                update_job(
+                    job_id,
+                    pct=0,
+                    message=f"Error: {str(e)}",
+                    error=str(e),
+                    done=True,
+                    result={"error": str(e)},
+                    db=db
+                )
+        finally:
+            # Always close the database connection
+            if db:
+                try:
+                    db.close()
+                except Exception as e:
+                    logger.warning(f"Error closing database in batch toggle: {e}")
 
     # Start background thread
     thread = threading.Thread(target=run_batch_toggle)
