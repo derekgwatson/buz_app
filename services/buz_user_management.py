@@ -616,45 +616,57 @@ async def batch_toggle_users_for_org(
                 }
 
                 try:
+                    logger.info(f"Toggling {user_email}: cache says is_active={is_active}, user_type={user_type}")
+
                     # Set filters for this user
                     active_value = "0: true" if is_active else "1: false"
                     await active_select.select_option(value=active_value)
-                    await page.wait_for_timeout(200)
+                    await page.wait_for_timeout(500)
 
                     user_type_value = "1: 5" if user_type == "customer" else "0: 0"
                     await user_type_select.select_option(value=user_type_value)
-                    await page.wait_for_timeout(200)
+                    await page.wait_for_timeout(500)
 
                     # Clear search and type email
-                    await search_input.clear()
+                    await search_input.fill('')  # Use fill to clear completely
+                    await page.wait_for_timeout(200)
                     await search_input.click()
                     await search_input.press_sequentially(user_email, delay=20)
-                    await page.wait_for_timeout(400)
+                    # Wait for Angular to filter - wait for table to stabilize
+                    await page.wait_for_timeout(800)
 
                     # Find toggle
                     toggle_checkbox = page.locator(f'input.onoffswitch-checkbox[id="{user_email}"]')
+                    checkbox_count = await toggle_checkbox.count()
+                    logger.info(f"User {user_email}: found {checkbox_count} checkbox(es) in expected state (active={is_active})")
 
-                    if await toggle_checkbox.count() == 0:
+                    if checkbox_count == 0:
                         # Try opposite state (stale cache)
-                        logger.info(f"User {user_email} not found in {is_active} state, checking opposite...")
+                        logger.info(f"User {user_email} not found in expected state, checking opposite...")
                         opposite_active_value = "1: false" if is_active else "0: true"
                         await active_select.select_option(value=opposite_active_value)
-                        await page.wait_for_timeout(200)
+                        await page.wait_for_timeout(500)
 
-                        await search_input.clear()
+                        await search_input.fill('')
+                        await page.wait_for_timeout(200)
                         await search_input.click()
                         await search_input.press_sequentially(user_email, delay=20)
-                        await page.wait_for_timeout(400)
+                        await page.wait_for_timeout(800)
 
-                        if await toggle_checkbox.count() == 0:
-                            result['message'] = f"User not found in either state"
+                        checkbox_count = await toggle_checkbox.count()
+                        logger.info(f"User {user_email}: found {checkbox_count} checkbox(es) in opposite state (active={not is_active})")
+
+                        if checkbox_count == 0:
+                            result['message'] = f"User not found in either state (tried both active/inactive with user_type={user_type})"
+                            logger.error(f"User {user_email} not found in either filter!")
                             results.append(result)
                             continue
 
                         # Found in opposite state - already done
                         result['success'] = True
                         result['new_state'] = not is_active
-                        result['message'] = f"Already {'active' if result['new_state'] else 'inactive'} (cache stale)"
+                        result['message'] = f"Already {'active' if result['new_state'] else 'inactive'} (cache was stale)"
+                        logger.info(f"User {user_email} already in desired state, no toggle needed")
                         results.append(result)
                         continue
 
