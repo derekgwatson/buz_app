@@ -529,17 +529,30 @@ async def toggle_user_active_status(
             toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
             await toggle_label.click()
 
-            # Wait for the toggle to process and verify it changed
-            await page.wait_for_timeout(800)
+            # Wait for the toggle to process
+            await page.wait_for_timeout(1000)
 
-            # Verify the checkbox state changed
-            new_checked_state = await toggle_checkbox.is_checked()
-            if new_checked_state != is_active:
+            # Verify by checking if user now appears in the OPPOSITE filter
+            # This confirms the backend save worked, not just UI change
+            opposite_active_value = "1: false" if is_active else "0: true"
+            await active_select.select_option(value=opposite_active_value)
+            await page.wait_for_timeout(300)
+
+            # Clear and re-search
+            await search_input.clear()
+            await search_input.click()
+            await search_input.press_sequentially(user_email, delay=20)
+            await page.wait_for_timeout(500)
+
+            # Check if user appears in the opposite state
+            if await toggle_checkbox.count() > 0:
+                # User found in opposite state - toggle succeeded!
                 result['success'] = True
                 result['new_state'] = not is_active
                 result['message'] = f"User {user_email} is now {'active' if result['new_state'] else 'inactive'}"
             else:
-                result['message'] = f"Toggle failed - checkbox state did not change"
+                # User not found in opposite state - toggle failed
+                result['message'] = f"Toggle failed - user did not move to opposite state"
 
         except Exception as e:
             result['message'] = f"Error toggling user status: {str(e)}"
@@ -656,17 +669,30 @@ async def batch_toggle_users_for_org(
                     toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
                     await toggle_label.click()
 
-                    # Wait for the toggle to process and verify it changed
-                    await page.wait_for_timeout(800)
+                    # Wait for the toggle to process
+                    await page.wait_for_timeout(1000)
 
-                    # Verify the checkbox state changed
-                    new_checked_state = await toggle_checkbox.is_checked()
-                    if new_checked_state != is_active:
+                    # Verify by checking if user now appears in the OPPOSITE filter
+                    # This confirms the backend save worked, not just UI change
+                    opposite_active_value = "1: false" if is_active else "0: true"
+                    await active_select.select_option(value=opposite_active_value)
+                    await page.wait_for_timeout(200)
+
+                    # Clear and re-search
+                    await search_input.clear()
+                    await search_input.click()
+                    await search_input.press_sequentially(user_email, delay=20)
+                    await page.wait_for_timeout(400)
+
+                    # Check if user appears in the opposite state
+                    if await toggle_checkbox.count() > 0:
+                        # User found in opposite state - toggle succeeded!
                         result['success'] = True
                         result['new_state'] = not is_active
                         result['message'] = f"User is now {'active' if result['new_state'] else 'inactive'}"
                     else:
-                        result['message'] = f"Toggle failed - checkbox state did not change"
+                        # User not found in opposite state - toggle failed
+                        result['message'] = f"Toggle failed - user did not move to opposite state"
 
                     results.append(result)
 
