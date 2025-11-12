@@ -1038,7 +1038,7 @@ async function applyBatchChanges() {
             updatePendingUI();
 
             // Re-render the entire table to reflect all changes
-            renderTable();
+            renderTableRows(comparisonData);
           }
 
           applyBtn.disabled = false;
