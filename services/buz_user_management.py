@@ -464,8 +464,8 @@ async def toggle_user_active_status(
             await page.wait_for_timeout(1000)
 
             # Find the toggle switch for this user by email
-            # The checkbox ID is the email address
-            toggle_checkbox = page.locator(f'input.onoffswitch-checkbox#{user_email}')
+            # The checkbox ID is the email address - use attribute selector to handle @ and . characters
+            toggle_checkbox = page.locator(f'input.onoffswitch-checkbox[id="{user_email}"]')
 
             # Check if the checkbox exists
             if await toggle_checkbox.count() == 0:

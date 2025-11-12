@@ -301,3 +301,148 @@ def toggle_user_status():
     except Exception as e:
         logger.exception(f"Error toggling user status")
         return jsonify({"error": str(e)}), 500
+
+
+@user_management_bp.route("/batch-toggle-users", methods=["POST"])
+@auth.login_required
+def batch_toggle_users():
+    """Toggle multiple users' active/inactive status in batch"""
+    data = request.get_json()
+    changes = data.get('changes', [])  # List of {org_key, user_email} dicts
+
+    if not changes or not isinstance(changes, list):
+        return jsonify({"error": "changes array is required"}), 400
+
+    # Validate org keys
+    valid_orgs = ['canberra', 'tweed', 'dd', 'bay', 'shoalhaven', 'wagga']
+    for change in changes:
+        if change.get('org_key') not in valid_orgs:
+            return jsonify({"error": f"Invalid org_key: {change.get('org_key')}"}), 400
+
+    headless = current_app.config.get('DEBUG', False) == False  # Force headless in production
+
+    results = []
+    errors = []
+
+    try:
+        from services.buz_user_management import toggle_user_active_status
+        import json
+        from services.buz_user_management import BuzUserManagement
+
+        # Process each toggle
+        for idx, change in enumerate(changes):
+            org_key = change.get('org_key')
+            user_email = change.get('user_email')
+
+            try:
+                # Run async function
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    result = loop.run_until_complete(
+                        toggle_user_active_status(
+                            org_key=org_key,
+                            user_email=user_email,
+                            headless=headless
+                        )
+                    )
+                finally:
+                    loop.close()
+
+                if result['success']:
+                    # Update the cached data in the database
+                    try:
+                        org_display_name = BuzUserManagement.ORGS.get(org_key, {}).get('display_name', '')
+
+                        if org_display_name:
+                            # Query for the most recent completed user management job
+                            query = """
+                                SELECT id, result
+                                FROM jobs
+                                WHERE status = 'completed'
+                                AND result IS NOT NULL
+                                AND result LIKE '%comparison%'
+                                AND result LIKE '%user%'
+                                ORDER BY updated_at DESC
+                                LIMIT 1
+                            """
+
+                            db = create_db_manager(db_path)
+                            cursor = db.execute_query(query)
+                            rows = cursor.fetchall()
+
+                            if rows:
+                                job_id = rows[0][0]
+                                result_json = json.loads(rows[0][1]) if rows[0][1] else None
+
+                                if result_json and 'comparison' in result_json:
+                                    updated = False
+
+                                    # Find and update the user in the comparison data
+                                    comparison = result_json['comparison']
+                                    users = comparison.get('users', [])
+
+                                    for user in users:
+                                        if user.get('email') == user_email:
+                                            if org_display_name in user.get('orgs', {}):
+                                                user['orgs'][org_display_name]['is_active'] = result['new_state']
+                                                updated = True
+                                                break
+
+                                    # Also update the raw_result data
+                                    if 'raw_result' in result_json:
+                                        raw_result = result_json['raw_result']
+                                        for org in raw_result.get('orgs', []):
+                                            if org.get('org_name') == org_display_name:
+                                                for user in org.get('users', []):
+                                                    if user.get('email') == user_email:
+                                                        user['is_active'] = result['new_state']
+                                                        break
+
+                                    # Update the database with modified result
+                                    if updated:
+                                        update_query = """
+                                            UPDATE jobs
+                                            SET result = ?
+                                            WHERE id = ?
+                                        """
+                                        db.execute_query(update_query, (json.dumps(result_json), job_id))
+                                        logger.info(f"Updated cached data for {user_email} in {org_display_name}")
+
+                    except Exception as cache_error:
+                        logger.warning(f"Failed to update cache after toggle: {cache_error}")
+
+                    results.append({
+                        'org_key': org_key,
+                        'user_email': user_email,
+                        'success': True,
+                        'new_state': result['new_state'],
+                        'message': result['message']
+                    })
+                else:
+                    errors.append({
+                        'org_key': org_key,
+                        'user_email': user_email,
+                        'error': result['message']
+                    })
+
+            except Exception as e:
+                logger.exception(f"Error toggling user {user_email} in batch")
+                errors.append({
+                    'org_key': org_key,
+                    'user_email': user_email,
+                    'error': str(e)
+                })
+
+        return jsonify({
+            'success': len(errors) == 0,
+            'total': len(changes),
+            'processed': len(results),
+            'failed': len(errors),
+            'results': results,
+            'errors': errors
+        }), 200
+
+    except Exception as e:
+        logger.exception(f"Error in batch toggle")
+        return jsonify({"error": str(e)}), 500

@@ -380,6 +380,15 @@
   <button type="submit" class="btn btn-primary" id="submitBtn">Refresh Data</button>
 </form>
 
+<div style="margin-top: 1rem; padding: 1rem; background: #f9fafb; border-radius: 0.5rem; display: none;" id="batchSection">
+  <div style="display: flex; align-items: center; gap: 1rem;">
+    <span style="font-weight: 500; font-size: 1.1rem;">Pending Changes: <strong id="pendingCount">0</strong></span>
+    <button class="btn btn-primary" id="applyChangesBtn" onclick="applyBatchChanges()">Apply Changes</button>
+    <button class="btn" style="background: #6b7280; color: white;" onclick="clearPendingChanges()">Clear</button>
+  </div>
+  <div id="pendingList" style="margin-top: 0.5rem; font-size: 0.95rem; color: #6b7280;"></div>
+</div>
+
 <div id="progressSection">
   <h3>Progress</h3>
   <progress id="progressBar" max="100" value="0"></progress>
@@ -843,61 +852,140 @@ const orgNameToKey = {
   'Wagga Wagga': 'wagga'
 };
 
-async function toggleUserStatus(orgName, userEmail, currentlyActive, badgeElement) {
+// Track pending toggle changes
+const pendingChanges = new Map(); // Key: `${orgName}|${userEmail}`, Value: {orgName, orgKey, userEmail, currentlyActive, badgeElement}
+
+function toggleUserStatus(orgName, userEmail, currentlyActive, badgeElement) {
   const orgKey = orgNameToKey[orgName];
   if (!orgKey) {
     alert(`Unknown org: ${orgName}`);
     return;
   }
 
-  if (!confirm(`Toggle ${userEmail} to ${currentlyActive ? 'INACTIVE' : 'ACTIVE'} in ${orgName}?`)) {
+  const changeKey = `${orgName}|${userEmail}`;
+
+  // Check if already staged
+  if (pendingChanges.has(changeKey)) {
+    // Un-stage the change
+    pendingChanges.delete(changeKey);
+    badgeElement.style.backgroundColor = '';
+  } else {
+    // Stage the change
+    pendingChanges.set(changeKey, {
+      orgName,
+      orgKey,
+      userEmail,
+      currentlyActive,
+      badgeElement
+    });
+    // Highlight the badge to show it's staged
+    badgeElement.style.backgroundColor = '#fef3c7';
+  }
+
+  updatePendingUI();
+}
+
+function updatePendingUI() {
+  const count = pendingChanges.size;
+  const batchSection = document.getElementById('batchSection');
+  const pendingCount = document.getElementById('pendingCount');
+  const pendingList = document.getElementById('pendingList');
+
+  if (count === 0) {
+    batchSection.style.display = 'none';
+  } else {
+    batchSection.style.display = 'block';
+    pendingCount.textContent = count;
+
+    // Show list of pending changes
+    const changes = Array.from(pendingChanges.values());
+    const summary = changes.slice(0, 5).map(c =>
+      `${c.userEmail} in ${c.orgName} → ${c.currentlyActive ? 'INACTIVE' : 'ACTIVE'}`
+    ).join(', ');
+
+    if (changes.length > 5) {
+      pendingList.textContent = summary + ` and ${changes.length - 5} more...`;
+    } else {
+      pendingList.textContent = summary;
+    }
+  }
+}
+
+function clearPendingChanges() {
+  // Remove highlights
+  for (const change of pendingChanges.values()) {
+    change.badgeElement.style.backgroundColor = '';
+  }
+  pendingChanges.clear();
+  updatePendingUI();
+}
+
+async function applyBatchChanges() {
+  if (pendingChanges.size === 0) {
+    alert('No pending changes');
     return;
   }
 
-  // Disable the badge while processing
-  badgeElement.style.opacity = '0.5';
-  badgeElement.style.pointerEvents = 'none';
-  const originalText = badgeElement.textContent;
-  badgeElement.textContent = '⏳';
+  if (!confirm(`Apply ${pendingChanges.size} change(s)?`)) {
+    return;
+  }
+
+  const applyBtn = document.getElementById('applyChangesBtn');
+  applyBtn.disabled = true;
+  applyBtn.textContent = 'Applying...';
+
+  // Prepare changes for batch API
+  const changes = Array.from(pendingChanges.values()).map(c => ({
+    org_key: c.orgKey,
+    user_email: c.userEmail
+  }));
 
   try {
-    const response = await fetch('{{ url_for("user_management.toggle_user_status") }}', {
+    const response = await fetch('{{ url_for("user_management.batch_toggle_users") }}', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        org_key: orgKey,
-        user_email: userEmail
-      })
+      body: JSON.stringify({ changes })
     });
 
     const result = await response.json();
 
     if (result.success) {
-      // Update the badge
-      badgeElement.className = result.new_state ? 'badge clickable' : 'badge inactive clickable';
-      badgeElement.textContent = result.new_state ? '✓' : '✗';
-      badgeElement.title = `${result.new_state ? 'Active' : 'Inactive'} (click to toggle)`;
-      badgeElement.dataset.isActive = result.new_state;
+      // Update all badges based on results
+      for (const res of result.results) {
+        const changeKey = `${Object.keys(orgNameToKey).find(k => orgNameToKey[k] === res.org_key)}|${res.user_email}`;
+        const change = pendingChanges.get(changeKey);
 
-      // Update the comparison data so it persists across re-renders
-      const user = comparisonData.users.find(u => u.email === userEmail);
-      if (user && user.orgs[orgName]) {
-        user.orgs[orgName].is_active = result.new_state;
+        if (change) {
+          const badge = change.badgeElement;
+          badge.className = res.new_state ? 'badge clickable' : 'badge inactive clickable';
+          badge.textContent = res.new_state ? '✓' : '✗';
+          badge.title = `${res.new_state ? 'Active' : 'Inactive'} (click to toggle)`;
+          badge.dataset.isActive = res.new_state;
+          badge.style.backgroundColor = '';
+
+          // Update the comparison data
+          const user = comparisonData.users.find(u => u.email === res.user_email);
+          const orgName = Object.keys(orgNameToKey).find(k => orgNameToKey[k] === res.org_key);
+          if (user && user.orgs[orgName]) {
+            user.orgs[orgName].is_active = res.new_state;
+          }
+        }
       }
 
-      alert(result.message);
+      pendingChanges.clear();
+      updatePendingUI();
+
+      alert(`Successfully applied ${result.processed} change(s)${result.failed > 0 ? `. ${result.failed} failed.` : ''}`);
     } else {
-      alert(`Error: ${result.message}`);
-      badgeElement.textContent = originalText;
+      alert(`Error: ${result.errors.length} changes failed`);
     }
   } catch (error) {
     alert(`Error: ${error.message}`);
-    badgeElement.textContent = originalText;
   } finally {
-    badgeElement.style.opacity = '1';
-    badgeElement.style.pointerEvents = 'auto';
+    applyBtn.disabled = false;
+    applyBtn.textContent = 'Apply Changes';
   }
 }
 </script>
