@@ -555,6 +555,12 @@ async function clearCachedData() {
       // Clear the cached job variable
       cachedJob = null;
 
+      // Clear the comparison data
+      comparisonData = null;
+
+      // Clear the table
+      userTableBody.innerHTML = '';
+
       // Hide the banner
       document.getElementById('cachedDataInfo').style.display = 'none';
 
