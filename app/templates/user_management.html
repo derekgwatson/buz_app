@@ -944,13 +944,17 @@ async function applyBatchChanges() {
     user_type: c.userType
   }));
 
+  // Get headless checkbox value (if it exists in dev mode)
+  const headlessCheckbox = document.getElementById('headless');
+  const headless = headlessCheckbox ? headlessCheckbox.checked : true;
+
   try {
     const response = await fetch('{{ url_for("user_management.batch_toggle_users") }}', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ changes })
+      body: JSON.stringify({ changes, headless })
     });
 
     const result = await response.json();

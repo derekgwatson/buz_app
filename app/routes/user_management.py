@@ -319,6 +319,7 @@ def batch_toggle_users():
     """Toggle multiple users' active/inactive status in batch"""
     data = request.get_json()
     changes = data.get('changes', [])  # List of {org_key, user_email} dicts
+    headless = data.get('headless', True)
 
     if not changes or not isinstance(changes, list):
         return jsonify({"error": "changes array is required"}), 400
@@ -329,7 +330,9 @@ def batch_toggle_users():
         if change.get('org_key') not in valid_orgs:
             return jsonify({"error": f"Invalid org_key: {change.get('org_key')}"}), 400
 
-    headless = current_app.config.get('DEBUG', False) == False  # Force headless in production
+    # Force headless mode in production (DEBUG=False)
+    if not current_app.config.get('DEBUG', False):
+        headless = True
 
     results = []
     errors = []

@@ -462,18 +462,18 @@ async def toggle_user_active_status(
             # Wait for the table to load
             await page.wait_for_selector('table#userListTable', timeout=15000)
 
-            # Set the employee/customer filter
-            # The user type dropdown has values: "0: 0" for employee, "1: 5" for customer
-            user_type_select = page.locator('select[ng-model="usersFilter.userType"]')
-            user_type_value = "1: 5" if user_type == "customer" else "0: 0"
-            await user_type_select.select_option(value=user_type_value)
-            await page.wait_for_timeout(500)
-
-            # Set the active/inactive filter
+            # Set the active/inactive filter (second li in the list)
             # The active dropdown has values: "0: true" for active, "1: false" for inactive
-            active_select = page.locator('select[ng-model="usersFilter.active"]')
+            active_select = page.locator('ul.list-inline li:nth-child(2) select')
             active_value = "0: true" if is_active else "1: false"
             await active_select.select_option(value=active_value)
+            await page.wait_for_timeout(500)
+
+            # Set the employee/customer filter (third li in the list)
+            # The user type dropdown has values: "0: 0" for employee, "1: 5" for customer
+            user_type_select = page.locator('ul.list-inline li:nth-child(3) select')
+            user_type_value = "1: 5" if user_type == "customer" else "0: 0"
+            await user_type_select.select_option(value=user_type_value)
             await page.wait_for_timeout(500)
 
             # Use the search field to filter by email
