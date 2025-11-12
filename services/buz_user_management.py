@@ -640,6 +640,14 @@ async def batch_toggle_users_for_org(
                     checkbox_count = await toggle_checkbox.count()
                     logger.info(f"User {user_email}: found {checkbox_count} checkbox(es) in expected state (active={is_active})")
 
+                    # Debug: log all emails currently visible in table
+                    if checkbox_count == 0:
+                        try:
+                            all_emails = await page.locator('table#userListTable td:nth-child(2)').all_text_contents()
+                            logger.info(f"Emails visible in table: {all_emails[:10]}")  # First 10
+                        except Exception as e:
+                            logger.warning(f"Could not get table emails: {e}")
+
                     if checkbox_count == 0:
                         # Try opposite state (stale cache)
                         logger.info(f"User {user_email} not found in expected state, checking opposite...")

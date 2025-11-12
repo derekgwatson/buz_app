@@ -386,6 +386,12 @@
     <span style="font-weight: 500; font-size: 1.1rem; color: #1f2937;">Pending Changes: <strong id="pendingCount">0</strong></span>
     <button class="btn btn-primary" id="applyChangesBtn" onclick="applyBatchChanges()">Apply Changes</button>
     <button class="btn" style="background: #6b7280; color: white;" onclick="clearPendingChanges()">Clear</button>
+    {% if is_development %}
+    <label style="margin-left: 1rem;">
+      <input type="checkbox" id="batchHeadless" checked>
+      Headless
+    </label>
+    {% endif %}
   </div>
   <div id="pendingList" style="margin-top: 0.5rem; font-size: 0.95rem; color: #4b5563;"></div>
 </div>
@@ -987,7 +993,7 @@ async function applyBatchChanges() {
   }));
 
   // Get headless checkbox value (if it exists in dev mode)
-  const headlessCheckbox = document.getElementById('headless');
+  const headlessCheckbox = document.getElementById('batchHeadless');
   const headless = headlessCheckbox ? headlessCheckbox.checked : true;
 
   try {
