@@ -126,25 +126,27 @@ def start_review():
                 all_orgs = kept_orgs + [org.to_dict() for org in result.orgs]
 
                 # Reconstruct the result object with all orgs
-                from services.buz_user_management import UserManagementResult, OrgUserData, UserRecord
-                merged_result = UserManagementResult(
-                    orgs=[
-                        OrgUserData(
-                            org_key=org.get('org_key', ''),
-                            org_name=org.get('org_name', ''),
-                            users=[
-                                UserRecord(
-                                    email=u.get('email', ''),
-                                    name=u.get('name', ''),
-                                    is_active=u.get('is_active', False),
-                                    user_type=u.get('user_type', 'employee')
-                                )
-                                for u in org.get('users', [])
-                            ]
-                        )
-                        for org in all_orgs
-                    ]
-                )
+                from services.buz_user_management import UserManagementResult, OrgUsers, User
+                merged_result = UserManagementResult()
+                merged_result.orgs = [
+                    OrgUsers(
+                        org_name=org.get('org_name', ''),
+                        users=[
+                            User(
+                                full_name=u.get('full_name', ''),
+                                email=u.get('email', ''),
+                                mfa_enabled=u.get('mfa_enabled', False),
+                                group=u.get('group', ''),
+                                last_session=u.get('last_session', ''),
+                                is_active=u.get('is_active', False),
+                                user_type=u.get('user_type', 'employee')
+                            )
+                            for u in org.get('users', [])
+                        ]
+                    )
+                    for org in all_orgs
+                ]
+                merged_result.steps = result.steps  # Keep the steps from the current review
                 result = merged_result
                 update_job(job_id, 88, f"Merged: kept {len(kept_orgs)} existing org(s), added {len(new_org_names)} new org(s)", db=db)
             else:
