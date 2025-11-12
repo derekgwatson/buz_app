@@ -198,14 +198,20 @@ def toggle_user_status():
     data = request.get_json()
     org_key = data.get('org_key')
     user_email = data.get('user_email')
+    is_active = data.get('is_active')
+    user_type = data.get('user_type')
 
-    if not org_key or not user_email:
-        return jsonify({"error": "org_key and user_email are required"}), 400
+    if not org_key or not user_email or is_active is None or not user_type:
+        return jsonify({"error": "org_key, user_email, is_active, and user_type are required"}), 400
 
     # Validate org key
     valid_orgs = ['canberra', 'tweed', 'dd', 'bay', 'shoalhaven', 'wagga']
     if org_key not in valid_orgs:
         return jsonify({"error": f"Invalid org_key: {org_key}"}), 400
+
+    # Validate user type
+    if user_type not in ['employee', 'customer']:
+        return jsonify({"error": f"Invalid user_type: {user_type}"}), 400
 
     headless = current_app.config.get('DEBUG', False) == False  # Force headless in production
 
@@ -220,6 +226,8 @@ def toggle_user_status():
                 toggle_user_active_status(
                     org_key=org_key,
                     user_email=user_email,
+                    is_active=is_active,
+                    user_type=user_type,
                     headless=headless
                 )
             )
@@ -335,6 +343,17 @@ def batch_toggle_users():
         for idx, change in enumerate(changes):
             org_key = change.get('org_key')
             user_email = change.get('user_email')
+            is_active = change.get('is_active')
+            user_type = change.get('user_type')
+
+            # Validate required fields
+            if not org_key or not user_email or is_active is None or not user_type:
+                errors.append({
+                    'org_key': org_key,
+                    'user_email': user_email,
+                    'error': 'Missing required fields (org_key, user_email, is_active, user_type)'
+                })
+                continue
 
             try:
                 # Run async function
@@ -345,6 +364,8 @@ def batch_toggle_users():
                         toggle_user_active_status(
                             org_key=org_key,
                             user_email=user_email,
+                            is_active=is_active,
+                            user_type=user_type,
                             headless=headless
                         )
                     )

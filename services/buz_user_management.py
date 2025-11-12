@@ -426,6 +426,8 @@ async def review_users_all_orgs(
 async def toggle_user_active_status(
     org_key: str,
     user_email: str,
+    is_active: bool,
+    user_type: str,
     headless: bool = True
 ) -> Dict[str, Any]:
     """
@@ -434,6 +436,8 @@ async def toggle_user_active_status(
     Args:
         org_key: Key from ORGS dict (e.g., 'canberra', 'tweed')
         user_email: Email address of the user
+        is_active: Current active status of the user
+        user_type: 'employee' or 'customer'
         headless: Run browser in headless mode
 
     Returns:
@@ -458,10 +462,24 @@ async def toggle_user_active_status(
             # Wait for the table to load
             await page.wait_for_selector('table#userListTable', timeout=15000)
 
-            # Set page size to 500 to ensure user is visible
-            page_size_select = page.locator('div.select-editable select')
-            await page_size_select.select_option(value='6: 500')
-            await page.wait_for_timeout(1000)
+            # Set the employee/customer filter
+            # The user type dropdown has values: "0: 0" for employee, "1: 5" for customer
+            user_type_select = page.locator('select[ng-model="usersFilter.userType"]')
+            user_type_value = "1: 5" if user_type == "customer" else "0: 0"
+            await user_type_select.select_option(value=user_type_value)
+            await page.wait_for_timeout(500)
+
+            # Set the active/inactive filter
+            # The active dropdown has values: "0: true" for active, "1: false" for inactive
+            active_select = page.locator('select[ng-model="usersFilter.active"]')
+            active_value = "0: true" if is_active else "1: false"
+            await active_select.select_option(value=active_value)
+            await page.wait_for_timeout(500)
+
+            # Use the search field to filter by email
+            search_input = page.locator('input[ng-model="usersFilter.filterText"]')
+            await search_input.fill(user_email)
+            await page.wait_for_timeout(1000)  # Wait for Angular to filter
 
             # Find the toggle switch for this user by email
             # The checkbox ID is the email address - use attribute selector to handle @ and . characters
@@ -469,12 +487,16 @@ async def toggle_user_active_status(
 
             # Check if the checkbox exists
             if await toggle_checkbox.count() == 0:
-                result['message'] = f"User {user_email} not found on the page"
+                result['message'] = f"User {user_email} not found on the page (type={user_type}, active={is_active})"
                 await page.close()
                 return result
 
-            # Check current state (checked = active)
-            is_currently_active = await toggle_checkbox.is_checked()
+            # Verify the current state matches what we expect
+            actual_is_active = await toggle_checkbox.is_checked()
+            if actual_is_active != is_active:
+                result['message'] = f"User state mismatch: expected active={is_active}, got active={actual_is_active}"
+                await page.close()
+                return result
 
             # Click the label (the checkbox itself is hidden by CSS)
             # The label has a 'for' attribute matching the checkbox ID
@@ -484,7 +506,7 @@ async def toggle_user_active_status(
 
             # New state is opposite of current state
             result['success'] = True
-            result['new_state'] = not is_currently_active
+            result['new_state'] = not is_active
             result['message'] = f"User {user_email} is now {'active' if result['new_state'] else 'inactive'}"
 
             await page.close()

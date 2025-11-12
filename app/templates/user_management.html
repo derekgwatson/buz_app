@@ -809,9 +809,10 @@ function renderTableRows(comparison) {
         statusBadge.dataset.orgName = orgName;
         statusBadge.dataset.userEmail = user.email;
         statusBadge.dataset.isActive = orgData.is_active;
+        statusBadge.dataset.userType = orgData.user_type;
         statusBadge.onclick = (e) => {
           e.stopPropagation();
-          toggleUserStatus(orgName, user.email, orgData.is_active, statusBadge);
+          toggleUserStatus(orgName, user.email, orgData.is_active, orgData.user_type, statusBadge);
         };
         detailsDiv.appendChild(statusBadge);
 
@@ -853,9 +854,9 @@ const orgNameToKey = {
 };
 
 // Track pending toggle changes
-const pendingChanges = new Map(); // Key: `${orgName}|${userEmail}`, Value: {orgName, orgKey, userEmail, currentlyActive, badgeElement}
+const pendingChanges = new Map(); // Key: `${orgName}|${userEmail}`, Value: {orgName, orgKey, userEmail, currentlyActive, userType, badgeElement}
 
-function toggleUserStatus(orgName, userEmail, currentlyActive, badgeElement) {
+function toggleUserStatus(orgName, userEmail, currentlyActive, userType, badgeElement) {
   const orgKey = orgNameToKey[orgName];
   if (!orgKey) {
     alert(`Unknown org: ${orgName}`);
@@ -876,6 +877,7 @@ function toggleUserStatus(orgName, userEmail, currentlyActive, badgeElement) {
       orgKey,
       userEmail,
       currentlyActive,
+      userType,
       badgeElement
     });
     // Highlight the badge to show it's staged
@@ -937,7 +939,9 @@ async function applyBatchChanges() {
   // Prepare changes for batch API
   const changes = Array.from(pendingChanges.values()).map(c => ({
     org_key: c.orgKey,
-    user_email: c.userEmail
+    user_email: c.userEmail,
+    is_active: c.currentlyActive,
+    user_type: c.userType
   }));
 
   try {
