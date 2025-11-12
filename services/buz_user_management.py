@@ -546,3 +546,134 @@ async def toggle_user_active_status(
                 logger.warning(f"Error closing page: {close_error}")
 
     return result
+
+
+async def batch_toggle_users_for_org(
+    org_key: str,
+    user_changes: List[Dict[str, Any]],
+    headless: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Toggle multiple users' active/inactive status for a single org efficiently.
+    Reuses the browser context and page for all toggles in the same org.
+
+    Args:
+        org_key: Key from ORGS dict (e.g., 'canberra', 'tweed')
+        user_changes: List of dicts with {user_email, is_active, user_type}
+        headless: Run browser in headless mode
+
+    Returns:
+        List of result dicts for each toggle
+    """
+    results = []
+
+    async with BuzUserManagement(headless=headless) as manager:
+        try:
+            # Switch to the org once
+            await manager.switch_to_org(org_key)
+
+            # Navigate to user management page once
+            page = await manager.context.new_page()
+            await page.goto(manager.USER_MANAGEMENT_URL, wait_until='networkidle', timeout=30000)
+            await page.wait_for_selector('table#userListTable', timeout=15000)
+
+            # Get locators once
+            active_select = page.locator('ul.list-inline li:nth-child(2) select')
+            user_type_select = page.locator('ul.list-inline li:nth-child(3) select')
+            search_input = page.locator('input#search-text')
+
+            # Process each user toggle
+            for change in user_changes:
+                user_email = change['user_email']
+                is_active = change['is_active']
+                user_type = change['user_type']
+
+                result = {
+                    'org_key': org_key,
+                    'user_email': user_email,
+                    'success': False,
+                    'new_state': None,
+                    'message': ''
+                }
+
+                try:
+                    # Set filters for this user
+                    active_value = "0: true" if is_active else "1: false"
+                    await active_select.select_option(value=active_value)
+                    await page.wait_for_timeout(200)
+
+                    user_type_value = "1: 5" if user_type == "customer" else "0: 0"
+                    await user_type_select.select_option(value=user_type_value)
+                    await page.wait_for_timeout(200)
+
+                    # Clear search and type email
+                    await search_input.clear()
+                    await search_input.click()
+                    await search_input.press_sequentially(user_email, delay=20)
+                    await page.wait_for_timeout(400)
+
+                    # Find toggle
+                    toggle_checkbox = page.locator(f'input.onoffswitch-checkbox[id="{user_email}"]')
+
+                    if await toggle_checkbox.count() == 0:
+                        # Try opposite state (stale cache)
+                        logger.info(f"User {user_email} not found in {is_active} state, checking opposite...")
+                        opposite_active_value = "1: false" if is_active else "0: true"
+                        await active_select.select_option(value=opposite_active_value)
+                        await page.wait_for_timeout(200)
+
+                        await search_input.clear()
+                        await search_input.click()
+                        await search_input.press_sequentially(user_email, delay=20)
+                        await page.wait_for_timeout(400)
+
+                        if await toggle_checkbox.count() == 0:
+                            result['message'] = f"User not found in either state"
+                            results.append(result)
+                            continue
+
+                        # Found in opposite state - already done
+                        result['success'] = True
+                        result['new_state'] = not is_active
+                        result['message'] = f"Already {'active' if result['new_state'] else 'inactive'} (cache stale)"
+                        results.append(result)
+                        continue
+
+                    # Verify state and toggle
+                    actual_is_active = await toggle_checkbox.is_checked()
+                    if actual_is_active != is_active:
+                        result['message'] = f"State mismatch"
+                        results.append(result)
+                        continue
+
+                    # Click toggle
+                    toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
+                    await toggle_label.click()
+                    await page.wait_for_timeout(300)
+
+                    result['success'] = True
+                    result['new_state'] = not is_active
+                    result['message'] = f"User is now {'active' if result['new_state'] else 'inactive'}"
+                    results.append(result)
+
+                except Exception as e:
+                    result['message'] = f"Error: {str(e)}"
+                    logger.exception(f"Error toggling {user_email} in batch")
+                    results.append(result)
+
+            await page.close()
+
+        except Exception as e:
+            logger.exception(f"Error in batch toggle for org {org_key}")
+            # Return errors for any remaining users
+            for change in user_changes:
+                if not any(r['user_email'] == change['user_email'] for r in results):
+                    results.append({
+                        'org_key': org_key,
+                        'user_email': change['user_email'],
+                        'success': False,
+                        'new_state': None,
+                        'message': f"Org-level error: {str(e)}"
+                    })
+
+    return results
