@@ -227,6 +227,73 @@ def toggle_user_status():
             loop.close()
 
         if result['success']:
+            # Update the cached data in the database
+            try:
+                import json
+                from services.buz_user_management import BuzUserManagement
+
+                # Map org_key to display name
+                org_display_name = BuzUserManagement.ORGS.get(org_key, {}).get('display_name', '')
+
+                if org_display_name:
+                    # Query for the most recent completed user management job
+                    query = """
+                        SELECT id, result
+                        FROM jobs
+                        WHERE status = 'completed'
+                        AND result IS NOT NULL
+                        AND result LIKE '%comparison%'
+                        AND result LIKE '%user%'
+                        ORDER BY updated_at DESC
+                        LIMIT 1
+                    """
+
+                    db = create_db_manager(db_path)
+                    cursor = db.execute_query(query)
+                    rows = cursor.fetchall()
+
+                    if rows:
+                        job_id = rows[0][0]
+                        result_json = json.loads(rows[0][1]) if rows[0][1] else None
+
+                        if result_json and 'comparison' in result_json:
+                            updated = False
+
+                            # Find and update the user in the comparison data
+                            comparison = result_json['comparison']
+                            users = comparison.get('users', [])
+
+                            for user in users:
+                                if user.get('email') == user_email:
+                                    if org_display_name in user.get('orgs', {}):
+                                        user['orgs'][org_display_name]['is_active'] = result['new_state']
+                                        updated = True
+                                        break
+
+                            # Also update the raw_result data
+                            if 'raw_result' in result_json:
+                                raw_result = result_json['raw_result']
+                                for org in raw_result.get('orgs', []):
+                                    if org.get('org_name') == org_display_name:
+                                        for user in org.get('users', []):
+                                            if user.get('email') == user_email:
+                                                user['is_active'] = result['new_state']
+                                                break
+
+                            # Update the database with modified result
+                            if updated:
+                                update_query = """
+                                    UPDATE jobs
+                                    SET result = ?
+                                    WHERE id = ?
+                                """
+                                db.execute_query(update_query, (json.dumps(result_json), job_id))
+                                logger.info(f"Updated cached data for {user_email} in {org_display_name}")
+
+            except Exception as cache_error:
+                # Don't fail the whole request if cache update fails
+                logger.warning(f"Failed to update cache after toggle: {cache_error}")
+
             return jsonify(result), 200
         else:
             return jsonify(result), 500
