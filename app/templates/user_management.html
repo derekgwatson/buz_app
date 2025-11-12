@@ -936,6 +936,16 @@ async function applyBatchChanges() {
   applyBtn.disabled = true;
   applyBtn.textContent = 'Applying...';
 
+  // Show progress section
+  const progressSection = document.getElementById('progressSection');
+  const progressBar = document.getElementById('progressBar');
+  const progressPct = document.getElementById('progressPct');
+  const progressLog = document.getElementById('progressLog');
+  progressSection.style.display = 'block';
+  progressBar.value = 0;
+  progressPct.textContent = '0%';
+  progressLog.textContent = 'Starting...';
+
   // Prepare changes for batch API
   const changes = Array.from(pendingChanges.values()).map(c => ({
     org_key: c.orgKey,
@@ -949,6 +959,7 @@ async function applyBatchChanges() {
   const headless = headlessCheckbox ? headlessCheckbox.checked : true;
 
   try {
+    // Start the batch toggle job
     const response = await fetch('{{ url_for("user_management.batch_toggle_users") }}', {
       method: 'POST',
       headers: {
@@ -957,59 +968,67 @@ async function applyBatchChanges() {
       body: JSON.stringify({ changes, headless })
     });
 
-    const result = await response.json();
-
-    if (result.success) {
-      // Update all badges based on results
-      for (const res of result.results) {
-        const changeKey = `${Object.keys(orgNameToKey).find(k => orgNameToKey[k] === res.org_key)}|${res.user_email}`;
-        const change = pendingChanges.get(changeKey);
-
-        if (change) {
-          const badge = change.badgeElement;
-          badge.className = res.new_state ? 'badge clickable' : 'badge inactive clickable';
-          badge.textContent = res.new_state ? '✓' : '✗';
-          badge.title = `${res.new_state ? 'Active' : 'Inactive'} (click to toggle)`;
-          badge.dataset.isActive = res.new_state;
-          badge.style.backgroundColor = '';
-
-          // Update the comparison data
-          const user = comparisonData.users.find(u => u.email === res.user_email);
-          const orgName = Object.keys(orgNameToKey).find(k => orgNameToKey[k] === res.org_key);
-          if (user && user.orgs[orgName]) {
-            user.orgs[orgName].is_active = res.new_state;
-          }
-        }
-      }
-
-      pendingChanges.clear();
-      updatePendingUI();
-
-      // Show progress messages and results
-      let message = `Successfully applied ${result.processed} change(s)`;
-      if (result.failed > 0) {
-        message += `\n${result.failed} failed`;
-      }
-      if (result.progress && result.progress.length > 0) {
-        message += '\n\nProgress:\n' + result.progress.join('\n');
-      }
-      if (result.errors && result.errors.length > 0) {
-        message += '\n\nErrors:\n' + result.errors.map(e => `${e.user_email}: ${e.error}`).join('\n');
-      }
-      alert(message);
-    } else {
-      let message = `Error: ${result.errors.length} changes failed`;
-      if (result.progress && result.progress.length > 0) {
-        message += '\n\nProgress:\n' + result.progress.join('\n');
-      }
-      if (result.errors && result.errors.length > 0) {
-        message += '\n\nErrors:\n' + result.errors.map(e => `${e.user_email}: ${e.error}`).join('\n');
-      }
-      alert(message);
+    const startResult = await response.json();
+    if (!startResult.job_id) {
+      throw new Error(startResult.error || 'Failed to start job');
     }
+
+    // Poll for progress
+    const jobId = startResult.job_id;
+    const pollInterval = setInterval(async () => {
+      try {
+        const jobResponse = await fetch(`{{ url_for("user_management.job_status", job_id="JOB_ID") }}`.replace('JOB_ID', jobId));
+        const job = await jobResponse.json();
+
+        // Update progress
+        progressBar.value = job.pct;
+        progressPct.textContent = `${job.pct}%`;
+        progressLog.textContent = job.log.join('\n');
+
+        // Check if done
+        if (job.status === 'completed' || job.status === 'failed') {
+          clearInterval(pollInterval);
+
+          if (job.status === 'completed' && job.result) {
+            // Update badges based on results
+            for (const res of job.result.results || []) {
+              const orgName = Object.keys(orgNameToKey).find(k => orgNameToKey[k] === res.org_key);
+              const changeKey = `${orgName}|${res.user_email}`;
+              const change = pendingChanges.get(changeKey);
+
+              if (change) {
+                const badge = change.badgeElement;
+                badge.className = res.new_state ? 'badge clickable' : 'badge inactive clickable';
+                badge.textContent = res.new_state ? '✓' : '✗';
+                badge.title = `${res.new_state ? 'Active' : 'Inactive'} (click to toggle)`;
+                badge.dataset.isActive = res.new_state;
+                badge.style.backgroundColor = '';
+
+                // Update the comparison data
+                const user = comparisonData.users.find(u => u.email === res.user_email);
+                if (user && user.orgs[orgName]) {
+                  user.orgs[orgName].is_active = res.new_state;
+                }
+              }
+            }
+
+            pendingChanges.clear();
+            updatePendingUI();
+          }
+
+          applyBtn.disabled = false;
+          applyBtn.textContent = 'Apply Changes';
+        }
+      } catch (pollError) {
+        console.error('Poll error:', pollError);
+        clearInterval(pollInterval);
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Apply Changes';
+      }
+    }, 500);  // Poll every 500ms
+
   } catch (error) {
-    alert(`Error: ${error.message}`);
-  } finally {
+    progressLog.textContent += `\n\nError: ${error.message}`;
     applyBtn.disabled = false;
     applyBtn.textContent = 'Apply Changes';
   }
