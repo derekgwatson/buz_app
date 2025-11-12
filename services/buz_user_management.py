@@ -494,11 +494,35 @@ async def toggle_user_active_status(
 
             # Check if the checkbox exists
             if await toggle_checkbox.count() == 0:
-                result['message'] = f"User {user_email} not found on the page (type={user_type}, active={is_active})"
+                # User not found in expected state - cache might be stale
+                # Try the opposite state to see if they're already in the desired final state
+                logger.info(f"User {user_email} not found in {is_active} state, checking opposite state...")
+
+                # Switch to opposite active/inactive filter
+                opposite_active_value = "1: false" if is_active else "0: true"
+                await active_select.select_option(value=opposite_active_value)
+                await page.wait_for_timeout(500)
+
+                # Clear and re-enter search to trigger filter
+                await search_input.clear()
+                await search_input.fill(user_email)
+                await search_input.dispatch_event('input')
+                await page.wait_for_timeout(1000)
+
+                # Check again
+                if await toggle_checkbox.count() == 0:
+                    result['message'] = f"User {user_email} not found in either active or inactive state (type={user_type})"
+                    await page.close()
+                    return result
+
+                # Found in opposite state! Cache was stale, but they're already in desired final state
+                result['success'] = True
+                result['new_state'] = not is_active
+                result['message'] = f"User {user_email} was already {'active' if result['new_state'] else 'inactive'} (cache was stale)"
                 await page.close()
                 return result
 
-            # Verify the current state matches what we expect
+            # User found in expected state - verify and toggle
             actual_is_active = await toggle_checkbox.is_checked()
             if actual_is_active != is_active:
                 result['message'] = f"User state mismatch: expected active={is_active}, got active={actual_is_active}"
