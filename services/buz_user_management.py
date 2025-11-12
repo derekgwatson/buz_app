@@ -477,11 +477,10 @@ async def toggle_user_active_status(
             await page.wait_for_timeout(500)
 
             # Use the search field to filter by email
-            # Fill the search box and trigger input event for Angular
+            # Type character-by-character to trigger Angular change detection
             search_input = page.locator('input#search-text')
-            await search_input.fill(user_email)
-            # Trigger input event so Angular detects the change
-            await search_input.dispatch_event('input')
+            await search_input.click()  # Focus the input
+            await search_input.press_sequentially(user_email, delay=50)  # Type like a real user
             await page.wait_for_timeout(1000)  # Wait for Angular to filter
 
             # Pause for debugging in non-headless mode (before looking for toggle)
@@ -505,8 +504,8 @@ async def toggle_user_active_status(
 
                 # Clear and re-enter search to trigger filter
                 await search_input.clear()
-                await search_input.fill(user_email)
-                await search_input.dispatch_event('input')
+                await search_input.click()
+                await search_input.press_sequentially(user_email, delay=50)
                 await page.wait_for_timeout(1000)
 
                 # Check again
