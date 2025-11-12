@@ -504,6 +504,10 @@ async def toggle_user_active_status(
             await toggle_label.click()
             await page.wait_for_timeout(500)  # Wait for toggle animation
 
+            # Pause for debugging in non-headless mode
+            if not headless:
+                await page.pause()
+
             # New state is opposite of current state
             result['success'] = True
             result['new_state'] = not is_active
