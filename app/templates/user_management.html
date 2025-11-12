@@ -205,7 +205,15 @@
     color: #e0e0e0;
   }
 
-  .filter-bar input {
+  .filter-bar .filter-section {
+    margin-bottom: 1rem;
+  }
+
+  .filter-bar .filter-section:last-child {
+    margin-bottom: 0;
+  }
+
+  .filter-bar input[type="text"] {
     padding: 0.5rem;
     border: 1px solid #555;
     border-radius: 0.375rem;
@@ -213,12 +221,33 @@
     max-width: 100%;
     background: #333;
     color: #e0e0e0;
+    font-size: 1rem;
   }
 
   .filter-bar label {
     margin-right: 0.5rem;
     font-weight: 500;
     color: #e0e0e0;
+  }
+
+  .filter-bar .filter-group {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .filter-bar .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .filter-bar input[type="checkbox"],
+  .filter-bar input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
   }
 
   .stats {
@@ -358,16 +387,42 @@
     <div class="stats" id="statsSection"></div>
 
     <div class="filter-bar">
-      <label for="searchInput">Filter users:</label>
-      <input type="text" id="searchInput" placeholder="Search by name or email...">
-      <label style="margin-left: 1rem;">
-        <input type="checkbox" id="showMultiOrgOnly">
-        Show multi-org users only
-      </label>
-      <label style="margin-left: 1rem;">
-        <input type="checkbox" id="showActiveOnly">
-        Show active users only
-      </label>
+      <div class="filter-section">
+        <label for="searchInput" style="display: block; margin-bottom: 0.5rem;">Search:</label>
+        <input type="text" id="searchInput" placeholder="Filter by name or email...">
+      </div>
+
+      <div class="filter-section">
+        <label style="display: block; margin-bottom: 0.5rem;">Filter Options:</label>
+        <div class="filter-group">
+          <div class="filter-item">
+            <input type="checkbox" id="showActiveOnly">
+            <label for="showActiveOnly">Active only</label>
+          </div>
+          <div class="filter-item">
+            <input type="checkbox" id="showMultiOrgOnly">
+            <label for="showMultiOrgOnly">Multi-org only</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-section">
+        <label style="display: block; margin-bottom: 0.5rem;">User Type:</label>
+        <div class="filter-group">
+          <div class="filter-item">
+            <input type="radio" id="userTypeAll" name="userType" value="all" checked>
+            <label for="userTypeAll">All users</label>
+          </div>
+          <div class="filter-item">
+            <input type="radio" id="userTypeEmployee" name="userType" value="employee">
+            <label for="userTypeEmployee">Employees only</label>
+          </div>
+          <div class="filter-item">
+            <input type="radio" id="userTypeCustomer" name="userType" value="customer">
+            <label for="userTypeCustomer">Customers only</label>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="user-table">
@@ -626,6 +681,9 @@ function renderComparison(comparison) {
   searchInput.addEventListener('input', () => renderTableRows(comparison));
   showMultiOrgOnly.addEventListener('change', () => renderTableRows(comparison));
   showActiveOnly.addEventListener('change', () => renderTableRows(comparison));
+  document.querySelectorAll('input[name="userType"]').forEach(radio => {
+    radio.addEventListener('change', () => renderTableRows(comparison));
+  });
 }
 
 function renderTableRows(comparison) {
@@ -634,6 +692,7 @@ function renderTableRows(comparison) {
   const searchTerm = searchInput.value.toLowerCase();
   const multiOrgOnly = showMultiOrgOnly.checked;
   const activeOnly = showActiveOnly.checked;
+  const userTypeFilter = document.querySelector('input[name="userType"]:checked').value;
 
   userTableBody.innerHTML = '';
 
@@ -659,6 +718,15 @@ function renderTableRows(comparison) {
     // Apply active filter
     if (activeOnly && !hasActiveAccess) {
       return;
+    }
+
+    // Apply user type filter
+    if (userTypeFilter !== 'all') {
+      // Check if user has the specified user_type in any org
+      const hasUserType = Object.values(user.orgs || {}).some(org => org.user_type === userTypeFilter);
+      if (!hasUserType) {
+        return;
+      }
     }
 
     const tr = document.createElement('tr');
