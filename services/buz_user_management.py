@@ -467,25 +467,21 @@ async def toggle_user_active_status(
             active_select = page.locator('ul.list-inline li:nth-child(2) select')
             active_value = "0: true" if is_active else "1: false"
             await active_select.select_option(value=active_value)
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(300)
 
             # Set the employee/customer filter (third li in the list)
             # The user type dropdown has values: "0: 0" for employee, "1: 5" for customer
             user_type_select = page.locator('ul.list-inline li:nth-child(3) select')
             user_type_value = "1: 5" if user_type == "customer" else "0: 0"
             await user_type_select.select_option(value=user_type_value)
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(300)
 
             # Use the search field to filter by email
             # Type character-by-character to trigger Angular change detection
             search_input = page.locator('input#search-text')
             await search_input.click()  # Focus the input
-            await search_input.press_sequentially(user_email, delay=50)  # Type like a real user
-            await page.wait_for_timeout(1000)  # Wait for Angular to filter
-
-            # Pause for debugging in non-headless mode (before looking for toggle)
-            if not headless:
-                await page.pause()
+            await search_input.press_sequentially(user_email, delay=20)  # Type like a real user
+            await page.wait_for_timeout(500)  # Wait for Angular to filter
 
             # Find the toggle switch for this user by email
             # The checkbox ID is the email address - use attribute selector to handle @ and . characters
@@ -500,13 +496,13 @@ async def toggle_user_active_status(
                 # Switch to opposite active/inactive filter
                 opposite_active_value = "1: false" if is_active else "0: true"
                 await active_select.select_option(value=opposite_active_value)
-                await page.wait_for_timeout(500)
+                await page.wait_for_timeout(300)
 
                 # Clear and re-enter search to trigger filter
                 await search_input.clear()
                 await search_input.click()
-                await search_input.press_sequentially(user_email, delay=50)
-                await page.wait_for_timeout(1000)
+                await search_input.press_sequentially(user_email, delay=20)
+                await page.wait_for_timeout(500)
 
                 # Check again
                 if await toggle_checkbox.count() == 0:
