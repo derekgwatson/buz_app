@@ -336,6 +336,7 @@ def batch_toggle_users():
 
     results = []
     errors = []
+    progress_messages = []
 
     try:
         from services.buz_user_management import batch_toggle_users_for_org
@@ -367,7 +368,10 @@ def batch_toggle_users():
             })
 
         # Process each org's changes in a single browser session
-        for org_key, org_changes in changes_by_org.items():
+        for org_idx, (org_key, org_changes) in enumerate(changes_by_org.items(), 1):
+            org_display_name = BuzUserManagement.ORGS.get(org_key, {}).get('display_name', org_key)
+            progress_messages.append(f"Processing {len(org_changes)} user(s) in {org_display_name}...")
+
             try:
                 # Run async function for this org
                 loop = asyncio.new_event_loop()
@@ -384,15 +388,19 @@ def batch_toggle_users():
                     loop.close()
 
                 # Collect results
+                successful = 0
                 for result in org_results:
                     if result['success']:
                         results.append(result)
+                        successful += 1
                     else:
                         errors.append({
                             'org_key': result['org_key'],
                             'user_email': result['user_email'],
                             'error': result['message']
                         })
+
+                progress_messages.append(f"✓ Completed {org_display_name}: {successful} successful, {len(org_results) - successful} failed")
 
             except Exception as e:
                 logger.exception(f"Error in batch toggle for org {org_key}")
@@ -455,13 +463,29 @@ def batch_toggle_users():
                                                 break
 
                         # Update the database once with all changes
+                        # Retry with exponential backoff if database is locked
                         update_query = """
                             UPDATE jobs
                             SET result = ?
                             WHERE id = ?
                         """
-                        db.execute_query(update_query, (json.dumps(result_json), job_id))
-                        logger.info(f"Updated cache with {len(results)} toggle(s)")
+
+                        max_retries = 5
+                        retry_delay = 0.1  # Start with 100ms
+
+                        for attempt in range(max_retries):
+                            try:
+                                db.execute_query(update_query, (json.dumps(result_json), job_id))
+                                logger.info(f"Updated cache with {len(results)} toggle(s)")
+                                break
+                            except Exception as retry_error:
+                                if "locked" in str(retry_error).lower() and attempt < max_retries - 1:
+                                    logger.warning(f"Database locked, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})")
+                                    import time
+                                    time.sleep(retry_delay)
+                                    retry_delay *= 2  # Exponential backoff
+                                else:
+                                    raise
 
             except Exception as cache_error:
                 logger.warning(f"Failed to update cache: {cache_error}")
@@ -472,7 +496,8 @@ def batch_toggle_users():
             'processed': len(results),
             'failed': len(errors),
             'results': results,
-            'errors': errors
+            'errors': errors,
+            'progress': progress_messages
         }), 200
 
     except Exception as e:

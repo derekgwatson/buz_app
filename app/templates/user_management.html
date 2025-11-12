@@ -985,9 +985,27 @@ async function applyBatchChanges() {
       pendingChanges.clear();
       updatePendingUI();
 
-      alert(`Successfully applied ${result.processed} change(s)${result.failed > 0 ? `. ${result.failed} failed.` : ''}`);
+      // Show progress messages and results
+      let message = `Successfully applied ${result.processed} change(s)`;
+      if (result.failed > 0) {
+        message += `\n${result.failed} failed`;
+      }
+      if (result.progress && result.progress.length > 0) {
+        message += '\n\nProgress:\n' + result.progress.join('\n');
+      }
+      if (result.errors && result.errors.length > 0) {
+        message += '\n\nErrors:\n' + result.errors.map(e => `${e.user_email}: ${e.error}`).join('\n');
+      }
+      alert(message);
     } else {
-      alert(`Error: ${result.errors.length} changes failed`);
+      let message = `Error: ${result.errors.length} changes failed`;
+      if (result.progress && result.progress.length > 0) {
+        message += '\n\nProgress:\n' + result.progress.join('\n');
+      }
+      if (result.errors && result.errors.length > 0) {
+        message += '\n\nErrors:\n' + result.errors.map(e => `${e.user_email}: ${e.error}`).join('\n');
+      }
+      alert(message);
     }
   } catch (error) {
     alert(`Error: ${error.message}`);
