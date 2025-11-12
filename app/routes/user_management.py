@@ -169,7 +169,8 @@ def get_latest_result():
         LIMIT 1
     """
 
-    rows = db.execute_query(query)
+    cursor = db.execute_query(query)
+    rows = cursor.fetchall()
 
     if not rows:
         return jsonify({"error": "No cached data found"}), 404
