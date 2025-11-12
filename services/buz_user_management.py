@@ -476,8 +476,10 @@ async def toggle_user_active_status(
             # Check current state (checked = active)
             is_currently_active = await toggle_checkbox.is_checked()
 
-            # Click the toggle
-            await toggle_checkbox.click()
+            # Click the label (the checkbox itself is hidden by CSS)
+            # The label has a 'for' attribute matching the checkbox ID
+            toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
+            await toggle_label.click()
             await page.wait_for_timeout(500)  # Wait for toggle animation
 
             # New state is opposite of current state
