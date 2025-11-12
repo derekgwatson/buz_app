@@ -628,7 +628,7 @@ async def batch_toggle_users_for_org(
                     await page.wait_for_timeout(500)
 
                     # Clear search and type email
-                    await search_input.fill('')  # Use fill to clear completely
+                    await search_input.clear()
                     await page.wait_for_timeout(200)
                     await search_input.click()
                     await search_input.press_sequentially(user_email, delay=20)
@@ -655,7 +655,7 @@ async def batch_toggle_users_for_org(
                         await active_select.select_option(value=opposite_active_value)
                         await page.wait_for_timeout(500)
 
-                        await search_input.fill('')
+                        await search_input.clear()
                         await page.wait_for_timeout(200)
                         await search_input.click()
                         await search_input.press_sequentially(user_email, delay=20)
