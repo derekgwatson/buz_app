@@ -196,6 +196,19 @@
     background: #f59e0b;
   }
 
+  .user-details .badge.clickable {
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .user-details .badge.clickable:hover {
+    opacity: 0.8;
+  }
+
+  .user-details .badge.clickable:active {
+    opacity: 0.6;
+  }
+
   .filter-bar {
     margin-top: 1rem;
     padding: 1rem;
@@ -779,20 +792,19 @@ function renderTableRows(comparison) {
         groupBadge.textContent = orgData.group || 'N/A';
         detailsDiv.appendChild(groupBadge);
 
-        // Status badge
-        if (orgData.is_active) {
-          const activeBadge = document.createElement('span');
-          activeBadge.className = 'badge';
-          activeBadge.textContent = '✓';
-          activeBadge.title = 'Active';
-          detailsDiv.appendChild(activeBadge);
-        } else {
-          const inactiveBadge = document.createElement('span');
-          inactiveBadge.className = 'badge inactive';
-          inactiveBadge.textContent = '✗';
-          inactiveBadge.title = 'Inactive';
-          detailsDiv.appendChild(inactiveBadge);
-        }
+        // Status badge (clickable to toggle)
+        const statusBadge = document.createElement('span');
+        statusBadge.className = orgData.is_active ? 'badge clickable' : 'badge inactive clickable';
+        statusBadge.textContent = orgData.is_active ? '✓' : '✗';
+        statusBadge.title = `${orgData.is_active ? 'Active' : 'Inactive'} (click to toggle)`;
+        statusBadge.dataset.orgName = orgName;
+        statusBadge.dataset.userEmail = user.email;
+        statusBadge.dataset.isActive = orgData.is_active;
+        statusBadge.onclick = (e) => {
+          e.stopPropagation();
+          toggleUserStatus(orgName, user.email, orgData.is_active, statusBadge);
+        };
+        detailsDiv.appendChild(statusBadge);
 
         // MFA badge
         if (orgData.mfa_enabled) {
@@ -819,6 +831,74 @@ function renderTableRows(comparison) {
 
     userTableBody.appendChild(tr);
   });
+}
+
+// Map org display names to org keys
+const orgNameToKey = {
+  'Canberra': 'canberra',
+  'Tweed': 'tweed',
+  'Designer Drapes': 'dd',
+  'Batemans Bay': 'bay',
+  'Shoalhaven': 'shoalhaven',
+  'Wagga Wagga': 'wagga'
+};
+
+async function toggleUserStatus(orgName, userEmail, currentlyActive, badgeElement) {
+  const orgKey = orgNameToKey[orgName];
+  if (!orgKey) {
+    alert(`Unknown org: ${orgName}`);
+    return;
+  }
+
+  if (!confirm(`Toggle ${userEmail} to ${currentlyActive ? 'INACTIVE' : 'ACTIVE'} in ${orgName}?`)) {
+    return;
+  }
+
+  // Disable the badge while processing
+  badgeElement.style.opacity = '0.5';
+  badgeElement.style.pointerEvents = 'none';
+  const originalText = badgeElement.textContent;
+  badgeElement.textContent = '⏳';
+
+  try {
+    const response = await fetch('{{ url_for("user_management.toggle_user_status") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        org_key: orgKey,
+        user_email: userEmail
+      })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      // Update the badge
+      badgeElement.className = result.new_state ? 'badge clickable' : 'badge inactive clickable';
+      badgeElement.textContent = result.new_state ? '✓' : '✗';
+      badgeElement.title = `${result.new_state ? 'Active' : 'Inactive'} (click to toggle)`;
+      badgeElement.dataset.isActive = result.new_state;
+
+      // Update the comparison data so it persists across re-renders
+      const user = comparisonData.users.find(u => u.email === userEmail);
+      if (user && user.orgs[orgName]) {
+        user.orgs[orgName].is_active = result.new_state;
+      }
+
+      alert(result.message);
+    } else {
+      alert(`Error: ${result.message}`);
+      badgeElement.textContent = originalText;
+    }
+  } catch (error) {
+    alert(`Error: ${error.message}`);
+    badgeElement.textContent = originalText;
+  } finally {
+    badgeElement.style.opacity = '1';
+    badgeElement.style.pointerEvents = 'auto';
+  }
 }
 </script>
 {% endblock %}

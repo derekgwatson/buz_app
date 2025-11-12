@@ -188,3 +188,48 @@ def get_latest_result():
     }
 
     return jsonify(job)
+
+
+@user_management_bp.route("/toggle-user-status", methods=["POST"])
+@auth.login_required
+def toggle_user_status():
+    """Toggle a user's active/inactive status"""
+    data = request.get_json()
+    org_key = data.get('org_key')
+    user_email = data.get('user_email')
+
+    if not org_key or not user_email:
+        return jsonify({"error": "org_key and user_email are required"}), 400
+
+    # Validate org key
+    valid_orgs = ['canberra', 'tweed', 'dd', 'bay', 'shoalhaven', 'wagga']
+    if org_key not in valid_orgs:
+        return jsonify({"error": f"Invalid org_key: {org_key}"}), 400
+
+    headless = current_app.config.get('DEBUG', False) == False  # Force headless in production
+
+    try:
+        from services.buz_user_management import toggle_user_active_status
+
+        # Run async function
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(
+                toggle_user_active_status(
+                    org_key=org_key,
+                    user_email=user_email,
+                    headless=headless
+                )
+            )
+        finally:
+            loop.close()
+
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+
+    except Exception as e:
+        logger.exception(f"Error toggling user status")
+        return jsonify({"error": str(e)}), 500

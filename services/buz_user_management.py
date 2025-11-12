@@ -421,3 +421,74 @@ async def review_users_all_orgs(
 
     update(100, "Complete")
     return result
+
+
+async def toggle_user_active_status(
+    org_key: str,
+    user_email: str,
+    headless: bool = True
+) -> Dict[str, Any]:
+    """
+    Toggle a user's active/inactive status in Buz.
+
+    Args:
+        org_key: Key from ORGS dict (e.g., 'canberra', 'tweed')
+        user_email: Email address of the user
+        headless: Run browser in headless mode
+
+    Returns:
+        Dict with success status and new active state
+    """
+    result = {
+        'success': False,
+        'new_state': None,
+        'message': ''
+    }
+
+    async with BuzUserManagement(headless=headless) as manager:
+        try:
+            # Switch to the org
+            await manager.switch_to_org(org_key)
+
+            # Navigate to user management page
+            page = await manager.context.new_page()
+
+            await page.goto(manager.USER_MANAGEMENT_URL, wait_until='networkidle', timeout=30000)
+
+            # Wait for the table to load
+            await page.wait_for_selector('table#userListTable', timeout=15000)
+
+            # Set page size to 500 to ensure user is visible
+            page_size_select = page.locator('div.select-editable select')
+            await page_size_select.select_option(value='6: 500')
+            await page.wait_for_timeout(1000)
+
+            # Find the toggle switch for this user by email
+            # The checkbox ID is the email address
+            toggle_checkbox = page.locator(f'input.onoffswitch-checkbox#{user_email}')
+
+            # Check if the checkbox exists
+            if await toggle_checkbox.count() == 0:
+                result['message'] = f"User {user_email} not found on the page"
+                await page.close()
+                return result
+
+            # Check current state (checked = active)
+            is_currently_active = await toggle_checkbox.is_checked()
+
+            # Click the toggle
+            await toggle_checkbox.click()
+            await page.wait_for_timeout(500)  # Wait for toggle animation
+
+            # New state is opposite of current state
+            result['success'] = True
+            result['new_state'] = not is_currently_active
+            result['message'] = f"User {user_email} is now {'active' if result['new_state'] else 'inactive'}"
+
+            await page.close()
+
+        except Exception as e:
+            result['message'] = f"Error toggling user status: {str(e)}"
+            logger.exception(f"Error toggling user {user_email} in {org_key}")
+
+    return result
