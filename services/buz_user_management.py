@@ -477,9 +477,16 @@ async def toggle_user_active_status(
             await page.wait_for_timeout(500)
 
             # Use the search field to filter by email
+            # Fill the search box and trigger input event for Angular
             search_input = page.locator('input#search-text')
             await search_input.fill(user_email)
+            # Trigger input event so Angular detects the change
+            await search_input.dispatch_event('input')
             await page.wait_for_timeout(1000)  # Wait for Angular to filter
+
+            # Pause for debugging in non-headless mode (before looking for toggle)
+            if not headless:
+                await page.pause()
 
             # Find the toggle switch for this user by email
             # The checkbox ID is the email address - use attribute selector to handle @ and . characters
@@ -503,10 +510,6 @@ async def toggle_user_active_status(
             toggle_label = page.locator(f'label.onoffswitch-label[for="{user_email}"]')
             await toggle_label.click()
             await page.wait_for_timeout(500)  # Wait for toggle animation
-
-            # Pause for debugging in non-headless mode
-            if not headless:
-                await page.pause()
 
             # New state is opposite of current state
             result['success'] = True
