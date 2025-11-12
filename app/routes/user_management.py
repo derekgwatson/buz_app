@@ -147,3 +147,44 @@ def job_status(job_id):
         return jsonify({"error": "Job not found"}), 404
 
     return jsonify(job)
+
+
+@user_management_bp.route("/latest", methods=["GET"])
+@auth.login_required
+def get_latest_result():
+    """Get the most recent successful user management review"""
+    db_path = current_app.config["database"]
+    db = create_db_manager(db_path)
+
+    # Query for the most recent completed user management job
+    # We can identify user management jobs by looking at the result structure
+    query = """
+        SELECT id, status, pct, log, error, result, updated_at
+        FROM jobs
+        WHERE status = 'completed'
+        AND result IS NOT NULL
+        AND result LIKE '%comparison%'
+        AND result LIKE '%user%'
+        ORDER BY updated_at DESC
+        LIMIT 1
+    """
+
+    rows = db.execute_query(query)
+
+    if not rows:
+        return jsonify({"error": "No cached data found"}), 404
+
+    row = rows[0]
+    import json
+
+    job = {
+        "id": row[0],
+        "status": row[1],
+        "pct": row[2],
+        "log": json.loads(row[3]) if row[3] else [],
+        "error": row[4],
+        "result": json.loads(row[5]) if row[5] else None,
+        "updated_at": row[6]
+    }
+
+    return jsonify(job)

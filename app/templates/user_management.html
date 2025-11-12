@@ -266,6 +266,11 @@
   their roles, MFA status, and activity.
 </p>
 
+<div id="cachedDataInfo" style="display: none; margin-bottom: 1rem; padding: 0.75rem; background: #1e3a1e; border: 1px solid #22c55e; border-radius: 0.5rem; color: #86efac;">
+  <strong>📦 Cached data available:</strong> Last updated <span id="cachedDataTime"></span>
+  <button type="button" class="btn" onclick="loadCachedData()" style="margin-left: 1rem; padding: 0.4rem 0.8rem; background: #16a34a; font-size: 0.9rem;">Load Cached Data</button>
+</div>
+
 <details style="margin-bottom: 1.5rem; padding: 1rem; background: #2a2a2a; border: 1px solid #444; border-radius: 0.5rem;">
   <summary style="cursor: pointer; font-weight: 600; color: #66d9ef; user-select: none;">
     💡 How to Use
@@ -330,7 +335,7 @@
   </div>
   {% endif %}
 
-  <button type="submit" class="btn btn-primary" id="submitBtn">Start Review</button>
+  <button type="submit" class="btn btn-primary" id="submitBtn">Refresh Data</button>
 </form>
 
 <div id="progressSection">
@@ -385,6 +390,7 @@
 let currentJobId = null;
 let poller = null;
 let comparisonData = null;
+let cachedJob = null;
 
 const form = document.getElementById('reviewForm');
 const submitBtn = document.getElementById('submitBtn');
@@ -404,6 +410,56 @@ const searchInput = document.getElementById('searchInput');
 const showMultiOrgOnly = document.getElementById('showMultiOrgOnly');
 const showActiveOnly = document.getElementById('showActiveOnly');
 
+// Check for cached data on page load
+async function checkForCachedData() {
+  try {
+    const response = await fetch('{{ url_for("user_management.get_latest_result") }}');
+    if (response.ok) {
+      cachedJob = await response.json();
+
+      // Show cached data info
+      const cachedInfo = document.getElementById('cachedDataInfo');
+      const cachedTime = document.getElementById('cachedDataTime');
+
+      const updatedAt = new Date(cachedJob.updated_at);
+      const now = new Date();
+      const diffMinutes = Math.floor((now - updatedAt) / 60000);
+
+      let timeStr;
+      if (diffMinutes < 60) {
+        timeStr = `${diffMinutes} minute${diffMinutes !== 1 ? 's' : ''} ago`;
+      } else {
+        const diffHours = Math.floor(diffMinutes / 60);
+        if (diffHours < 24) {
+          timeStr = `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+        } else {
+          const diffDays = Math.floor(diffHours / 24);
+          timeStr = `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+        }
+      }
+
+      cachedTime.textContent = timeStr;
+      cachedInfo.style.display = 'block';
+    }
+  } catch (error) {
+    // No cached data available, that's fine
+    console.log('No cached data available');
+  }
+}
+
+function loadCachedData() {
+  if (!cachedJob) return;
+
+  // Hide the cached data info banner
+  document.getElementById('cachedDataInfo').style.display = 'none';
+
+  // Show result directly
+  showResult(cachedJob);
+}
+
+// Load cached data on page load
+checkForCachedData();
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
@@ -421,9 +477,10 @@ form.addEventListener('submit', async (e) => {
 
   // Disable form
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Starting...';
+  submitBtn.textContent = 'Refreshing...';
 
-  // Hide previous results
+  // Hide cached data banner and previous results
+  document.getElementById('cachedDataInfo').style.display = 'none';
   resultSection.style.display = 'none';
   progressSection.style.display = 'block';
   progressBar.value = 0;
@@ -456,7 +513,7 @@ form.addEventListener('submit', async (e) => {
   } catch (error) {
     alert('Error: ' + error.message);
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Start Review';
+    submitBtn.textContent = 'Refresh Data';
     progressSection.style.display = 'none';
   }
 });
@@ -500,7 +557,7 @@ function updateProgress(job) {
 function showResult(job) {
   // Re-enable form
   submitBtn.disabled = false;
-  submitBtn.textContent = 'Start Review';
+  submitBtn.textContent = 'Refresh Data';
 
   // Show result section
   resultSection.style.display = 'block';
