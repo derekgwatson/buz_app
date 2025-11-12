@@ -232,6 +232,8 @@ def toggle_user_status():
                 import json
                 from services.buz_user_management import BuzUserManagement
 
+                db_path = current_app.config["database"]
+
                 # Map org_key to display name
                 org_display_name = BuzUserManagement.ORGS.get(org_key, {}).get('display_name', '')
 
@@ -352,6 +354,7 @@ def batch_toggle_users():
                 if result['success']:
                     # Update the cached data in the database
                     try:
+                        db_path = current_app.config["database"]
                         org_display_name = BuzUserManagement.ORGS.get(org_key, {}).get('display_name', '')
 
                         if org_display_name:
