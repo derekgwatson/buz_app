@@ -50,17 +50,11 @@ async def main(account_name: str = "default") -> None:
             await page.wait_for_url(lambda url: url.startswith("https://go.buzmanager.com/"), timeout=120_000)
             print(">>> Org selected! Continuing...")
 
-        # Ensure org cookie set by visiting a page inside the app
-        await page.goto(START_URL)
-        await page.wait_for_load_state('networkidle')
-
-        # Also visit the console domain to capture those auth cookies
-        # The user management page is on console1.buzmanager.com which requires separate auth
-        print(">>> Visiting console domain to capture authentication...")
-
-        # Try going to the console URL via the go.buzmanager redirect
+        # Immediately navigate to users page to capture console authentication
+        # This ensures we get both go.buzmanager.com and console domain auth in one session
+        print(">>> Navigating to user management page to capture console authentication...")
         await page.goto("https://go.buzmanager.com/Settings/Users", wait_until='networkidle', timeout=60000)
-        print(f">>> After redirect, landed at: {page.url}")
+        print(f">>> After navigation, landed at: {page.url}")
 
         # Check if we're on the console domain
         if "console" not in page.url:
