@@ -509,10 +509,14 @@ async def toggle_user_active_status(
             result['new_state'] = not is_active
             result['message'] = f"User {user_email} is now {'active' if result['new_state'] else 'inactive'}"
 
-            await page.close()
-
         except Exception as e:
             result['message'] = f"Error toggling user status: {str(e)}"
             logger.exception(f"Error toggling user {user_email} in {org_key}")
+        finally:
+            # Always close the page, even on error
+            try:
+                await page.close()
+            except Exception as close_error:
+                logger.warning(f"Error closing page: {close_error}")
 
     return result
