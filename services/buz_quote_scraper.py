@@ -98,12 +98,13 @@ class BuzQuoteScraper:
         org_link = page.locator('td a').first
         if await org_link.count() > 0:
             await org_link.click()
-            await page.wait_for_load_state('networkidle')
+            await page.wait_for_load_state('domcontentloaded', timeout=30000)
             logger.info("Clicked through org selector")
 
-            # Re-navigate to intended destination
+            # Re-navigate to intended destination with increased timeout
             logger.info(f"Re-navigating to intended page...")
-            await page.goto(intended_url, wait_until='networkidle')
+            await page.goto(intended_url, wait_until='domcontentloaded', timeout=60000)
+            await page.wait_for_selector('a#btnHistory', timeout=30000)
         else:
             raise Exception("On org selector page but couldn't find org link to click")
 
@@ -242,9 +243,8 @@ class BuzQuoteScraper:
         # Click the next button
         await next_button.click()
 
-        # Wait for the table to update
-        await page.wait_for_load_state('networkidle')
-        await page.wait_for_timeout(1000)  # Additional wait for table refresh
+        # Wait for the table to update - use a short timeout since it's an AJAX update
+        await page.wait_for_timeout(1500)  # Wait for table to refresh
 
         return True
 
@@ -275,9 +275,16 @@ class BuzQuoteScraper:
 
         page = await self.context.new_page()
         try:
-            # Navigate to quote summary page
+            # Navigate to quote summary page with extended timeout
             quote_url = f"https://go.buzmanager.com/Sales/Summary?orderId={order_id}"
-            await page.goto(quote_url, wait_until='networkidle')
+            logger.info(f"Navigating to: {quote_url}")
+
+            # Use 'domcontentloaded' instead of 'networkidle' for faster, more reliable loading
+            # Increase timeout to 60 seconds for slow Buz pages
+            await page.goto(quote_url, wait_until='domcontentloaded', timeout=60000)
+
+            # Wait for the page to be interactive by checking for a key element
+            await page.wait_for_selector('a#btnHistory', timeout=30000)
 
             # Handle org selector if present
             await self.handle_org_selector_if_present(page, quote_url)
@@ -287,6 +294,9 @@ class BuzQuoteScraper:
             # Check the two checkboxes
             include_job_tracking = page.locator('input#includeJobTracking')
             include_dispatch = page.locator('input#includeDispatch')
+
+            # Wait for checkboxes to be available
+            await include_job_tracking.wait_for(state='visible', timeout=10000)
 
             # Check both checkboxes if they're not already checked
             if not await include_job_tracking.is_checked():
@@ -303,8 +313,8 @@ class BuzQuoteScraper:
             show_history_btn = page.locator('a#btnHistory')
             await show_history_btn.click()
 
-            # Wait for the table to load
-            await page.wait_for_load_state('networkidle')
+            # Wait for the table to appear instead of networkidle
+            await page.wait_for_selector('table#_grdDevEx_DXMainTable', timeout=30000)
             await page.wait_for_timeout(1500)  # Additional wait for table to populate
 
             # Check if table exists
@@ -350,8 +360,31 @@ class BuzQuoteScraper:
             )
 
         except Exception as e:
-            logger.error(f"Error scraping quote history: {e}", exc_info=True)
-            errors.append(str(e))
+            error_msg = str(e)
+            logger.error(f"Error scraping quote history: {error_msg}", exc_info=True)
+
+            # Provide more helpful error messages
+            if "Timeout" in error_msg and "goto" in error_msg:
+                error_msg = (
+                    f"Timed out loading the quote page. This could mean:\n"
+                    f"  1. The quote ID is invalid or doesn't exist\n"
+                    f"  2. You don't have permission to view this quote\n"
+                    f"  3. Buz Manager is running slowly\n"
+                    f"  4. Your authentication has expired\n"
+                    f"Try re-running the auth bootstrap: python tools/buz_auth_bootstrap.py <account>"
+                )
+            elif "Timeout" in error_msg and "btnHistory" in error_msg:
+                error_msg = (
+                    f"Timed out waiting for the 'Show History' button. The quote page loaded but the history "
+                    f"controls didn't appear. This might mean you don't have permission to view quote history."
+                )
+            elif "Timeout" in error_msg and "includeJobTracking" in error_msg:
+                error_msg = (
+                    f"Timed out waiting for history checkboxes. The page structure may have changed or "
+                    f"you may not have the required permissions."
+                )
+
+            errors.append(error_msg)
             return QuoteHistoryResult(
                 order_id=order_id,
                 total_entries=len(all_entries),

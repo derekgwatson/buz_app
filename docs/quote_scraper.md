@@ -135,6 +135,32 @@ The scraper collects all history entries from the quote, including:
 
 ## Troubleshooting
 
+### Timeout Errors
+
+If you get "Timeout 30000ms exceeded" or similar errors:
+
+```
+Page.goto: Timeout 30000ms exceeded
+```
+
+**This usually means:**
+
+1. **Invalid or inaccessible quote ID** - Double-check the order ID from the URL
+2. **Permission issues** - You may not have access to view this quote
+3. **Buz Manager is slow** - The scraper now uses 60-second timeouts to handle this
+4. **Expired authentication** - Re-run the auth bootstrap:
+
+```bash
+python tools/buz_auth_bootstrap.py watsonblinds
+```
+
+5. **Network issues** - Check your internet connection
+
+**Try this:**
+- Run with `--visible` to see what's happening in the browser
+- Verify you can access the quote manually in a browser
+- Make sure you're logged in to the correct Buz account
+
 ### Authentication Errors
 
 If you get errors about missing authentication:
