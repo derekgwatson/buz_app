@@ -746,26 +746,36 @@ class BuzCustomerAutomation:
             return self.result
 
         # Step 2: Find customer from existing user
-        customer_name, customer_pkid = await self.get_customer_from_user(user_data.existing_user_email)
-        self.result.customer_existed = True
-        self.result.customer_name = customer_name
+        try:
+            customer_name, customer_pkid = await self.get_customer_from_user(user_data.existing_user_email)
+            self.result.customer_existed = True
+            self.result.customer_name = customer_name
+        except Exception as e:
+            # Wrap exception to preserve the steps completed so far
+            self.result.add_step(f"✗ Failed to find customer from existing user: {str(e)}")
+            raise CustomerAutomationError(str(e), self.result)
 
         # Step 3: Create the new user
-        # Convert AddUserData to CustomerData format for create_user function
-        temp_customer_data = CustomerData(
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
-            company_name=customer_name,
-            address="",  # Not needed for user creation
-            email=user_data.email,
-            buz_instances=user_data.buz_instances,
-            phone=user_data.phone
-        )
+        try:
+            # Convert AddUserData to CustomerData format for create_user function
+            temp_customer_data = CustomerData(
+                first_name=user_data.first_name,
+                last_name=user_data.last_name,
+                company_name=customer_name,
+                address="",  # Not needed for user creation
+                email=user_data.email,
+                buz_instances=user_data.buz_instances,
+                phone=user_data.phone
+            )
 
-        success = await self.create_user(customer_name, customer_pkid, temp_customer_data)
-        if success:
-            self.result.user_created = True
-            self.result.add_step(f"✓ New user created: {user_data.email}")
+            success = await self.create_user(customer_name, customer_pkid, temp_customer_data)
+            if success:
+                self.result.user_created = True
+                self.result.add_step(f"✓ New user created: {user_data.email}")
+        except Exception as e:
+            # Wrap exception to preserve the steps completed so far
+            self.result.add_step(f"✗ Failed to create user: {str(e)}")
+            raise CustomerAutomationError(str(e), self.result)
 
         self.result.add_step("=== Workflow Complete ===")
         return self.result
