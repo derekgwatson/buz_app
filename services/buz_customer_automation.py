@@ -816,11 +816,13 @@ async def add_customer_from_zendesk_ticket(
     def get_storage_state_path(instance_name: str) -> Path:
         """
         Convert instance name to storage state file path.
-        Example: "Watson Blinds" -> ".secrets/buz_storage_state_watsonblinds.json"
+        Example: "Watson Blinds" -> "/absolute/path/.secrets/buz_storage_state_watsonblinds.json"
         """
         # Normalize: lowercase, remove spaces
         normalized = instance_name.lower().replace(' ', '')
-        return Path(f".secrets/buz_storage_state_{normalized}.json")
+        # Use absolute path relative to this file's directory (project root)
+        project_root = Path(__file__).resolve().parent.parent
+        return project_root / ".secrets" / f"buz_storage_state_{normalized}.json"
 
     # Get the storage state path for the first instance
     first_instance = customer_data.buz_instances[0]
@@ -894,11 +896,13 @@ async def add_user_for_existing_customer(
     def get_storage_state_path(instance_name: str) -> Path:
         """
         Convert instance name to storage state file path.
-        Example: "Watson Blinds" -> ".secrets/buz_storage_state_watsonblinds.json"
+        Example: "Watson Blinds" -> "/absolute/path/.secrets/buz_storage_state_watsonblinds.json"
         """
         # Normalize: lowercase, remove spaces
         normalized = instance_name.lower().replace(' ', '')
-        return Path(f".secrets/buz_storage_state_{normalized}.json")
+        # Use absolute path relative to this file's directory (project root)
+        project_root = Path(__file__).resolve().parent.parent
+        return project_root / ".secrets" / f"buz_storage_state_{normalized}.json"
 
     # Get the storage state path for the first instance
     first_instance = user_data.buz_instances[0]
