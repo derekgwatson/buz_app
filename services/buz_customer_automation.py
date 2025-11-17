@@ -319,41 +319,27 @@ class BuzCustomerAutomation:
 
         page = await self.context.new_page()
         try:
-            # Navigate to user management
-            await page.goto(self.USER_MANAGEMENT_URL, wait_until='networkidle')
-            await self.handle_org_selector_if_present(page, self.USER_MANAGEMENT_URL)
+            # Navigate directly to the invite user page with this email
+            # This page auto-populates with user details if they exist
+            invite_url = f"https://console1.buzmanager.com/myorg/user-management/inviteuser/{email}"
+            await page.goto(invite_url, wait_until='networkidle')
+            await self.handle_org_selector_if_present(page, invite_url)
 
-            # Select Customers group
-            user_type_select = page.locator('select.form-control').filter(has_text='Employees')
-            await user_type_select.select_option(label='Customers')
+            # Check if user exists by checking if email field is populated
+            email_input = page.locator('input#text-email')
+            email_value = await email_input.input_value()
 
-            # Search for the user
-            search_input = page.locator('input#search-text, input[placeholder*="Name, user name or email"]')
-            await search_input.click()
-            await search_input.fill('')
-            await search_input.type(email, delay=50)
-            await page.wait_for_timeout(1500)
+            if not email_value or not email_value.strip():
+                raise Exception(f"User '{email}' not found. Please verify the email address.")
 
-            # Check if we found the user
-            results_table = page.locator('table tbody tr')
-            count = await results_table.count()
+            self.result.add_step(f"✓ Found user: {email}")
 
-            if count == 0:
-                raise Exception(f"User '{email}' not found in Customers group. Please verify the email address.")
-
-            # Click on the user row to open details
-            first_row = results_table.first
-            user_link = first_row.locator('a').first
-            await user_link.click()
-            await page.wait_for_load_state('networkidle')
-
-            # Extract customer name from the user details page
-            # The customer field is typically an input or link with id 'customers' or similar
+            # Extract customer name from the customer field (same one we fill when creating users)
             customer_input = page.locator('input#customers')
             customer_name = await customer_input.input_value()
 
             if not customer_name or not customer_name.strip():
-                raise Exception(f"Could not extract customer name from user details page for {email}")
+                raise Exception(f"User '{email}' exists but is not linked to a customer")
 
             customer_name = customer_name.strip()
             self.result.add_step(f"Found linked customer: {customer_name}")

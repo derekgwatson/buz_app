@@ -144,7 +144,6 @@ def add_from_zendesk():
 
 
 @customer_automation_bp.route("/job/<job_id>", methods=["GET"])
-@auth.login_required
 def job_status(job_id):
     """Get job status"""
     db_path = current_app.config["database"]
