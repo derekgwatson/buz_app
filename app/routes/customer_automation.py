@@ -158,14 +158,12 @@ def job_status(job_id):
 
 
 @customer_automation_bp.route("/add-user", methods=["GET"])
-@auth.login_required
 def add_user_form():
     """Show form for adding a user to an existing customer"""
     return render_template("customer_automation_add_user.html")
 
 
 @customer_automation_bp.route("/add-user", methods=["POST"])
-@auth.login_required
 def add_user():
     """
     Start user addition for existing customer
