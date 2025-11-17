@@ -13,13 +13,13 @@ def get_current_buz_pricing(db, curtain_groups=None):
 
     Args:
         db: Database connection or DatabaseManager instance.
-        curtain_groups: List/tuple of curtain group codes. Defaults to ['CRTWT', 'CRTNT', 'ROMNDC'].
+        curtain_groups: List/tuple of curtain group codes. Defaults to ['CRTWT', 'CRTNT', 'ROMNBQCS'].
 
     Returns:
         dict: Mapping InventoryCode → row dictionary.
     """
     if curtain_groups is None:
-        curtain_groups = ['CRTWT', 'CRTNT', 'ROMNDC']
+        curtain_groups = ['CRTWT', 'CRTNT', 'ROMNBQCS']
 
     placeholders = ','.join('?' * len(curtain_groups))
     query = f"SELECT * FROM pricing_data WHERE inventory_group_code IN ({placeholders})"

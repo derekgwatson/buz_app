@@ -6,7 +6,7 @@ from flask import g
 
 logger = logging.getLogger(__name__)
 
-CURTAIN_TABS = ("CRTWT", "CRTNT", "ROMNDC")
+CURTAIN_TABS = ("CRTWT", "CRTNT", "ROMNBQCS")
 NEW_FABRIC_EFF_DATE_STR = "01/01/2020"
 
 # ---------- helpers ----------

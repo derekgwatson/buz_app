@@ -13,13 +13,13 @@ def get_current_buz_fabrics(db_manager, curtain_groups=None):
 
     Args:
         db_manager: DatabaseManager instance.
-        curtain_groups: List/tuple of curtain group codes. Defaults to ['CRTWT', 'CRTNT', 'ROMNDC'].
+        curtain_groups: List/tuple of curtain group codes. Defaults to ['CRTWT', 'CRTNT', 'ROMNBQCS'].
 
     Returns:
         list: List of row dictionaries (sqlite3.Row objects).
     """
     if curtain_groups is None:
-        curtain_groups = ['CRTWT', 'CRTNT', 'ROMNDC']
+        curtain_groups = ['CRTWT', 'CRTNT', 'ROMNBQCS']
 
     placeholders = ','.join('?' * len(curtain_groups))
     query = f"SELECT * FROM inventory_items WHERE inventory_group_code IN ({placeholders})"

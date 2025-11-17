@@ -497,7 +497,7 @@
         "DD- Curtain Fabric": [
             "CRTWT",
             "CRTNT",
-            "ROMNDC"
+            "ROMNBQCS"
         ],
         "Fabric - Awning": [
             "ALPHAV2",
@@ -671,7 +671,7 @@
     "curtain_fabric_groups": {
         "CRTWT": "Curtain and Track",
         "CRTNT": "Curtain Only",
-        "ROMNDC": "Decorative Romans"
+        "ROMNBQCS": "BQ Customised Romans"
     },
     "discount_grid": {
         "google_sheet_id": "1lm_VvI2ad3-F_OoHWq5jAAz92hLgrUVyF-6DWryurAI",

@@ -24,11 +24,11 @@ KNOWN_ACRONYMS = {
 # =========================
 # These will be initialized from config in generate_uploads_from_db
 # For backwards compatibility with CLI usage, we provide defaults
-CURTAIN_TABS = ["CRTWT", "CRTNT", "ROMNDC"]  # default fallback
+CURTAIN_TABS = ["CRTWT", "CRTNT", "ROMNBQCS"]  # default fallback
 PRODUCT_NAME_BY_TAB = {
     "CRTWT": "Curtain and Track",
     "CRTNT": "Curtain Only",
-    "ROMNDC": "Decorative Romans",
+    "ROMNBQCS": "BQ Customised Romans",
 }
 
 # Google sheet settings
