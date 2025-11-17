@@ -50,14 +50,38 @@ async def main(account_name: str = "default") -> None:
             await page.wait_for_url(lambda url: url.startswith("https://go.buzmanager.com/"), timeout=120_000)
             print(">>> Org selected! Continuing...")
 
-        # Ensure org cookie set by visiting a page inside the app
-        await page.goto(START_URL)
-        await page.wait_for_load_state('networkidle')
+        # Console authentication needs manual intervention
+        print("\n" + "="*80)
+        print(">>> MANUAL STEP REQUIRED TO CAPTURE CONSOLE AUTHENTICATION")
+        print("="*80)
+        print(">>> In the browser window, please:")
+        print(">>>   1. Navigate to Settings > Users (in the Buz menu)")
+        print(">>>   2. If prompted with another login, complete the authentication")
+        print(">>>   3. Wait for the user management page to fully load")
+        print(">>>")
+        print(">>> Once you see the user table on the screen, return here.")
+        print("="*80)
 
-        # Save storage state (now includes org selection)
+        # Wait for user confirmation
+        input("\n>>> Press ENTER when you're ready to continue (after navigating to Users page)... ")
+
+        print(">>> Checking for user table...")
+        try:
+            # Give a generous timeout since user just confirmed
+            await page.wait_for_selector('table#userListTable', state='visible', timeout=10000)
+            print(f">>> ✓ Console authentication successful!")
+            print(f">>> Current URL: {page.url}")
+        except Exception as e:
+            print(f">>> ❌ ERROR: Could not find user table!")
+            print(f">>> Current URL: {page.url}")
+            print(f">>> Make sure you've navigated to the Users page and can see the user list.")
+            raise Exception(f"Console authentication verification failed - user table not found at {page.url}")
+
+        # Save storage state (now includes both go.buzmanager.com and console auth)
         await ctx.storage_state(path=str(state_path))
         print(f"\n✓ Saved auth state to: {state_path.resolve()}")
         print(f"✓ This account is now configured for: {account_name}")
+        print(f"✓ Includes authentication for both go.buzmanager.com and console1.buzmanager.com")
         await browser.close()
 
 
