@@ -1,4 +1,4 @@
-{% extends "layout.html" %}
+{% extends "minimal_layout.html" %}
 {% block title %}Add User to Existing Customer{% endblock %}
 
 {% block head %}
@@ -150,8 +150,6 @@
 
 <p class="info">Add a new user (login) for an existing customer in Buz. The customer will be found using an existing user's email address.</p>
 
-<p><a href="{{ url_for('customer_automation.index') }}">← Back to Customer Automation</a></p>
-
 <form id="addUserForm">
   <h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">Find Customer</h3>
 
@@ -216,7 +214,6 @@
   </div>
 
   <button type="submit" class="btn btn-primary" id="submitBtn">Add User</button>
-  <a href="{{ url_for('customer_automation.index') }}" class="btn btn-secondary">Cancel</a>
 </form>
 
 <div id="progressSection">
