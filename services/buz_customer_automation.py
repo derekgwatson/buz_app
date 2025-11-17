@@ -3,13 +3,35 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 
 from services.zendesk_service import CustomerData
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AddUserData:
+    """Data for adding a new user to an existing customer"""
+    existing_user_email: str  # Email of existing user (to find customer)
+    first_name: str
+    last_name: str
+    email: str
+    buz_instances: List[str]  # e.g., ["Watson Blinds", "Designer Drapes"]
+    phone: Optional[str] = None
+
+    @property
+    def is_mobile(self) -> bool:
+        """Check if phone number is mobile (starts with 04)"""
+        if not self.phone:
+            return False
+        # Strip whitespace and non-digits
+        digits = re.sub(r'\D', '', self.phone)
+        return digits.startswith('04')
 
 
 class CustomerAutomationError(Exception):
@@ -278,6 +300,66 @@ class BuzCustomerAutomation:
             # User exists in Customers group but not found in list (shouldn't happen, but handle it)
             self.result.add_step("User exists as Customer but not found in user list (unusual)")
             return True, False, None, None
+
+        finally:
+            await page.close()
+
+    async def get_customer_from_user(self, email: str) -> tuple[str, str]:
+        """
+        Find an existing user by email and extract their linked customer details.
+
+        Args:
+            email: Email of existing user
+
+        Returns:
+            (customer_name, customer_pkid) tuple
+
+        Raises:
+            Exception: If user not found or not in Customers group
+        """
+        self.result.add_step(f"Looking up customer from existing user: {email}")
+
+        page = await self.context.new_page()
+        try:
+            # Navigate directly to the invite user page with this email
+            # This page auto-populates with user details if they exist
+            invite_url = f"https://console1.buzmanager.com/myorg/user-management/inviteuser/{email}"
+            await page.goto(invite_url, wait_until='networkidle')
+            await self.handle_org_selector_if_present(page, invite_url)
+
+            # Check if user exists by checking if email field is populated
+            email_input = page.locator('input#text-email')
+            email_value = await email_input.input_value()
+
+            if not email_value or not email_value.strip():
+                raise Exception(f"User '{email}' not found. Please verify the email address.")
+
+            self.result.add_step(f"✓ Found user: {email}")
+
+            # Extract customer name from the customer field (same one we fill when creating users)
+            customer_input = page.locator('input#customers')
+            customer_name = await customer_input.input_value()
+
+            if not customer_name or not customer_name.strip():
+                raise Exception(f"User '{email}' exists but is not linked to a customer")
+
+            customer_name = customer_name.strip()
+            self.result.add_step(f"Found linked customer: {customer_name}")
+
+            # Now search for this customer to get the PKID
+            # Navigate to customers page
+            await page.goto(self.CUSTOMERS_URL, wait_until='networkidle')
+            await self.handle_org_selector_if_present(page, self.CUSTOMERS_URL)
+
+            # Search for customer by name
+            result = await self.search_customer(page, customer_name, "")
+            if not result:
+                raise Exception(f"Could not find customer '{customer_name}' in customer list")
+
+            customer_name, customer_pkid = result
+            self.result.add_step(f"✓ Customer PKID obtained: {customer_pkid}")
+
+            return (customer_name, customer_pkid)
 
         finally:
             await page.close()
@@ -555,8 +637,7 @@ class BuzCustomerAutomation:
             return True
 
         finally:
-            if not self.keep_open:
-                await page.close()
+            await page.close()
 
     async def add_customer_from_ticket(self, customer_data: CustomerData) -> CustomerAutomationResult:
         """
@@ -628,6 +709,75 @@ class BuzCustomerAutomation:
         if success:
             self.result.user_created = True
             self.result.add_step(f"✓ User created: {customer_data.email}")
+
+        self.result.add_step("=== Workflow Complete ===")
+        return self.result
+
+    async def add_user_to_existing_customer(self, user_data: AddUserData) -> CustomerAutomationResult:
+        """
+        Add a new user to an existing customer
+
+        Args:
+            user_data: New user information including existing user email to find customer
+
+        Steps:
+        1. Check if new user already exists
+        2. Find customer from existing user email
+        3. Create new user linked to that customer
+
+        Returns:
+            CustomerAutomationResult with details
+        """
+        self.result.add_step("=== Starting Add User to Existing Customer Workflow ===")
+        self.result.user_email = user_data.email
+
+        # Step 1: Check if new user already exists
+        user_exists, was_reactivated, existing_customer, error_group = await self.check_user_exists(user_data.email)
+
+        if user_exists:
+            self.result.user_existed = True
+            self.result.customer_name = existing_customer
+            if was_reactivated:
+                self.result.user_reactivated = True
+                self.result.add_step(f"✓ User existed (inactive) and was reactivated. Done.")
+            else:
+                # User already exists and is active - nothing to do, but this is success not error
+                self.result.add_step(f"✓ User already exists and is active: {user_data.email}")
+                self.result.add_step(f"✓ Customer: {existing_customer}")
+                self.result.add_step("Nothing to do - user already has access.")
+            return self.result
+
+        # Step 2: Find customer from existing user
+        try:
+            customer_name, customer_pkid = await self.get_customer_from_user(user_data.existing_user_email)
+            self.result.customer_existed = True
+            self.result.customer_name = customer_name
+        except Exception as e:
+            # Wrap exception to preserve the steps completed so far
+            self.result.add_step(f"✗ Failed to find customer from existing user: {str(e)}")
+            raise CustomerAutomationError(str(e), self.result)
+
+        # Step 3: Create the new user
+        try:
+            # Convert AddUserData to CustomerData format for create_user function
+            temp_customer_data = CustomerData(
+                first_name=user_data.first_name,
+                last_name=user_data.last_name,
+                company_name=customer_name,
+                address="",  # Not needed for user creation
+                email=user_data.email,
+                buz_instances=user_data.buz_instances,
+                phone=user_data.phone
+            )
+
+            success = await self.create_user(customer_name, customer_pkid, temp_customer_data)
+            if success:
+                self.result.user_created = True
+                self.result.add_step(f"✓ New user created: {user_data.email}")
+        except Exception as e:
+            # Wrap exception to preserve the steps completed so far
+            self.result.add_step(f"✗ Failed to create user: {str(e)}")
+            raise CustomerAutomationError(str(e), self.result)
 
         self.result.add_step("=== Workflow Complete ===")
         return self.result
@@ -711,6 +861,83 @@ async def add_customer_from_zendesk_ticket(
 
             # If processing multiple instances, continue to the next one
             if idx < len(customer_data.buz_instances) - 1:
+                automation.result.add_step(f"--- Moving to next instance ---")
+
+    update(100, "Complete")
+    return result
+
+
+async def add_user_for_existing_customer(
+    user_data: AddUserData,
+    headless: bool = True,
+    job_update_callback=None
+) -> CustomerAutomationResult:
+    """
+    High-level function to add a new user to an existing customer
+
+    Args:
+        user_data: New user information including existing user email
+        headless: Run browser in headless mode
+        job_update_callback: Optional callback(pct, message) for job progress
+
+    Returns:
+        CustomerAutomationResult
+    """
+    def update(pct: int, msg: str):
+        if job_update_callback:
+            job_update_callback(pct, msg)
+        logger.info(f"[{pct}%] {msg}")
+
+    update(0, f"Starting add user workflow")
+    update(10, f"New user: {user_data.first_name} {user_data.last_name} ({user_data.email})")
+    update(15, f"Finding customer from existing user: {user_data.existing_user_email}")
+
+    # Helper function to get storage state path from instance name
+    def get_storage_state_path(instance_name: str) -> Path:
+        """
+        Convert instance name to storage state file path.
+        Example: "Watson Blinds" -> ".secrets/buz_storage_state_watsonblinds.json"
+        """
+        # Normalize: lowercase, remove spaces
+        normalized = instance_name.lower().replace(' ', '')
+        return Path(f".secrets/buz_storage_state_{normalized}.json")
+
+    # Get the storage state path for the first instance
+    first_instance = user_data.buz_instances[0]
+    first_storage_path = get_storage_state_path(first_instance)
+
+    # Process each Buz instance
+    async with BuzCustomerAutomation(storage_state_path=first_storage_path, headless=headless) as automation:
+        # Wrap the automation to provide progress updates
+        original_add_step = automation.result.add_step
+
+        def wrapped_add_step(message: str):
+            original_add_step(message)
+            # Estimate progress based on steps
+            step_count = len(automation.result.steps)
+            pct = min(20 + (step_count * 5), 95)
+            update(pct, message)
+
+        automation.result.add_step = wrapped_add_step
+
+        # Loop through each instance
+        for idx, instance in enumerate(user_data.buz_instances):
+            if idx > 0:
+                # Reset some flags for subsequent instances
+                automation.result.user_existed = False
+                automation.result.user_reactivated = False
+                automation.result.customer_existed = False
+                automation.result.user_created = False
+
+                # Switch to different account
+                storage_path = get_storage_state_path(instance)
+                await automation.switch_to_account(storage_path, instance)
+
+            # Run the workflow for this instance
+            result = await automation.add_user_to_existing_customer(user_data)
+
+            # If processing multiple instances, continue to the next one
+            if idx < len(user_data.buz_instances) - 1:
                 automation.result.add_step(f"--- Moving to next instance ---")
 
     update(100, "Complete")

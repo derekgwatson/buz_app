@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>{% block title %}Buz Application{% endblock %}</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+
+<style>
+/* General Body Styling for Dark Theme */
+body {
+    background: linear-gradient(135deg, #121212, #1c1c1c, #262626); /* Gradient background */
+    color: #e0e0e0; /* Light text for contrast */
+    font-family: 'Arial', sans-serif; /* Clean, readable font */
+    padding: 20px 0;
+}
+
+/* Buttons */
+button, .btn {
+    background-color: #3c8dbc; /* Blue button */
+    color: white;
+    border: 1px solid #357ca5;
+    padding: 10px 20px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+button:hover, .btn:hover {
+    background-color: #2aa198; /* Teal hover */
+    color: white;
+}
+
+/* Input Fields */
+input, select, textarea, .form-control {
+    background-color: #333; /* Dark input fields */
+    color: white;
+    border: 1px solid #444;
+    padding: 10px;
+    margin: 10px 0;
+}
+
+/* Force file input and textarea to behave consistently */
+input[type="file"], textarea {
+    display: block; /* Force new line */
+    width: 100%; /* Match container width */
+    margin-bottom: 15px; /* Add spacing between elements */
+}
+
+/* Optional: Improve file input appearance */
+input[type="file"] {
+    background-color: #333;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    padding: 8px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+input[type="file"]:hover {
+    background-color: #444;
+}
+
+/* Cards and Panels */
+.panel, .card {
+    background: linear-gradient(135deg, #2e2e2e, #3b3b3b);
+    color: #f1f1f1; /* Light text */
+    border-left: 5px solid #66d9ef; /* Highlight edge */
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Links */
+a {
+    color: #66d9ef;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #2aa198;
+    text-decoration: underline;
+}
+</style>
+
+{% block head %}
+{% endblock %}
+
+</head>
+<body>
+
+    <!-- Main Content -->
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div>
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        {% endwith %}
+        {% block content %}
+        {% endblock %}
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+
+    {% block scripts %}
+    {% endblock %}
+</body>
+</html>

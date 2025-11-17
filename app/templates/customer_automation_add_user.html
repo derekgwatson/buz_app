@@ -1,5 +1,5 @@
-{% extends "layout.html" %}
-{% block title %}Customer Automation{% endblock %}
+{% extends "minimal_layout.html" %}
+{% block title %}Add User to Existing Customer{% endblock %}
 
 {% block head %}
 <style>
@@ -20,7 +20,7 @@
   }
 
   .form-group input[type="text"],
-  .form-group input[type="number"] {
+  .form-group input[type="email"] {
     width: 100%;
     max-width: 400px;
     padding: 0.5rem;
@@ -31,6 +31,24 @@
 
   .form-group input[type="checkbox"] {
     margin-right: 0.5rem;
+  }
+
+  .help-text {
+    font-size: 0.875rem;
+    color: #6b7280;
+    margin-top: 0.3rem;
+  }
+
+  .checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .checkbox-group label {
+    display: flex;
+    align-items: center;
+    font-weight: normal;
   }
 
   .btn {
@@ -54,6 +72,16 @@
   .btn-primary:disabled {
     background: #9ca3af;
     cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    background: #6b7280;
+    color: white;
+    margin-left: 0.5rem;
+  }
+
+  .btn-secondary:hover {
+    background: #4b5563;
   }
 
   #progressSection {
@@ -118,36 +146,76 @@
 {% endblock %}
 
 {% block content %}
-<h2>Customer Automation</h2>
+<h2>Add User to Existing Customer</h2>
 
-<p class="info">Automatically add customers and users to Buz from Zendesk tickets.</p>
+<p class="info">Add a new user (login) for an existing customer in Buz. The customer will be found using an existing user's email address.</p>
 
-<div style="margin: 1.5rem 0; padding: 1rem; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 0.5rem;">
-  <strong>Other Options:</strong>
-  <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
-    <li><a href="{{ url_for('customer_automation.add_user_form') }}">Add user to existing customer</a> - Create an additional login for an existing customer</li>
-  </ul>
-</div>
+<form id="addUserForm">
+  <h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">Find Customer</h3>
 
-<h3 style="margin-top: 1.5rem;">New Customer from Zendesk Ticket</h3>
-
-<form id="automationForm">
   <div class="form-group">
-    <label for="ticket_id">Zendesk Ticket ID:</label>
-    <input type="number" id="ticket_id" name="ticket_id" placeholder="e.g., 12345" required>
-    <p style="font-size: 0.875rem; color: #6b7280; margin-top: 0.3rem;">
-      Enter the Zendesk ticket number containing customer details
+    <label for="existing_user_email">Existing User Email:</label>
+    <input type="email" id="existing_user_email" name="existing_user_email" placeholder="existing.user@example.com" required>
+    <p class="help-text">
+      Email of any existing user for this customer. We'll use this to find the customer record.
+    </p>
+  </div>
+
+  <h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">New User Details</h3>
+
+  <div class="form-group">
+    <label for="first_name">First Name:</label>
+    <input type="text" id="first_name" name="first_name" placeholder="John" required>
+  </div>
+
+  <div class="form-group">
+    <label for="last_name">Last Name:</label>
+    <input type="text" id="last_name" name="last_name" placeholder="Smith" required>
+  </div>
+
+  <div class="form-group">
+    <label for="email">Email:</label>
+    <input type="email" id="email" name="email" placeholder="new.user@example.com" required>
+    <p class="help-text">
+      Email address for the new user account
     </p>
   </div>
 
   <div class="form-group">
+    <label for="phone">Phone Number (optional):</label>
+    <input type="text" id="phone" name="phone" placeholder="0412345678">
+    <p class="help-text">
+      Optional. Mobile numbers (starting with 04) will be added to mobile field, others to phone field.
+    </p>
+  </div>
+
+  <div class="form-group">
+    <label>Buz Instances:</label>
+    <div class="checkbox-group">
+      <label>
+        <input type="checkbox" name="buz_instances" value="Watson Blinds">
+        Watson Blinds
+      </label>
+      <label>
+        <input type="checkbox" name="buz_instances" value="Designer Drapes">
+        Designer Drapes
+      </label>
+    </div>
+    <p class="help-text">
+      Select which Buz instance(s) to create the user in
+    </p>
+  </div>
+
+  {% if is_dev %}
+  <div class="form-group">
     <label>
-      <input type="checkbox" id="headless" name="headless">
+      <input type="checkbox" id="headless" name="headless" checked>
       Run in headless mode (no browser window)
     </label>
   </div>
+  {% endif %}
 
-  <button type="submit" class="btn btn-primary" id="submitBtn">Start Automation</button>
+  <button type="submit" class="btn btn-primary" id="submitBtn">Add User</button>
 </form>
 
 <div id="progressSection">
@@ -167,7 +235,7 @@
 let currentJobId = null;
 let poller = null;
 
-const form = document.getElementById('automationForm');
+const form = document.getElementById('addUserForm');
 const submitBtn = document.getElementById('submitBtn');
 const progressSection = document.getElementById('progressSection');
 const progressBar = document.getElementById('progressBar');
@@ -181,8 +249,20 @@ const resultDetails = document.getElementById('resultDetails');
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
-  const ticketId = document.getElementById('ticket_id').value;
-  const headless = document.getElementById('headless').checked;
+  const existingUserEmail = document.getElementById('existing_user_email').value;
+  const firstName = document.getElementById('first_name').value;
+  const lastName = document.getElementById('last_name').value;
+  const email = document.getElementById('email').value;
+  const phone = document.getElementById('phone').value;
+
+  // Get selected Buz instances
+  const buzInstances = Array.from(document.querySelectorAll('input[name="buz_instances"]:checked'))
+    .map(cb => cb.value);
+
+  if (buzInstances.length === 0) {
+    alert('Please select at least one Buz instance');
+    return;
+  }
 
   // Disable form
   submitBtn.disabled = true;
@@ -197,10 +277,24 @@ form.addEventListener('submit', async (e) => {
 
   try {
     const formData = new FormData();
-    formData.append('ticket_id', ticketId);
-    formData.append('headless', headless ? 'true' : 'false');
+    formData.append('existing_user_email', existingUserEmail);
+    formData.append('first_name', firstName);
+    formData.append('last_name', lastName);
+    formData.append('email', email);
+    if (phone) formData.append('phone', phone);
 
-    const response = await fetch('{{ url_for("customer_automation.add_from_zendesk") }}', {
+    // Include headless setting if checkbox exists (dev mode only)
+    const headlessCheckbox = document.getElementById('headless');
+    if (headlessCheckbox) {
+      formData.append('headless', headlessCheckbox.checked ? 'true' : 'false');
+    }
+
+    // Add multiple buz_instances
+    buzInstances.forEach(instance => {
+      formData.append('buz_instances', instance);
+    });
+
+    const response = await fetch('{{ url_for("customer_automation.add_user") }}', {
       method: 'POST',
       body: formData
     });
@@ -217,7 +311,7 @@ form.addEventListener('submit', async (e) => {
   } catch (error) {
     alert('Error: ' + error.message);
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Start Automation';
+    submitBtn.textContent = 'Add User';
     progressSection.style.display = 'none';
   }
 });
@@ -261,7 +355,7 @@ function updateProgress(job) {
 function showResult(job) {
   // Re-enable form
   submitBtn.disabled = false;
-  submitBtn.textContent = 'Start Automation';
+  submitBtn.textContent = 'Add User';
 
   // Show result section
   resultSection.style.display = 'block';
@@ -269,13 +363,25 @@ function showResult(job) {
   if (job.status === 'failed') {
     resultSection.classList.add('error');
     resultTitle.textContent = 'Error';
-    resultSummary.innerHTML = `<strong class="err">Automation failed:</strong><br>${job.error || 'Unknown error'}`;
+    resultSummary.innerHTML = `<strong class="err">User addition failed:</strong><br>${job.error || 'Unknown error'}`;
+
+    // Show steps if available even on error
+    const result = job.result || {};
+    if (result.steps && result.steps.length > 0) {
+      let detailsHtml = '<details style="margin-top: 1rem;"><summary>Show error details</summary>';
+      detailsHtml += '<ul class="steps-list">';
+      result.steps.forEach(step => {
+        detailsHtml += `<li>${step}</li>`;
+      });
+      detailsHtml += '</ul></details>';
+      resultDetails.innerHTML = detailsHtml;
+    }
   } else {
     resultSection.classList.remove('error');
     resultTitle.textContent = 'Success';
 
     const result = job.result || {};
-    resultSummary.textContent = result.summary || 'Automation completed';
+    resultSummary.textContent = result.summary || 'User added successfully';
 
     // Show details
     let detailsHtml = '<div style="margin-top: 1rem;">';
