@@ -160,7 +160,8 @@ def job_status(job_id):
 @customer_automation_bp.route("/add-user", methods=["GET"])
 def add_user_form():
     """Show form for adding a user to an existing customer"""
-    return render_template("customer_automation_add_user.html")
+    is_dev = current_app.config.get("DEBUG", False) or current_app.config.get("ENV") == "development"
+    return render_template("customer_automation_add_user.html", is_dev=is_dev)
 
 
 @customer_automation_bp.route("/add-user", methods=["POST"])
@@ -182,7 +183,8 @@ def add_user():
     last_name = request.form.get("last_name", "").strip()
     email = request.form.get("email", "").strip()
     phone = request.form.get("phone", "").strip() or None
-    headless = True  # Always run in headless mode
+    # Default to headless=True, but allow override in dev mode
+    headless = request.form.get("headless", "true").lower() in ("true", "1", "yes")
 
     # Get buz_instances - can be comma-separated or multiple form values
     buz_instances_raw = request.form.getlist("buz_instances")

@@ -206,6 +206,15 @@
     </p>
   </div>
 
+  {% if is_dev %}
+  <div class="form-group">
+    <label>
+      <input type="checkbox" id="headless" name="headless" checked>
+      Run in headless mode (no browser window)
+    </label>
+  </div>
+  {% endif %}
+
   <button type="submit" class="btn btn-primary" id="submitBtn">Add User</button>
 </form>
 
@@ -273,6 +282,12 @@ form.addEventListener('submit', async (e) => {
     formData.append('last_name', lastName);
     formData.append('email', email);
     if (phone) formData.append('phone', phone);
+
+    // Include headless setting if checkbox exists (dev mode only)
+    const headlessCheckbox = document.getElementById('headless');
+    if (headlessCheckbox) {
+      formData.append('headless', headlessCheckbox.checked ? 'true' : 'false');
+    }
 
     // Add multiple buz_instances
     buzInstances.forEach(instance => {
