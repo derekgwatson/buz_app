@@ -206,13 +206,6 @@
     </p>
   </div>
 
-  <div class="form-group">
-    <label>
-      <input type="checkbox" id="headless" name="headless">
-      Run in headless mode (no browser window)
-    </label>
-  </div>
-
   <button type="submit" class="btn btn-primary" id="submitBtn">Add User</button>
 </form>
 
@@ -252,7 +245,6 @@ form.addEventListener('submit', async (e) => {
   const lastName = document.getElementById('last_name').value;
   const email = document.getElementById('email').value;
   const phone = document.getElementById('phone').value;
-  const headless = document.getElementById('headless').checked;
 
   // Get selected Buz instances
   const buzInstances = Array.from(document.querySelectorAll('input[name="buz_instances"]:checked'))
@@ -281,7 +273,6 @@ form.addEventListener('submit', async (e) => {
     formData.append('last_name', lastName);
     formData.append('email', email);
     if (phone) formData.append('phone', phone);
-    formData.append('headless', headless ? 'true' : 'false');
 
     // Add multiple buz_instances
     buzInstances.forEach(instance => {

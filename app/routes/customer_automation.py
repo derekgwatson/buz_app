@@ -182,7 +182,7 @@ def add_user():
     last_name = request.form.get("last_name", "").strip()
     email = request.form.get("email", "").strip()
     phone = request.form.get("phone", "").strip() or None
-    headless = request.form.get("headless", "false").lower() in ("true", "1", "yes")
+    headless = True  # Always run in headless mode
 
     # Get buz_instances - can be comma-separated or multiple form values
     buz_instances_raw = request.form.getlist("buz_instances")
