@@ -58,23 +58,28 @@ async def main(account_name: str = "default") -> None:
         # This is needed for user management operations
         print("\n" + "="*80)
         print(">>> NOW YOU NEED TO NAVIGATE TO THE USER MANAGEMENT PAGE")
-        print(">>> In the open browser window, navigate to:")
+        print(">>> In the SAME BROWSER TAB (don't open a new tab), use the address bar to navigate to:")
         print(">>>   https://console1.buzmanager.com/myorg/user-management/users")
         print(">>> (You may need to authenticate again for this domain)")
-        print(">>> Once you're on the user list page, come back here and press ENTER")
+        print(">>> The script will automatically detect when you've navigated there")
         print("="*80)
-        input("Press ENTER when you're on the console1 user management page... ")
 
-        # Verify they're on the console1 domain
-        current_url = page.url
-        if "console1.buzmanager.com" in current_url:
-            print("✓ Console1 page confirmed!")
-        else:
-            print(f"⚠️  Warning: Current URL is {current_url}")
-            print("⚠️  Make sure you're on console1.buzmanager.com before continuing")
+        # Wait for the page to navigate to console1
+        print("\nWaiting for you to navigate to console1...")
+        try:
+            await page.wait_for_url(
+                lambda url: "console1.buzmanager.com" in url,
+                timeout=300_000  # 5 minutes
+            )
+            print("✓ Console1 page detected!")
+        except Exception as e:
+            print(f"\n⚠️  Timeout or error waiting for console1 navigation: {e}")
+            current_url = page.url
+            print(f"⚠️  Current URL is: {current_url}")
+            print("⚠️  Make sure you navigated in the SAME browser tab (not a new tab)")
             confirm = input("Continue anyway? (y/n): ")
             if confirm.lower() != 'y':
-                print("Aborting. Please navigate to console1 and try again.")
+                print("Aborting. Please try again and navigate in the same tab.")
                 await browser.close()
                 return
 
