@@ -59,16 +59,18 @@ class BuzCustomerAutomation:
     INVITE_USER_URL = "https://console1.buzmanager.com/myorg/user-management/inviteuser/new"
     CUSTOMERS_URL = "https://go.buzmanager.com/Contacts/Customers"
 
-    def __init__(self, storage_state_path: Path, headless: bool = True):
+    def __init__(self, storage_state_path: Path, headless: bool = True, keep_open: bool = False):
         """
         Initialize customer automation.
 
         Args:
             storage_state_path: Path to Playwright storage state JSON file for authentication
             headless: Run browser in headless mode
+            keep_open: Keep browser pages open for debugging (default: False)
         """
         self.storage_state_path = storage_state_path
         self.headless = headless
+        self.keep_open = keep_open
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.playwright = None
