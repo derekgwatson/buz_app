@@ -265,8 +265,11 @@ def add_user():
             if result.user_existed:
                 if result.user_reactivated:
                     summary_lines.append(f"✓ User was reactivated: {result.user_email}")
+                    summary_lines.append(f"✓ Customer: {result.customer_name}")
                 else:
-                    summary_lines.append(f"✓ User already exists: {result.user_email}")
+                    summary_lines.append(f"✓ User already exists and is active: {result.user_email}")
+                    summary_lines.append(f"✓ Customer: {result.customer_name}")
+                    summary_lines.append("No action needed - user already has access")
             else:
                 if result.user_created:
                     summary_lines.append(f"✓ Created user: {result.user_email}")

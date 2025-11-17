@@ -733,16 +733,16 @@ class BuzCustomerAutomation:
         user_exists, was_reactivated, existing_customer, error_group = await self.check_user_exists(user_data.email)
 
         if user_exists:
+            self.result.user_existed = True
+            self.result.customer_name = existing_customer
             if was_reactivated:
-                self.result.user_existed = True
                 self.result.user_reactivated = True
-                self.result.customer_name = existing_customer
                 self.result.add_step(f"✓ User existed (inactive) and was reactivated. Done.")
             else:
-                raise CustomerAutomationError(
-                    f"User '{user_data.email}' already exists. Cannot create duplicate user.",
-                    self.result
-                )
+                # User already exists and is active - nothing to do, but this is success not error
+                self.result.add_step(f"✓ User already exists and is active: {user_data.email}")
+                self.result.add_step(f"✓ Customer: {existing_customer}")
+                self.result.add_step("Nothing to do - user already has access.")
             return self.result
 
         # Step 2: Find customer from existing user
