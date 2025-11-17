@@ -226,15 +226,19 @@ def add_user():
         db = create_db_manager(db_path)
         try:
             update_job(job_id, 5, f"Starting user addition automation", db=db)
+            logger.info(f"Job {job_id}: Starting automation for {email}")
 
             # Import and run the automation
+            logger.info(f"Job {job_id}: Importing automation modules...")
             from services.buz_customer_automation import add_user_for_existing_customer, AddUserData
+            logger.info(f"Job {job_id}: Modules imported successfully")
 
             def job_callback(pct: int, message: str):
                 """Update job progress"""
                 update_job(job_id, pct, message, db=db)
 
             # Create user data object
+            logger.info(f"Job {job_id}: Creating user data object")
             user_data = AddUserData(
                 existing_user_email=existing_user_email,
                 first_name=first_name,
@@ -243,11 +247,14 @@ def add_user():
                 buz_instances=buz_instances,
                 phone=phone
             )
+            logger.info(f"Job {job_id}: User data created, instances: {buz_instances}")
 
             # Run async function in new event loop
+            logger.info(f"Job {job_id}: Creating new event loop")
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
+                logger.info(f"Job {job_id}: Starting async automation (headless={headless})")
                 result = loop.run_until_complete(
                     add_user_for_existing_customer(
                         user_data=user_data,
@@ -255,8 +262,10 @@ def add_user():
                         job_update_callback=job_callback
                     )
                 )
+                logger.info(f"Job {job_id}: Async automation completed successfully")
             finally:
                 loop.close()
+                logger.info(f"Job {job_id}: Event loop closed")
 
             # Build result summary
             result_dict = result.to_dict()
