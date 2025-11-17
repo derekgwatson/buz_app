@@ -56,10 +56,27 @@ async def main(account_name: str = "default") -> None:
 
         # IMPORTANT: Also visit console1 to ensure cookies are saved for that domain too
         # This is needed for user management operations
-        print("\n>>> Visiting console1.buzmanager.com to save auth cookies for user management...")
-        await page.goto("https://console1.buzmanager.com/myorg/user-management/users")
-        await page.wait_for_load_state('networkidle')
-        print("✓ Console1 cookies saved")
+        print("\n" + "="*80)
+        print(">>> NOW YOU NEED TO NAVIGATE TO THE USER MANAGEMENT PAGE")
+        print(">>> In the open browser window, navigate to:")
+        print(">>>   https://console1.buzmanager.com/myorg/user-management/users")
+        print(">>> (You may need to authenticate again for this domain)")
+        print(">>> Once you're on the user list page, come back here and press ENTER")
+        print("="*80)
+        input("Press ENTER when you're on the console1 user management page... ")
+
+        # Verify they're on the console1 domain
+        current_url = page.url
+        if "console1.buzmanager.com" in current_url:
+            print("✓ Console1 page confirmed!")
+        else:
+            print(f"⚠️  Warning: Current URL is {current_url}")
+            print("⚠️  Make sure you're on console1.buzmanager.com before continuing")
+            confirm = input("Continue anyway? (y/n): ")
+            if confirm.lower() != 'y':
+                print("Aborting. Please navigate to console1 and try again.")
+                await browser.close()
+                return
 
         # Save storage state (now includes both go.buzmanager.com and console1.buzmanager.com cookies)
         await ctx.storage_state(path=str(state_path))
