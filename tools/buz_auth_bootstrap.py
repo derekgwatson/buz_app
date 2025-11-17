@@ -54,10 +54,18 @@ async def main(account_name: str = "default") -> None:
         await page.goto(START_URL)
         await page.wait_for_load_state('networkidle')
 
-        # Save storage state (now includes org selection)
+        # IMPORTANT: Also visit console1 to ensure cookies are saved for that domain too
+        # This is needed for user management operations
+        print("\n>>> Visiting console1.buzmanager.com to save auth cookies for user management...")
+        await page.goto("https://console1.buzmanager.com/myorg/user-management/users")
+        await page.wait_for_load_state('networkidle')
+        print("✓ Console1 cookies saved")
+
+        # Save storage state (now includes both go.buzmanager.com and console1.buzmanager.com cookies)
         await ctx.storage_state(path=str(state_path))
         print(f"\n✓ Saved auth state to: {state_path.resolve()}")
         print(f"✓ This account is now configured for: {account_name}")
+        print(f"✓ Cookies saved for both go.buzmanager.com and console1.buzmanager.com")
         await browser.close()
 
 
