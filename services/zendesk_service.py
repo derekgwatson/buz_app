@@ -78,8 +78,8 @@ class ZendeskService:
             Last Name Hunt
             Company Name Terry Hunt
             Company Address 3 Redgrave Place, Chapman, ACT 2611
+            Phone Number 0418488548
             ...
-            Notes Add phone number 0418488548
         """
         description = ticket.description or ""
 
@@ -92,6 +92,7 @@ class ZendeskService:
             'last_name': r'Last\s+Name[:\s]+(.+)',
             'company_name': r'Company\s+Name[:\s]+(.+)',
             'address': r'Company\s+Address[:\s]+(.+)',
+            'phone': r'Phone\s+Number[:\s]+(.+)',
             'buz_instances_raw': r'Which\s+Buz\s+instance\(s\)\?[:\s]+(.+)',
             'discount_group': r'Discount\s+group[:\s]+(.+)',
             'notes': r'Notes[:\s]+(.+)',
@@ -102,13 +103,8 @@ class ZendeskService:
             if match:
                 fields[field] = match.group(1).strip()
 
-        # Extract phone from notes if present
-        phone = None
-        if 'notes' in fields:
-            # Look for phone numbers in notes (various formats)
-            phone_match = re.search(r'(?:phone|mobile|number)[:\s]*(\d[\d\s\-\(\)]+\d)', fields['notes'], re.IGNORECASE)
-            if phone_match:
-                phone = phone_match.group(1).strip()
+        # Get phone from dedicated field (if present)
+        phone = fields.get('phone')
 
         # Parse Buz instances (comma-separated list)
         buz_instances = []
