@@ -35,8 +35,7 @@ sudo -u www-data git -C "$CURRENT_DIR" fetch origin main || { echo "❌ Git fetc
 sudo -u www-data git -C "$CURRENT_DIR" reset --hard origin/main || { echo "❌ Git reset failed ($ENV)"; exit 1; }
 
 # ensure requirements are ok
-source .venv/bin/activate
-pip install -r requirements.txt
+sudo -u www-data "$CURRENT_DIR/.venv/bin/pip" install -r "$CURRENT_DIR/requirements.txt"
 
 echo "🔄 Restarting systemctl daemon..."
 sudo systemctl daemon-reload || { echo "❌ Failed to restart systemctl daemon"; exit 1; }
