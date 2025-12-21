@@ -40,6 +40,10 @@ _DURATION_FINDER_RE = re.compile(
 # Minimal header finder: literal "\n" or real newline, then bullet, then "Lead Time:"
 _LEAD_HEADER_RE = re.compile(r'(?i)(?:\\n|[\r\n])\s*-\s*Lead\s*Time\s*:\s*')
 
+# Content patterns for row selection (matches anywhere in cell)
+_LEAD_TIME_CONTENT_RE = re.compile(r'(?i)\blead\s*time\s*:\s*')
+_READY_IN_CONTENT_RE = re.compile(r'(?i)\bready\s*in\b')
+
 
 # Detailed "Lead Time:" line — capture one bracket block, eat any extras
 _DETAILED_LEAD_LINE_RE = re.compile(
@@ -137,8 +141,9 @@ def _normalize_lead_line_spacing_from_template(
         ws_out = wb_out[code]
         ws_tpl = wb_tpl[code]
 
-        r_out = _first_row_do_not_show_false(ws_out, do_not_show_col_letter, header_row_1based)
-        r_tpl = _first_row_do_not_show_false(ws_tpl, do_not_show_col_letter, header_row_1based)
+        # Use content-aware row finding (this function is only used for Detailed)
+        r_out = _find_target_row(ws_out, do_not_show_col_letter, header_row_1based, target_col_letter, "detailed")
+        r_tpl = _find_target_row(ws_tpl, do_not_show_col_letter, header_row_1based, target_col_letter, "detailed")
         if r_out == -1 or r_tpl == -1:
             continue
 
@@ -219,6 +224,52 @@ def _first_row_do_not_show_false(ws, do_not_show_col_letter: str, header_row_1ba
     return -1
 
 
+def _find_target_row(
+    ws,
+    do_not_show_col_letter: str,
+    header_row_1based: int,
+    target_col_letter: str,
+    kind: str,
+) -> int:
+    """
+    Find the first row > header_row_1based where:
+      - Do Not Show column is FALSE (or empty/blank)
+      - AND target column contains appropriate content pattern:
+        - "Lead Time:" for kind="detailed"
+        - "Ready in" for kind="summary"
+
+    This ensures we skip rows that are FALSE but don't contain the expected content.
+    Returns -1 if none found.
+    """
+    dns_col = _col1(do_not_show_col_letter)
+    tgt_col = _col1(target_col_letter)
+    start = (header_row_1based or 1) + 1
+
+    # Select the appropriate pattern based on kind
+    if kind == "detailed":
+        pattern = _LEAD_TIME_CONTENT_RE
+    elif kind == "summary":
+        pattern = _READY_IN_CONTENT_RE
+    else:
+        # Fallback to old behavior if kind is unknown
+        return _first_row_do_not_show_false(ws, do_not_show_col_letter, header_row_1based)
+
+    for r in range(start, ws.max_row + 1):
+        dns_val = ws.cell(row=r, column=dns_col).value
+        if _is_trueish(dns_val):
+            continue  # Skip rows where Do Not Show is TRUE
+
+        # Check if target column contains the expected pattern
+        tgt_val = ws.cell(row=r, column=tgt_col).value
+        if tgt_val is None:
+            continue
+        tgt_str = str(tgt_val)
+        if pattern.search(tgt_str):
+            return r
+
+    return -1
+
+
 def _apply_banner_detailed_text(old: str, cutoff: str | None) -> str:
     """
     Detailed policy:
@@ -268,7 +319,8 @@ def _apply_banners_to_workbook(
 ) -> int:
     """
     For each sheet:
-      - find the first row where Do Not Show? is FALSE
+      - find the first row where Do Not Show? is FALSE AND target col has expected content
+        (Lead Time: for detailed, Ready in for summary)
       - edit target cell (Detailed: Before Answer, Summary: After Answer)
       - remove old banner; insert new in canonical place if cutoff exists
     Returns: number of tabs modified (where cell content actually changed).
@@ -282,7 +334,7 @@ def _apply_banners_to_workbook(
 
     for code in list(wb.sheetnames):
         ws = wb[code]
-        r = _first_row_do_not_show_false(ws, do_not_show_col_letter, header_row_1based)
+        r = _find_target_row(ws, do_not_show_col_letter, header_row_1based, target_col_letter, kind)
         if r == -1:
             continue
 
@@ -318,10 +370,12 @@ def _prune_unchanged_tabs_cell_based(
     do_not_show_col_letter: str,
     header_row_1based: int,
     target_col_letter: str,  # "B" for detailed, "C" for summary (from config)
+    kind: str,  # "detailed" or "summary"
 ) -> list[str]:
     """
-    Remove a tab if the target cell text (first row where Do Not Show? is FALSE, target column)
-    is EXACTLY the same as in the template workbook. Any character difference => keep.
+    Remove a tab if the target cell text (first row where Do Not Show? is FALSE AND target col
+    has expected content, target column) is EXACTLY the same as in the template workbook.
+    Any character difference => keep.
     """
     pruned: list[str] = []
     if not output_path.exists():
@@ -337,8 +391,8 @@ def _prune_unchanged_tabs_cell_based(
         ws_out = wb_out[code]
         ws_tpl = wb_tpl[code]
 
-        r_out = _first_row_do_not_show_false(ws_out, do_not_show_col_letter, header_row_1based)
-        r_tpl = _first_row_do_not_show_false(ws_tpl, do_not_show_col_letter, header_row_1based)
+        r_out = _find_target_row(ws_out, do_not_show_col_letter, header_row_1based, target_col_letter, kind)
+        r_tpl = _find_target_row(ws_tpl, do_not_show_col_letter, header_row_1based, target_col_letter, kind)
         if r_out == -1 or r_tpl == -1:
             # If either workbook can't find a display row, don't prune on this heuristic
             continue
@@ -639,6 +693,7 @@ def run_publish(
         do_not_show_col_letter=anchor_col_letter,
         header_row_1based=anchor_header_row,
         target_col_letter=ins_cols["detailed"],
+        kind="detailed",
     )
 
     review_detailed |= set(res.review_codes)
@@ -679,6 +734,7 @@ def run_publish(
         do_not_show_col_letter=anchor_col_letter,
         header_row_1based=anchor_header_row,
         target_col_letter=ins_cols["summary"],
+        kind="summary",
     )
 
     review_summary |= set(res.review_codes)
