@@ -30,8 +30,9 @@ fi
 
 echo "📁 App: $APP_NAME"
 echo "🌐 Environment: $ENV"
-echo "🔁 Pulling latest code in $CURRENT_DIR..."
-sudo -u www-data git -C "$CURRENT_DIR" pull || { echo "❌ Git pull failed ($ENV)"; exit 1; }
+echo "🔁 Pulling latest code from main in $CURRENT_DIR..."
+sudo -u www-data git -C "$CURRENT_DIR" fetch origin main || { echo "❌ Git fetch failed ($ENV)"; exit 1; }
+sudo -u www-data git -C "$CURRENT_DIR" reset --hard origin/main || { echo "❌ Git reset failed ($ENV)"; exit 1; }
 
 # ensure requirements are ok
 source .venv/bin/activate
