@@ -131,6 +131,8 @@ def start():
             html=res["html"],
             files=res.get("files", []),
             scopes=scope,
+            is_review_mode=res.get("is_review_mode", False),
+            review_reasons=res.get("review_reasons", []),
         )
 
     except ValueError as exc:

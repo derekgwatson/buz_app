@@ -6,6 +6,19 @@
     /* Scoped to this page only */
     .lead-times .alert-warning { background:#3a2f00; color:#fff; border-color:#6b5300; }
     .lead-times .alert-success { background:#06340a; color:#d1fae5; border-color:#065f46; }
+    .lead-times .alert-review {
+      background:#4a1d1d; color:#fecaca; border:2px solid #991b1b;
+      border-radius:8px; padding:16px; margin-bottom:16px;
+    }
+    .lead-times .alert-review h4 { margin-top:0; color:#fca5a5; }
+    .lead-times .alert-review code { background:#7f1d1d; padding:2px 6px; border-radius:4px; }
+    .lead-times .review-reasons { margin:12px 0; padding-left:20px; }
+    .lead-times .review-reasons li { margin-bottom:6px; }
+    .lead-times .review-triggers {
+      background:#3f1d1d; border-radius:6px; padding:12px; margin-top:12px;
+      font-size:13px;
+    }
+    .lead-times .review-triggers summary { cursor:pointer; font-weight:600; }
 
     .lead-times .lt-box {
       background:#111827;          /* dark slate */
@@ -37,6 +50,35 @@
 
 
   <h3>Lead Times Updated — Results</h3>
+
+  {# REVIEW MODE alert - shown when review-only files are generated #}
+  {% if is_review_mode %}
+    <div class="alert-review">
+      <h4>REVIEW MODE</h4>
+      <p>Some tabs require manual attention before publishing. Only review-only workbooks are available below.</p>
+
+      {% if review_reasons %}
+        <strong>Tabs flagged for review:</strong>
+        <ul class="review-reasons">
+          {% for r in review_reasons %}
+            <li>{{ r.message }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      <div class="review-triggers">
+        <details>
+          <summary>What triggers REVIEW MODE?</summary>
+          <ul style="margin-top:8px; padding-left:20px;">
+            <li><strong>Red tab colour</strong> — Tab is marked red in the uploaded template</li>
+            <li><strong>No lead-time text</strong> — Code exists in Sheets but has no lead time value</li>
+            <li><strong>Missing "Ready in"</strong> — Summary tab's column C doesn't contain "Ready in"</li>
+            <li><strong>Missing "Lead Time:"</strong> — Detailed tab's column B doesn't contain "Lead Time:" header (even if successfully prefixed)</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+  {% endif %}
 
   {# Warnings (collapsible) #}
   {% if warnings and warnings|length %}

@@ -768,8 +768,17 @@ def run_publish(
     # Prefer review-only links if any exist
     final_files = review_files if review_files else files
 
+    # Collect review reasons for UI display
+    review_reasons: list[dict] = []
+    for w in warnings:
+        if "— needs review." in w:
+            # Parse warnings like "[Store/CODE] Reason — needs review."
+            review_reasons.append({"message": w})
+
     return {
         "warnings": warnings,
         "html": html_out,
         "files": final_files,  # basenames; your download route serves from save_dir
+        "is_review_mode": bool(review_files),
+        "review_reasons": review_reasons,
     }
